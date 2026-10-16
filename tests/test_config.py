@@ -45,3 +45,15 @@ def test_invalid_default_ratio_rejected(tmp_path):
     (tmp_path / "platforms" / "taobao.json").write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ConfigError):
         load_platforms(tmp_path)
+
+
+def test_pet_supplement_product_lines_from_package():
+    """宠物营养补充剂按辰荣贝康包装登记 7 款单品，各自的原料组成不同。"""
+    pet = load_categories()["pet_supplement"]
+    lines = {p.name: p for p in pet.product_lines}
+    assert set(lines) == {"猫静宝", "重重没", "护圣宝", "艾留平", "护宫宝", "感克消", "辰节宁"}
+    assert lines["猫静宝"].ingredients == ["鸡肝粉", "糊精", "夜交藤", "酸枣仁", "远志", "葛根", "甘草"]
+    assert lines["辰节宁"].standard == "Q/CSDD 245-2026" and "妊娠期禁用" in lines["辰节宁"].cautions
+    assert len({tuple(p.ingredients) for p in pet.product_lines}) == 7
+    for p in pet.product_lines:
+        assert p.ingredients[:2] == ["鸡肝粉", "糊精"] and p.positioning and p.guaranteed_analysis

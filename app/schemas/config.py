@@ -21,6 +21,27 @@ class ProductFormField(BaseModel):
     placeholder: str = ""
 
 
+class ProductLine(BaseModel):
+    """类目下的具体单品（如同一品牌的多款产品），数据以包装定稿为准，原样提供给策划 Skill。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    subtitle: str = ""
+    # 包装上的功能定位语（合规原句）
+    positioning: str = ""
+    package_color: str = ""
+    package_pet: str = ""
+    ingredients: list[str] = Field(default_factory=list)
+    additives: list[str] = Field(default_factory=list)
+    # 产品成分分析保证值：{成分: 数值}
+    guaranteed_analysis: dict[str, str] = Field(default_factory=dict)
+    usage_note: str = ""
+    dosage: str = ""
+    cautions: list[str] = Field(default_factory=list)
+    standard: str = ""
+
+
 class CategoryConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -39,6 +60,7 @@ class CategoryConfig(BaseModel):
     video_scene_suggestions: list[str] = Field(default_factory=list)
     ambient_sound_library: list[str] = Field(default_factory=list)
     product_form_fields: list[ProductFormField] = Field(default_factory=list)
+    product_lines: list[ProductLine] = Field(default_factory=list)
 
 
 class _RatioSpec(BaseModel):

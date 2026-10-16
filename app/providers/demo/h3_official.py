@@ -39,6 +39,8 @@ SOUND_EN: list[tuple[str, str]] = [
     ("摩挲", "dry leaves rustle with a crisp, sandy crackle between the fingertips"),
     ("轻放", "the cup is set down on the wooden table with a short, dull tap"),
     ("冰块", "ice cubes drop into the cold brew and clink against the glass"),
+    ("开盖", "the paper box lid slides open with a soft, dry scrape"),
+    ("片剂", "small tablets drop into the ceramic bowl with light, crisp clicks"),
     ("嘶啦", "the foil sachet tears open with a sharp ripping sound"),
     ("粉末", "fine powder patters softly onto the dry kibble"),
     ("咀嚼", "the cat crunches the kibble in a steady rhythm"),
@@ -70,7 +72,7 @@ PURPOSE_ACTION_EN = {
 PRODUCT_EN = {
     "zhangjiajie_berry_tea": ("a resealable package of Zhangjiajie vine tea",
                               "dried vine-tea leaves coated with a fine white frost"),
-    "pet_supplement": ("a pouch of pet nutritional supplement", "fine supplement powder and small dry kibble"),
+    "pet_supplement": ("a box of pet nutritional supplement tablets", "small round flavored supplement tablets"),
 }
 
 
