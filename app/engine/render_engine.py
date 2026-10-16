@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
@@ -292,6 +293,12 @@ class RenderEngine:
             aspect_ratio=script.aspect_ratio, duration_seconds=shot.duration_seconds,
             output_dir=self.rt.store.asset_dir(project.project_id, "videos", shot_id),
             with_audio=shot.audio_mode != "silent",
+            # ref2va：首帧之后附上该分镜绑定的商品参考图，保证包装一致
+            extra={
+                "reference_paths": [a.file_path for a in script.references_for(shot_id) if a.file_path.exists()],
+                "reference_roles": [a.role for a in script.references_for(shot_id) if a.file_path.exists()],
+                "seed": int(hashlib.sha256(script.script_id.encode()).hexdigest()[:8], 16),
+            },
         )
         try:
             async for ev in provider.generate(req):

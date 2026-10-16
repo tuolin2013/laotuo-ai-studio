@@ -182,10 +182,15 @@ async def test_video_full_pipeline(rt, png):
     assert any("ComfyUI" in e.message for e in evs)
 
 
-async def test_force_demo_overrides_keys(tmp_path):
-    rt = EngineRuntime(settings=Settings(workspace_dir=tmp_path, llm_key="x", image_key="y",
-                                         modal_h3_url="https://m.run"), demo_delay=0)
+async def test_force_demo_overrides_keys(tmp_path, monkeypatch):
+    import app.providers.video.modal_minimax_h3 as h3
+    import app.settings as settings_mod
+    # 只模拟「已登录 Modal」，不会真正调用（本测试不生成视频）
+    monkeypatch.setattr(settings_mod, "_modal_logged_in", lambda: True)
+    monkeypatch.setattr(h3, "modal_logged_in", lambda: True)
+    rt = EngineRuntime(settings=Settings(workspace_dir=tmp_path, llm_key="x", image_key="y"), demo_delay=0)
     assert rt.is_live("llm") and rt.is_live("image") and rt.is_live("modal_h3")
+    assert rt.video_provider("modal_minimax_h3").provider_id == "modal_minimax_h3"
     rt.force_demo = True
     assert not rt.is_live("llm") and "演示模式" in rt.mode_summary()
     assert rt.video_provider("modal_minimax_h3").provider_id == "demo"

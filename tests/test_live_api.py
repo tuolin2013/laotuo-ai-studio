@@ -151,19 +151,21 @@ def test_save_env_roundtrip_and_whitelist(tmp_path, monkeypatch):
     for k in EDITABLE_ENV_KEYS:
         monkeypatch.delenv(k, raising=False)
     env = tmp_path / ".env"
-    s = save_env({"RIGHTAPI_LLM_KEY": "abc\nINJECTED=1", "MODAL_H3_ENDPOINT_URL": "https://h3.modal.run",
+    s = save_env({"RIGHTAPI_LLM_KEY": "abc\nINJECTED=1", "MODAL_H3_APP": "my-h3", "MODAL_H3_CLASS": "Runner",
                   "RIGHTAPI_IMAGE_KEY": "draw", "RIGHTAPI_IMAGE_RESOLUTION": "4K", "DEMO_MODE": "true"}, env)
     text = env.read_text(encoding="utf-8")
     # 换行被移除，无法注入新的一行环境变量
     assert "\nINJECTED=1" not in text and s.llm_key == "abcINJECTED=1"
-    assert s.modal_h3_url == "https://h3.modal.run" and s.demo_mode is True
+    assert (s.modal_h3_app, s.modal_h3_class) == ("my-h3", "Runner") and s.demo_mode is True
     assert s.image_key == "draw" and s.image_resolution == "4K"
     with pytest.raises(ValueError):
         save_env({"RIGHTAPI_OPENAI_IMAGE_KEY": "x"}, env)  # 旧的三 Key 变量名不再从界面写入
     assert not s.channel_live("llm")
     with pytest.raises(ValueError):
         save_env({"PATH": "x"}, env)
-    assert load_settings(env, override=True).modal_h3_url == "https://h3.modal.run"
+    assert load_settings(env, override=True).modal_h3_app == "my-h3"
+    with pytest.raises(ValueError):
+        save_env({"MODAL_H3_ENDPOINT_URL": "https://x"}, env)  # 已废弃：H3 不再通过 URL 调用
 
 
 async def test_diagnostics_without_spending_image_quota():

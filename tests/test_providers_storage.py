@@ -60,12 +60,13 @@ def test_extract_json():
 
 def test_video_providers_registered():
     assert set(available_providers()) >= {"modal_minimax_h3", "manual_comfyui", "fal_ai"}
-    assert ModalMiniMaxH3Provider().timeout_seconds == 600
-    assert not ModalMiniMaxH3Provider().is_configured()
+    prov = ModalMiniMaxH3Provider()
+    assert prov.app_name == "minimax-h3-diffusers-service" and prov.class_name == "H3BatchRunner"
+    assert prov.timeout_seconds == 2400
 
 
 async def test_warmup_and_manual_bridge(tmp_path):
-    warm = await ModalMiniMaxH3Provider(url="https://x.modal.run").warmup()
+    warm = await ModalMiniMaxH3Provider(runner_factory=lambda wf: None).warmup()
     assert warm.ready
 
     req = VideoRequest(shot_id="shot_1", prompt="p", first_frame_path=tmp_path / "f.png",

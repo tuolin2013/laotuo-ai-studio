@@ -12,6 +12,7 @@ import uuid
 
 import httpx
 
+from app.providers.image import with_connect_retry
 from app.providers.image_models import get_model
 from app.providers.llm import LLMError, RightAPILLM
 from app.settings import Settings
@@ -38,8 +39,8 @@ async def check_image(s: Settings, transport: httpx.AsyncBaseTransport | None = 
     probe = f"task_{uuid.uuid4().hex}"
     try:
         async with httpx.AsyncClient(timeout=30, transport=transport) as client:
-            resp = await client.get(f"{s.rightapi_base_url}/v1/tasks/{probe}",
-                                    headers={"Authorization": f"Bearer {s.image_key}"})
+            resp = await with_connect_retry(lambda: client.get(
+                f"{s.rightapi_base_url}/v1/tasks/{probe}", headers={"Authorization": f"Bearer {s.image_key}"}))
     except httpx.HTTPError as e:
         return f"❌ 画图（{_mask(s.image_key)}）：无法连接 {s.rightapi_base_url}（{type(e).__name__}）"
     if resp.status_code in (401, 403):
@@ -52,16 +53,13 @@ async def check_image(s: Settings, transport: httpx.AsyncBaseTransport | None = 
 
 
 async def check_modal(s: Settings, transport: httpx.AsyncBaseTransport | None = None) -> str:
-    if not s.modal_h3_url:
-        return "🟡 Modal H3：未填写 MODAL_H3_ENDPOINT_URL（将使用本地演示视频）"
-    if not s.modal_h3_warmup_url:
-        return "⚪ Modal H3：已填写地址；未配置 MODAL_H3_WARMUP_URL，跳过检测（可在视频页点「🔥 预热」）"
-    try:
-        async with httpx.AsyncClient(timeout=60, transport=transport) as client:
-            resp = await client.get(s.modal_h3_warmup_url)
-    except httpx.HTTPError as e:
-        return f"❌ Modal H3：预热地址不可达 {type(e).__name__}"
-    return f"{'🟢' if resp.status_code < 400 else '❌'} Modal H3：预热地址返回 HTTP {resp.status_code}"
+    """只查找已部署的类，不启动 GPU、不产生费用。"""
+    from app.providers.video.modal_minimax_h3 import ModalMiniMaxH3Provider, modal_logged_in
+
+    if not modal_logged_in():
+        return "🟡 Modal H3：本机未登录 Modal（终端运行 modal token new），将使用本地演示视频"
+    res = await ModalMiniMaxH3Provider(s.modal_h3_app, s.modal_h3_class).warmup()
+    return f"{'🟢' if res.ready else '❌'} Modal H3：{res.message}"
 
 
 async def diagnose(s: Settings, transport: httpx.AsyncBaseTransport | None = None) -> str:

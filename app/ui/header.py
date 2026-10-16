@@ -136,10 +136,12 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
             "`/v1beta/models/{model}:generateContent`（文生图与编辑同一接口） |\n\n"
             "全部带 `\"async\": true` 提交，轮询 `/v1/tasks/{task_id}` 取图片 URL 后下载保存。")
         with gr.Row():
-            modal_url = gr.Textbox(value=s.modal_h3_url, label="MODAL_H3_ENDPOINT_URL",
-                                   placeholder="https://xxx.modal.run")
+            modal_app = gr.Textbox(value=s.modal_h3_app, label="MODAL_H3_APP（Modal 应用名）",
+                                   info="通过本机 Modal 登录直接调用，无需 URL / Key")
+            modal_cls = gr.Textbox(value=s.modal_h3_class, label="MODAL_H3_CLASS（类名）")
             comfy_url = gr.Textbox(value=s.comfyui_url, label="COMFYUI_URL",
-                                   placeholder="https://xxx.modal.run（ComfyUI MiniMax All-in-One）")
+                                   placeholder="https://xxx.modal.run（ComfyUI MiniMax All-in-One）",
+                                   info="⚠️ 该页面无登录保护，勿把地址分享给他人")
         with gr.Row():
             save_btn = gr.Button("💾 保存配置到 .env", variant="primary")
             diag_btn = gr.Button("🩺 连通性诊断（不消耗画图额度）")
@@ -235,12 +237,12 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
     apply_override.click(do_apply, [preview_slot, skill_body, *dd], skill_status)
     reset_override.click(do_reset, [preview_slot, *dd], [skill_body, skill_status])
 
-    def do_save(demo, k1, fmt, k2, res, q, burl, murl, curl):
+    def do_save(demo, k1, fmt, k2, res, q, burl, mapp, mcls, curl):
         try:
             new = save_env({
                 "RIGHTAPI_LLM_KEY": k1, "RIGHTAPI_LLM_API_FORMAT": fmt, "RIGHTAPI_IMAGE_KEY": k2,
                 "RIGHTAPI_IMAGE_RESOLUTION": res, "RIGHTAPI_IMAGE_QUALITY": q, "RIGHTAPI_BASE_URL": burl,
-                "MODAL_H3_ENDPOINT_URL": murl, "COMFYUI_URL": curl,
+                "MODAL_H3_APP": mapp, "MODAL_H3_CLASS": mcls, "COMFYUI_URL": curl,
                 "DEMO_MODE": "true" if demo else "false",
             })
         except (ValueError, OSError) as e:
@@ -249,8 +251,8 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
         rt.force_demo = bool(demo)
         return f"✅ 已保存到 .env 并立即生效（Base URL：`{new.rightapi_base_url}`）", rt.mode_summary()
 
-    save_btn.click(do_save, [demo_toggle, llm_key, llm_fmt, img_key, img_res, img_quality, base_url, modal_url,
-                             comfy_url], [save_status, mode_status])
+    save_btn.click(do_save, [demo_toggle, llm_key, llm_fmt, img_key, img_res, img_quality, base_url, modal_app,
+                             modal_cls, comfy_url], [save_status, mode_status])
 
     async def do_diag():
         yield "🩺 正在检测连通性…"

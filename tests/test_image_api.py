@@ -251,3 +251,32 @@ async def test_http_errors_and_timeout():
         await slow.send(req, "sk-draw")
     with pytest.raises(ImageAPIError, match="RIGHTAPI_IMAGE_KEY"):
         await slow.send(req, "")
+
+
+async def test_connect_errors_are_retried_without_duplicate_submit():
+    """本机代理偶发断连（请求没发出去）会自动重试；服务端已收到的请求不会重复提交。"""
+    attempts = {"post": 0}
+
+    def flaky(req: httpx.Request):
+        if req.method == "POST":
+            attempts["post"] += 1
+            if attempts["post"] < 3:
+                raise httpx.ConnectError("proxy reset", request=req)
+            return httpx.Response(200, json={"created": 1, "data": [{"url": "https://cdn.example.com/a.png"}]})
+        return httpx.Response(200, content=_png_bytes())
+
+    client = RightAPIImageClient(base_url=BASE, poll_interval=0, transport=httpx.MockTransport(flaky))
+    req = route_image_request(S, "gpt-image-2", "p", "1:1", [])
+    assert await client.send(req, "sk-draw") == [_png_bytes()]
+    assert attempts["post"] == 3
+
+    attempts["post"] = 0
+
+    def server_error(req: httpx.Request):
+        attempts["post"] += 1
+        return httpx.Response(500, json={"error": "暂无可用上游"})
+
+    client = RightAPIImageClient(base_url=BASE, poll_interval=0, transport=httpx.MockTransport(server_error))
+    with pytest.raises(ImageAPIError, match="500"):
+        await client.send(req, "sk-draw")
+    assert attempts["post"] == 1  # 服务端已响应的错误不重试，避免重复扣费

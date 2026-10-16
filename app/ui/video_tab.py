@@ -187,7 +187,7 @@ def build_video_tab(ws: Workspace, header: Header) -> None:
                 provider = gr.Dropdown(PROVIDERS, value="modal_minimax_h3", label="视频后端")
                 video_shot = gr.Dropdown(label="生成哪个分镜", choices=[])
             with gr.Row():
-                warm_btn = gr.Button("🔥 预热 / 唤醒 Modal H3 容器")
+                warm_btn = gr.Button("🔎 检查 Modal H3 服务（不启动 GPU）")
                 video_btn = gr.Button("🎬 开始生成带声视频", variant="primary")
                 video_all_btn = gr.Button("🎬 全部分镜依次生成")
 
@@ -539,7 +539,7 @@ def build_video_tab(ws: Workspace, header: Header) -> None:
 
     async def do_warm(pid_provider, prev):
         prov = rt.video_provider(pid_provider)
-        log = _log(prev, f"🔥 正在预热：{prov.display_name}（Serverless 冷启动可能需要数十秒）…")
+        log = _log(prev, f"🔎 正在检查：{prov.display_name}…")
         yield log
         res = await prov.warmup()
         yield _log(log, f"{'✅' if res.ready else '❌'} {res.message}（耗时 {res.elapsed_seconds:.1f}s）")

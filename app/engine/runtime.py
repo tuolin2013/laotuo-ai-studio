@@ -82,7 +82,7 @@ class EngineRuntime:
                 return FalAIVideoProvider(s.fal_key, s.fal_video_model, s.video_timeout)
             return DemoVideoProvider(step_delay=self.demo_delay)
         if provider_id == "modal_minimax_h3" and self.is_live("modal_h3"):
-            return ModalMiniMaxH3Provider(s.modal_h3_url, s.modal_h3_warmup_url, s.modal_h3_token, s.video_timeout)
+            return ModalMiniMaxH3Provider(s.modal_h3_app, s.modal_h3_class, s.modal_h3_steps, s.modal_h3_timeout)
         return DemoVideoProvider(step_delay=self.demo_delay)
 
     # ---------- 配置 ----------

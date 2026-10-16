@@ -10,6 +10,9 @@ dependencies = [
     "pillow==12.3.0",
     "python-dotenv==1.2.4",
     "pyyaml==6.0.3",
+    # MiniMax H3 通过 Modal SDK 调用；python-socks 用于本机配置了 HTTP 代理时连接 Modal
+    "modal==1.6.1",
+    "python-socks[asyncio]==3.1.1",
 ]
 
 [build-system]

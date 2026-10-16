@@ -205,6 +205,22 @@ class ImageAPIError(RuntimeError):
     pass
 
 
+# 只重试「请求还没发出去」的连接错误：服务端没收到，重试不会重复提交任务、不会多扣费
+CONNECT_RETRIES = 3
+CONNECT_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.ProxyError)
+
+
+async def with_connect_retry(fn, retries: int = CONNECT_RETRIES, backoff: float = 1.0):
+    """本机代理偶发断连时自动重试，其他错误原样抛出。"""
+    for attempt in range(retries + 1):
+        try:
+            return await fn()
+        except CONNECT_ERRORS:
+            if attempt == retries:
+                raise
+            await asyncio.sleep(backoff * (attempt + 1))
+
+
 class RightAPIImageClient:
     """提交异步画图任务 → 轮询 /v1/tasks/{task_id} → 下载图片 URL。"""
 
@@ -231,7 +247,7 @@ class RightAPIImageClient:
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(60, read=120), transport=self._transport) as client:
             try:
-                resp = await client.post(req.url, json=req.json, headers=headers)
+                resp = await with_connect_retry(lambda: client.post(req.url, json=req.json, headers=headers))
             except httpx.HTTPError as e:
                 raise ImageAPIError(f"提交画图任务失败：{type(e).__name__}") from e
             body = self._json(resp)
@@ -296,7 +312,7 @@ class RightAPIImageClient:
         if url.startswith("data:"):
             return base64.b64decode(url.split(",", 1)[1])
         try:
-            resp = await client.get(url, follow_redirects=True)
+            resp = await with_connect_retry(lambda: client.get(url, follow_redirects=True))
         except httpx.HTTPError as e:
             raise ImageAPIError(f"下载生成图片失败：{type(e).__name__}") from e
         if resp.status_code >= 400:

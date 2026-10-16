@@ -24,7 +24,8 @@ EDITABLE_ENV_KEYS = (
     "RIGHTAPI_IMAGE_RESOLUTION",
     "RIGHTAPI_IMAGE_QUALITY",
     "RIGHTAPI_BASE_URL",
-    "MODAL_H3_ENDPOINT_URL",
+    "MODAL_H3_APP",
+    "MODAL_H3_CLASS",
     "COMFYUI_URL",
     "RIGHTAPI_LLM_API_FORMAT",
     "DEMO_MODE",
@@ -79,9 +80,11 @@ class Settings:
     image_concurrency: int = 8
     default_video_provider: str = "modal_minimax_h3"
     video_timeout: float = 600
-    modal_h3_url: str = ""
-    modal_h3_warmup_url: str = ""
-    modal_h3_token: str = field(default="", repr=False)
+    # MiniMax H3：通过 Modal SDK 按「应用名 + 类名」调用（使用本机 Modal 登录，无需 URL / Key）
+    modal_h3_app: str = "minimax-h3-diffusers-service"
+    modal_h3_class: str = "H3BatchRunner"
+    modal_h3_steps: int = 30
+    modal_h3_timeout: float = 2400
     comfyui_url: str = ""
     fal_key: str = field(default="", repr=False)
     fal_video_model: str = ""
@@ -99,10 +102,16 @@ class Settings:
             {
                 "llm": self.llm_key,
                 "image": self.image_key,
-                "modal_h3": self.modal_h3_url,
+                "modal_h3": bool(self.modal_h3_app and self.modal_h3_class) and _modal_logged_in(),
                 "fal_ai": self.fal_key,
             }[channel]
         )
+
+
+def _modal_logged_in() -> bool:
+    if os.environ.get("MODAL_TOKEN_ID") and os.environ.get("MODAL_TOKEN_SECRET"):
+        return True
+    return (Path.home() / ".modal.toml").exists()
 
 
 def _resolution(value: str) -> str:
@@ -137,10 +146,10 @@ def load_settings(env_file: Path | None = None, override: bool = False) -> Setti
         image_concurrency=max(1, int(e("RIGHTAPI_IMAGE_CONCURRENCY", "8"))),
         default_video_provider=e("DEFAULT_VIDEO_PROVIDER", "modal_minimax_h3"),
         video_timeout=float(e("VIDEO_TIMEOUT_SECONDS", "600")),
-        # 兼容旧变量名 MODAL_MINIMAX_H3_URL
-        modal_h3_url=e("MODAL_H3_ENDPOINT_URL", "") or e("MODAL_MINIMAX_H3_URL", ""),
-        modal_h3_warmup_url=e("MODAL_H3_WARMUP_URL", "") or e("MODAL_MINIMAX_H3_WARMUP_URL", ""),
-        modal_h3_token=e("MODAL_H3_TOKEN", "") or e("MODAL_MINIMAX_H3_TOKEN", ""),
+        modal_h3_app=e("MODAL_H3_APP", "minimax-h3-diffusers-service").strip(),
+        modal_h3_class=e("MODAL_H3_CLASS", "H3BatchRunner").strip(),
+        modal_h3_steps=max(1, int(e("MODAL_H3_STEPS", "30"))),
+        modal_h3_timeout=float(e("MODAL_H3_TIMEOUT_SECONDS", "2400")),
         comfyui_url=e("COMFYUI_URL", ""),
         fal_key=e("FAL_KEY", ""),
         fal_video_model=e("FAL_VIDEO_MODEL", ""),

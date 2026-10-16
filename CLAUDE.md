@@ -178,8 +178,14 @@ variables: [product_name]        # 选填，声明正文使用的变量
 ### 5.5 可扩展 VideoProvider
 
 - 统一接口位于 `app/providers/video/base.py`：`warmup()`（Serverless 冷启动预热）、`generate()`、默认 600 秒超时。
-- 实现：`ModalMiniMaxH3Provider`（Modal 上的 H3）、`ManualComfyUIBridgeProvider`（人工复制粘贴桥接）、`FalAIVideoProvider`（预留，暂未实现）、`DemoVideoProvider`（本地 ffmpeg 合成演示）。
+- 实现：`ModalMiniMaxH3Provider`（通过 Modal SDK 调用已部署的 `minimax-h3-diffusers-service.H3BatchRunner`，见下）、`ManualComfyUIBridgeProvider`（人工复制粘贴桥接）、`FalAIVideoProvider`（预留，暂未实现）、`DemoVideoProvider`（本地 ffmpeg 合成演示）。
 - 新增视频后端只需继承 `VideoProvider` 并注册，不改业务代码。
+- `ModalMiniMaxH3Provider` 调用约定（服务端源码 `modal/h3_diffusers_service.py`，属于用户自有部署脚本，本项目不修改）：
+  - 按 `MODAL_H3_APP` / `MODAL_H3_CLASS` 用 `modal.Cls.from_name` 查找，凭证为本机 Modal 登录，没有 Web 端点、没有 URL。
+  - 锁定首帧后统一走 `workflow="ref2va"`：`images[0]` = 锁定首帧（`<Picture 1>`），其后为该分镜绑定的商品参考图（`<Picture 2>`…，总数 ≤9）；提示词前自动声明各 Picture 的角色。
+  - 帧数 = 时长 × 24fps，向上取到 17n+5，范围 124~345（约 5.2~14.4 秒；短于 5.2 秒的分镜会被拉长到 5.2 秒）。
+  - `aspect_ratio` 直接传剧本比例；同一剧本使用同一 seed。
+  - 「检查服务」只做 `hydrate()` 查找，不启动 GPU。
 
 ### 5.6 真实 API / 零 Key 演示双模式
 

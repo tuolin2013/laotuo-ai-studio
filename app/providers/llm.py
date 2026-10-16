@@ -14,6 +14,8 @@ from typing import Any
 
 import httpx
 
+from app.providers.image import with_connect_retry
+
 ANTHROPIC_PATH = "/v1/messages"
 OPENAI_PATH = "/v1/chat/completions"
 ANTHROPIC_VERSION = "2023-06-01"
@@ -101,7 +103,8 @@ class RightAPILLM:
         async with httpx.AsyncClient(timeout=self.timeout, transport=self._transport) as client:
             for i, fmt in enumerate(order):
                 try:
-                    resp = await self._post(client, fmt, system, user, max_tokens)
+                    resp = await with_connect_retry(
+                        lambda fmt=fmt: self._post(client, fmt, system, user, max_tokens))
                 except httpx.HTTPError as e:
                     raise LLMError(f"LLM 请求失败：{type(e).__name__}") from e
                 if resp.status_code in (404, 405) and i + 1 < len(order):
