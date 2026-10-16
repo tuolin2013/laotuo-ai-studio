@@ -17,6 +17,8 @@ class Project(BaseModel):
     category_id: str
     platform_id: str
     product_name: str = ""
+    # 类目动态表单填写的商品信息（key -> 值）
+    product_info: dict[str, str] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 

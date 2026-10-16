@@ -62,17 +62,29 @@ class ProjectStore:
         with (d / "edit_log.jsonl").open("a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
 
-    def import_file(self, project_id: str, src: Path | str, subdir: str, sub_id: str | None = None) -> Path:
-        """把上传 / 生成的文件复制进项目目录，返回新路径。"""
+    def asset_dir(self, project_id: str, subdir: str, sub_id: str | None = None) -> Path:
+        """项目内素材目录（自动创建），例如 candidates/{slot_id}/。"""
         if subdir not in SUBDIRS:
             raise ValueError(f"未知的素材目录：{subdir}")
-        src = Path(src)
-        dest_dir = self.project_dir(project_id) / subdir
+        d = self.project_dir(project_id) / subdir
         if sub_id:
             if not _SAFE_ID.match(sub_id):
                 raise ValueError(f"非法的子目录 ID：{sub_id!r}")
-            dest_dir = dest_dir / sub_id
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        dest = dest_dir / src.name
-        shutil.copy2(src, dest)
+            d = d / sub_id
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def import_file(
+        self,
+        project_id: str,
+        src: Path | str,
+        subdir: str,
+        sub_id: str | None = None,
+        dest_name: str | None = None,
+    ) -> Path:
+        """把上传 / 生成的文件复制进项目目录，返回新路径。"""
+        src = Path(src)
+        dest = self.asset_dir(project_id, subdir, sub_id) / Path(dest_name or src.name).name
+        if src.resolve() != dest.resolve():
+            shutil.copy2(src, dest)
         return dest

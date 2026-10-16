@@ -21,6 +21,7 @@ include = ["app*"]
 
 [project.optional-dependencies]
 dev = [
+    "gradio_client==2.7.2",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "ruff==0.17.1",
@@ -30,6 +31,12 @@ dev = [
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    # Gradio 6.30 内部使用了 pandas 4 的弃用参数，与本项目代码无关
+    "ignore::DeprecationWarning:gradio.*",
+    "ignore:.*no_silent_downcasting.*",
+    "ignore:The copy keyword is deprecated.*",
+]
 
 [tool.ruff]
 # 中文字符按双宽计算，适当放宽

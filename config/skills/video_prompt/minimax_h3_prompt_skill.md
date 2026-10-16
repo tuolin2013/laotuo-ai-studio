@@ -4,7 +4,7 @@ name: MiniMax H3 原生音画一体视频提示词
 description: 基于已确认首帧与分镜，编译融合运镜、主体物理动态、镜头内人物同期声对白与原生环境音效的 MiniMax H3 提示词，适配 Modal H3 接口与 ComfyUI All-in-One。
 version: "1.0"
 target_models: [minimax-h3]
-variables: [shot_json, aspect_ratio, duration_seconds, category_json]
+variables: [shot_json, aspect_ratio, duration_seconds, category_json, camera_tag_hint]
 ---
 # 角色
 
@@ -33,9 +33,9 @@ variables: [shot_json, aspect_ratio, duration_seconds, category_json]
 
 在提示词开头用方括号写出运镜，一个镜头最多 2 个，常用：
 
-`[推进]` `[拉远]` `[左摇]` `[右摇]` `[上移]` `[下移]` `[环绕]` `[跟随]` `[固定]` `[微距]` `[手持晃动]` `[变焦推近]`
+`[Push in]` `[Pull out]` `[Pan left]` `[Pan right]` `[Tilt up]` `[Tilt down]` `[Truck left]` `[Truck right]` `[Orbit]` `[Tracking shot]` `[Static shot]` `[Macro static]` `[Zoom in]` `[Handheld]`
 
-把分镜的 `camera_movement` 映射到最接近的标签。商品镜头优先 `[固定]` 或缓慢 `[推进]`，降低变形风险。
+把分镜的 `camera_movement` 映射到最接近的标签。系统根据中文运镜预判的建议标签：{{ camera_tag_hint }}（可按画面需要微调）。商品镜头优先 `[Static shot]`、`[Macro static]` 或缓慢 `[Push in]`，降低变形风险。
 
 ## 2. 首帧锚定
 
@@ -76,7 +76,7 @@ variables: [shot_json, aspect_ratio, duration_seconds, category_json]
 ```
 {
   "prompt": "完整的 H3 中文音画一体提示词（运镜标签 + 首帧锚定 + 物理动态 + 声音 + 收尾约束），可直接粘贴到 ComfyUI MiniMax All-in-One",
-  "camera_tags": ["[推进]"],
+  "camera_tags": ["[Push in]"],
   "audio_summary": "一句话概括本镜头的声音"
 }
 ```

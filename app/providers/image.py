@@ -8,11 +8,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import mimetypes
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
+
+import httpx
 
 ImageFamily = Literal["openai", "gemini"]
 
@@ -114,3 +117,70 @@ def extract_gemini_images(body: dict[str, Any]) -> list[bytes]:
             if inline and inline.get("data"):
                 out.append(base64.b64decode(inline["data"]))
     return out
+
+
+class ImageAPIError(RuntimeError):
+    pass
+
+
+class RightAPIImageClient:
+    """发送已构造好的生图请求，返回图片字节列表。"""
+
+    def __init__(
+        self,
+        timeout: float = 300,
+        task_url_template: str = "",
+        poll_interval: float = 3.0,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ):
+        self.timeout = timeout
+        self.task_url_template = task_url_template
+        self.poll_interval = poll_interval
+        self._transport = transport
+
+    async def send(self, req: ImageHttpRequest, api_key: str) -> list[bytes]:
+        headers = {"Authorization": f"Bearer {api_key}"}
+        if req.family == "gemini":
+            headers["x-goog-api-key"] = api_key
+        async with httpx.AsyncClient(timeout=self.timeout, transport=self._transport) as client:
+            try:
+                if req.files:
+                    resp = await client.post(req.url, data=req.data, files=req.files, headers=headers)
+                else:
+                    resp = await client.post(req.url, json=req.json, headers=headers)
+            except httpx.HTTPError as e:
+                raise ImageAPIError(f"生图请求失败：{type(e).__name__}") from e
+            if resp.status_code >= 400:
+                raise ImageAPIError(f"生图请求失败：HTTP {resp.status_code} {resp.text[:200]}")
+            body = resp.json()
+            if req.family == "gemini" and body.get("task_id") and not body.get("candidates"):
+                body = await self._poll(client, body["task_id"], headers)
+            images = extract_openai_images(body) if req.family == "openai" else extract_gemini_images(body)
+            out: list[bytes] = []
+            for item in images:
+                if isinstance(item, bytes):
+                    out.append(item)
+                else:
+                    out.append((await client.get(item)).content)
+        if not out:
+            raise ImageAPIError("接口未返回图片")
+        return out
+
+    async def _poll(self, client: httpx.AsyncClient, task_id: str, headers: dict) -> dict[str, Any]:
+        """Gemini "async": true 模式：轮询 task_id 直到返回结果或超时。"""
+        if not self.task_url_template:
+            raise ImageAPIError("已返回 task_id，但未配置 RIGHTAPI_GEMINI_TASK_URL_TEMPLATE，无法轮询")
+        url = self.task_url_template.replace("{task_id}", task_id)
+        deadline = asyncio.get_running_loop().time() + self.timeout
+        while asyncio.get_running_loop().time() < deadline:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code < 400:
+                body = resp.json()
+                status = str(body.get("status", "")).lower()
+                result = body.get("result") or body.get("response") or body
+                if result.get("candidates"):
+                    return result
+                if status in {"failed", "error", "cancelled"}:
+                    raise ImageAPIError(f"异步生图任务失败：{body.get('error') or status}")
+            await asyncio.sleep(self.poll_interval)
+        raise ImageAPIError("异步生图任务轮询超时")

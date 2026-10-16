@@ -161,8 +161,35 @@ variables: [product_name]        # 选填，声明正文使用的变量
 ### 5.5 可扩展 VideoProvider
 
 - 统一接口位于 `app/providers/video/base.py`：`warmup()`（Serverless 冷启动预热）、`generate()`、默认 600 秒超时。
-- 实现：`ModalMiniMaxH3Provider`（Modal 上的 H3）、`ManualComfyUIBridgeProvider`（人工复制粘贴桥接）、`FalAIVideoProvider`（预留，暂未实现）。
+- 实现：`ModalMiniMaxH3Provider`（Modal 上的 H3）、`ManualComfyUIBridgeProvider`（人工复制粘贴桥接）、`FalAIVideoProvider`（预留，暂未实现）、`DemoVideoProvider`（本地 ffmpeg 合成演示）。
 - 新增视频后端只需继承 `VideoProvider` 并注册，不改业务代码。
+
+### 5.6 真实 API / 零 Key 演示双模式
+
+- 每个通道（`llm` / `openai_image` / `gemini_image` / `modal_h3`）独立判定：填写了 Key / 地址 → 真实接口；未填写 → 演示兜底。判定入口统一为 `EngineRuntime.is_live(channel)`。
+- `DEMO_MODE=true` 或界面「本地演示测试模式」开关可强制全部走演示。
+- 演示模式输出的 JSON 结构与真实 Skill 输出**完全一致**（`app/providers/demo/content.py`），后续编辑 / 确认 / 渲染流程无差别；演示图由 PIL 绘制真实中文排版并合成参考图缩略图，右上角带「DEMO 演示预览」角标。
+- LLM 同时兼容 `/v1/messages`（Anthropic 原生）与 `/v1/chat/completions`（OpenAI 兼容），`RIGHTAPI_LLM_API_FORMAT=auto` 时自动探测。
+
+## 5.7 引擎分层（`app/engine/`）
+
+| 模块 | 职责 |
+|---|---|
+| `runtime.py` | 持有配置、Skill 注册表、类目/平台、存储；决定真实 / 演示模式；创建各通道客户端 |
+| `planner_engine.py` | 执行 `ecommerce_planner` Skill → draft 策划案；支持单槽位重生成；以参考图数量自动纠正生图模式 |
+| `script_engine.py` | 执行 `video_scriptwriter` Skill → draft 分镜剧本；第 1 镜强制为 ≤3 秒钩子；画外音字段自动转为镜头内对白 |
+| `prompt_compiler.py` | 执行 `image_prompt` / `video_prompt` Skill；生成每镜 H3 提示词与 ComfyUI All-in-One 全局连续提示词 |
+| `render_engine.py` | 并发生成候选图 / 首帧 / 视频，异步生成器逐条产出事件，每张图完成立即落盘 |
+| `project_service.py` | 新建项目、跨模块复用参考图、定稿导出 zip、详情页长图序列 |
+| `compliance.py` | 广告法 / 类目违禁词检查 |
+
+## 5.8 界面（`app/ui/`）
+
+- `header.py`：项目管理、类目/平台联动、类目专属商品信息表单 + 实时合规检查、Skill 管理、API 配置（写回 `.env`，白名单键）。
+- `image_tab.py`：主图与详情页共用的三步式工作流。`video_tab.py`：视频剧本 → 首帧锁定 → H3 提示词 → ComfyUI 协同专区 / 直接生成。
+- 浏览器端 `gr.State` 只存 `project_id`；`Project` 对象由服务端 `Workspace` 缓存并按项目加锁。
+- 关键事件设置了 `api_name`，`tests/test_ui_e2e.py` 用 `gradio_client` 启动真实服务端到端驱动全流程。
+- 系统代理（如 127.0.0.1:7890）会导致 Gradio 本机自检 502：`app/main.py` 启动时自动把本机地址加入 `NO_PROXY`。
 
 ## 6. 编码规范
 

@@ -23,7 +23,11 @@ def test_load_three_platforms():
         assert p.main_image.min_count <= p.main_image.default_count <= p.main_image.max_count
         assert p.detail_page.min_screens <= p.detail_page.default_screens <= p.detail_page.max_screens
         assert p.video.default_aspect_ratio in p.video.allowed_aspect_ratios
-    assert plats["pinduoduo"].main_image.allowed_aspect_ratios == ["1:1"]
+    for p in plats.values():
+        assert set(p.main_image.allowed_aspect_ratios) >= {"1:1", "3:4", "9:16", "16:9"}
+        assert set(p.video.allowed_aspect_ratios) == {"9:16", "16:9", "1:1"}
+        assert p.visual_style_weights
+    assert load_categories()["pet_supplement"].product_form_fields[0].label == "适用犬猫"
 
 
 def test_config_id_must_match_filename(tmp_path):

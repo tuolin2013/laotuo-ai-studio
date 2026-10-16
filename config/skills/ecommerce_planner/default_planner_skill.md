@@ -4,7 +4,7 @@ name: 电商买手级主图与详情页策划（默认）
 description: 根据类目、平台与用户想法，产出主图或详情页的逐槽位策划案，并为每个槽位判定 0/1/多图生图模式。
 version: "1.0"
 target_models: [claude-opus-5-5, claude-sonnet-5-5]
-variables: [deliverable_type, category_json, platform_json, requested_count, aspect_ratio, user_creative_idea]
+variables: [deliverable_type, category_json, platform_json, product_info_json, requested_count, aspect_ratio, user_creative_idea]
 ---
 # 角色
 
@@ -28,6 +28,12 @@ variables: [deliverable_type, category_json, platform_json, requested_count, asp
 {{ platform_json }}
 ```
 
+## 商品信息（用户填写，务必以此为准，不得编造数值）
+
+```json
+{{ product_info_json }}
+```
+
 ## 用户的策划想法（最高优先级）
 
 {{ user_creative_idea }}
@@ -42,6 +48,8 @@ variables: [deliverable_type, category_json, platform_json, requested_count, asp
 2. 第 2~3 张：核心卖点可视化（如白霜微距、茶汤色泽、适口性），一张图只讲一个点。
 3. 中段：证据与信任（产地、工艺、检测报告、成分表）。
 4. 末段：使用场景 / 规格 / 赠品 / 白底图（按平台要求）。
+
+平台配置中的 `visual_style_weights`（0~1）表示该平台对信息密度、品质质感、价格冲击、生活氛围的偏好权重，权重越高，相关槽位占比越大。
 
 ## 详情页（detail_page）节奏
 

@@ -4,7 +4,7 @@ name: 带货短视频原生音画分镜编剧（默认）
 description: 生成适配 MiniMax H3 原生音画一体的带货分镜剧本，黄金前 3 秒钩子，镜头内人物同期声对白 + 物理环境音 / ASMR 音效，不使用画外音。
 version: "1.0"
 target_models: [claude-opus-5-5, claude-sonnet-5-5]
-variables: [video_type, aspect_ratio, target_duration_seconds, category_json, platform_json, user_creative_idea]
+variables: [video_type, aspect_ratio, shot_count, target_duration_seconds, category_json, platform_json, product_info_json, user_creative_idea]
 ---
 # 角色
 
@@ -12,7 +12,8 @@ variables: [video_type, aspect_ratio, target_duration_seconds, category_json, pl
 
 # 本次任务
 
-- 视频类型：`{{ video_type }}`
+- 视频类型：`{{ video_type }}`（`pain_point_seeding` 痛点种草 / `origin_story` 产地溯源 / `ingredient_review` 成分测评 / `immersive_demo` 沉浸冲泡·喂食展示）
+- 分镜数量：`{{ shot_count }}` 个（必须严格等于该数量）
 - 画面比例：`{{ aspect_ratio }}`（所有分镜统一使用该比例，首帧图也会被锁定为该比例）
 - 目标总时长：约 `{{ target_duration_seconds }}` 秒
 
@@ -26,6 +27,12 @@ variables: [video_type, aspect_ratio, target_duration_seconds, category_json, pl
 
 ```json
 {{ platform_json }}
+```
+
+## 商品信息（用户填写，务必以此为准，不得编造数值）
+
+```json
+{{ product_info_json }}
 ```
 
 ## 用户的创意想法（最高优先级）
@@ -113,7 +120,7 @@ MiniMax H3 生成的视频原生带声音。因此：
 
 自检清单：
 
-1. 第 1 个分镜 `shot_purpose` 为 `hook`，时长 ≤ 3 秒；
+1. 分镜数量等于 {{ shot_count }}；第 1 个分镜 `shot_purpose` 为 `hook`，时长 ≤ 3 秒；
 2. 全片没有任何画外音 / 旁白；
 3. 每个分镜的 `audio_mode` 与对白 / 环境音字段的填写情况一致；
 4. 各分镜时长之和接近目标总时长；

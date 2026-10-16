@@ -19,7 +19,14 @@ from app.schemas.editable import BindableItem, EditablePlanBase, ReferenceRequir
 
 AudioMode = Literal["native_dialogue", "ambient_sfx", "dialogue_and_ambient", "silent"]
 ShotPurpose = Literal["hook", "selling_point", "proof", "scene", "call_to_action"]
-VideoType = Literal["product_showcase", "brewing_asmr", "origin_story", "pain_point_drama", "pet_reaction"]
+# 痛点种草 / 产地溯源 / 成分测评 / 沉浸冲泡·喂食展示
+VideoType = Literal["pain_point_seeding", "origin_story", "ingredient_review", "immersive_demo"]
+VIDEO_TYPE_LABELS: dict[str, str] = {
+    "pain_point_seeding": "痛点种草",
+    "origin_story": "产地溯源",
+    "ingredient_review": "成分测评",
+    "immersive_demo": "沉浸冲泡 / 喂食展示",
+}
 
 _DIALOGUE_MODES = {"native_dialogue", "dialogue_and_ambient"}
 _AMBIENT_MODES = {"ambient_sfx", "dialogue_and_ambient"}
@@ -64,6 +71,7 @@ class StoryboardShot(BindableItem):
     first_frame_generation_mode: GenerationMode = "text_to_image"
 
     # —— 渲染阶段产物 ——
+    first_frame_prompt: str | None = None
     first_frame_candidates: list[FirstFrameImage] = Field(default_factory=list)
     confirmed_first_frame_id: str | None = None
     h3_prompt: str | None = None
@@ -117,7 +125,7 @@ class VideoScript(EditablePlanBase):
 
     ITEMS_FIELD: ClassVar[str] = "shots"
     LOCKED_FIELDS: ClassVar[frozenset[str]] = frozenset(
-        {"first_frame_candidates", "confirmed_first_frame_id", "videos", "h3_prompt"}
+        {"first_frame_candidates", "confirmed_first_frame_id", "videos", "h3_prompt", "first_frame_prompt"}
     )
 
     script_id: str = Field(default_factory=lambda: new_id("script"))
@@ -153,6 +161,7 @@ class VideoScript(EditablePlanBase):
     def _on_item_edited(self, item: StoryboardShot, changed: set[str]) -> None:
         # 剧本内容变了，已生成的首帧与 H3 提示词全部失效
         item.first_frame_candidates = []
+        item.first_frame_prompt = None
         item.confirmed_first_frame_id = None
         item.h3_prompt = None
         item.videos = []
@@ -231,6 +240,6 @@ class VideoScript(EditablePlanBase):
 def shot_from_llm(data: dict[str, Any]) -> StoryboardShot:
     """把编剧 Skill 输出的单个分镜 JSON 转成 StoryboardShot。"""
     refs = [ReferenceRequirement.model_validate(r) for r in data.get("required_references") or []]
-    blocked = {"shot_id", "first_frame_candidates", "confirmed_first_frame_id", "videos", "h3_prompt"}
+    blocked = {"shot_id", *VideoScript.LOCKED_FIELDS}
     fields = {k: v for k, v in data.items() if k != "required_references" and k not in blocked}
     return StoryboardShot(required_references=refs, **fields)

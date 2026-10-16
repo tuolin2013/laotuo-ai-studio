@@ -13,6 +13,14 @@ class VisualStyle(BaseModel):
     props: list[str] = Field(default_factory=list)
 
 
+class ProductFormField(BaseModel):
+    """类目专属的商品信息输入项（界面动态表单）。"""
+
+    key: str
+    label: str
+    placeholder: str = ""
+
+
 class CategoryConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -30,6 +38,7 @@ class CategoryConfig(BaseModel):
     forbidden_words: list[str] = Field(default_factory=list)
     video_scene_suggestions: list[str] = Field(default_factory=list)
     ambient_sound_library: list[str] = Field(default_factory=list)
+    product_form_fields: list[ProductFormField] = Field(default_factory=list)
 
 
 class _RatioSpec(BaseModel):
@@ -72,3 +81,5 @@ class PlatformConfig(BaseModel):
     video: VideoSpec
     copy_style: str = ""
     forbidden_words: list[str] = Field(default_factory=list)
+    # 视觉风格权重（0~1），供策划 Skill 参考
+    visual_style_weights: dict[str, float] = Field(default_factory=dict)

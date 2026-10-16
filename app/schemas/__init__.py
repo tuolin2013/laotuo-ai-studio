@@ -12,6 +12,7 @@ from app.schemas.plan import CandidateImage, ImagePlan, ImageSlot, slot_from_llm
 from app.schemas.project import Project
 from app.schemas.skill import SKILL_SLOTS, SkillCard, SkillRenderError, SkillSlot
 from app.schemas.video import (
+    VIDEO_TYPE_LABELS,
     AudioMode,
     FirstFrameImage,
     StoryboardShot,
@@ -22,6 +23,7 @@ from app.schemas.video import (
 
 __all__ = [
     "SKILL_SLOTS",
+    "VIDEO_TYPE_LABELS",
     "AspectRatio",
     "AudioMode",
     "CandidateImage",
