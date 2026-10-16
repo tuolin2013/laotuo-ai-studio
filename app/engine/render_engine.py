@@ -12,7 +12,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.engine.image_router import family_for_model, key_for_family, route_image_request
+from app.engine.image_router import image_key, route_image_request
 from app.engine.prompt_compiler import PromptCompiler
 from app.engine.runtime import EngineRuntime
 from app.providers.demo.render import DemoArt, render_demo_image
@@ -51,18 +51,18 @@ class RenderEngine:
 
     async def _generate_images(
         self, *, model: str, prompt: str, aspect_ratio: str, references: list[Path], n: int, out_dir: Path,
-        prefix: str, art: DemoArt,
+        prefix: str, art: DemoArt, resolution: str | None = None,
     ) -> list[Path]:
         """真实接口或演示渲染，返回保存后的图片路径。"""
         out_dir.mkdir(parents=True, exist_ok=True)
-        channel = self.rt.image_channel(model)
-        if self.rt.is_live(channel):
-            req = route_image_request(self.rt.settings, model, prompt, aspect_ratio, references, n=n)
-            key = key_for_family(self.rt.settings, family_for_model(model))
+        if self.rt.is_live("image"):
+            req = route_image_request(self.rt.settings, model, prompt, aspect_ratio, references, n=n,
+                                      resolution=resolution)
+            key = image_key(self.rt.settings)
             client = self.rt.image_client()
             images: list[bytes] = []
             if req.family == "gemini":
-                # Gemini 一次返回 1 张，候选图通过并发多次请求获得
+                # Nano-Banana 一次返回 1 张，候选图通过并发多次请求获得
                 results = await asyncio.gather(*(client.send(req, key) for _ in range(n)))
                 for r in results:
                     images.extend(r[:1])
@@ -92,6 +92,7 @@ class RenderEngine:
         model: str,
         skill_id: str,
         slot_ids: list[str] | None = None,
+        resolution: str | None = None,
     ) -> AsyncIterator[RenderEvent]:
         plan.require_confirmed()
         missing = plan.missing_references()
@@ -100,8 +101,10 @@ class RenderEngine:
                               "、".join(m.role for m in missing))
         slots = [s for s in plan.slots if slot_ids is None or s.slot_id in slot_ids]
         cat = self.rt.category(plan.category_id)
-        mode = "真实 API" if self.rt.is_live(self.rt.image_channel(model)) else "演示模式"
-        yield RenderEvent(f"🚀 开始并发生成 {len(slots)} 个槽位（模型 {model}，{mode}，并发上限 {MAX_PARALLEL}）")
+        mode = "真实 API" if self.rt.is_live("image") else "演示模式"
+        res = resolution or self.rt.settings.image_resolution
+        yield RenderEvent(
+            f"🚀 开始并发生成 {len(slots)} 个槽位（模型 {model}，{res}，{mode}，并发上限 {MAX_PARALLEL}）")
 
         queue: asyncio.Queue[RenderEvent] = asyncio.Queue()
         sem = asyncio.Semaphore(MAX_PARALLEL)
@@ -129,7 +132,7 @@ class RenderEngine:
                     paths = await self._generate_images(
                         model=model, prompt=prompt, aspect_ratio=slot.aspect_ratio,
                         references=[a.file_path for a in refs], n=slot.candidate_count, out_dir=out_dir,
-                        prefix=slot.slot_id, art=art,
+                        prefix=slot.slot_id, art=art, resolution=res,
                     )
                 for p in paths:
                     slot.candidates.append(CandidateImage(file_path=p, model=model, prompt=prompt))
@@ -166,7 +169,7 @@ class RenderEngine:
 
     async def render_first_frames(
         self, project: Project, script: VideoScript, model: str, skill_id: str, shot_ids: list[str] | None = None,
-        count: int = 1,
+        count: int = 1, resolution: str | None = None,
     ) -> AsyncIterator[RenderEvent]:
         script.require_confirmed()
         cat = self.rt.category(script.category_id)
@@ -198,7 +201,7 @@ class RenderEngine:
                     paths = await self._generate_images(
                         model=model, prompt=prompt, aspect_ratio=script.aspect_ratio,
                         references=[a.file_path for a in refs], n=count, out_dir=out_dir, prefix=shot.shot_id,
-                        art=art,
+                        art=art, resolution=resolution,
                     )
                 for p in paths:
                     script.add_first_frame(shot.shot_id, p, model=model, prompt=prompt,

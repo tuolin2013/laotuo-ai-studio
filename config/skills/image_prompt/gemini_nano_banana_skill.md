@@ -1,9 +1,9 @@
 ---
 skill_id: gemini_nano_banana
-name: Gemini 图像（3 Pro Image / Nano Banana）电商生图提示词
+name: Nano-Banana（Gemini 图像）电商生图提示词
 description: 将策划槽位编译为 Gemini 图像模型的叙述式提示词，适配 generateContent 的文本 + inline_data 多图输入。
 version: "1.0"
-target_models: [gemini-3-pro-image-preview, gemini-nano-banana-2.1]
+target_models: [nano-banana-pro, nano-banana-2, nano-banana-2-lite]
 variables: [slot_json, category_json, platform_json, aspect_ratio, reference_roles]
 ---
 # 角色

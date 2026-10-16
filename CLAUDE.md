@@ -135,16 +135,26 @@ variables: [product_name]        # 选填，声明正文使用的变量
 - 每个槽位可设置候选图数量 1~4，并发生成供勾选定稿。
 - 主图 / 详情页张数不锁死：平台配置给出默认建议值，用户可自由指定数量与比例。
 
-### 5.3 RightAPI 三把独立 Key
+### 5.3 RightAPI 两把 Key
+
+默认 Base URL：`https://rightapi.ai`（`normalize_base_url` 自动补 `https://`、去掉结尾 `/`、`/v1`、`/v1beta`）。
 
 | Key | 用途 | 接口 |
 |---|---|---|
-| `RIGHTAPI_LLM_KEY` | Claude LLM，执行全部 Skill | RightAPI LLM 接口 |
-| `RIGHTAPI_OPENAI_IMAGE_KEY` | gpt-image-2 / 2.5-flare / 2.5-sunburst | 参考图 0 张 → `POST /v1/images/generations`；≥1 张 → `POST /v1/images/edits` |
-| `RIGHTAPI_GEMINI_IMAGE_KEY` | gemini-3-pro-image-preview / nano-banana-2.1 | `POST /v1beta/models/{model}:generateContent`（禁止 `:streamGenerateContent`）；参考图以 base64 `inline_data` 放入 `contents.parts`；支持 `"async": true` + `task_id` 轮询 |
+| `RIGHTAPI_LLM_KEY` | Claude LLM（AwsQ / 官渠），执行全部 Skill | `/v1/messages` 或 `/v1/chat/completions`（`RIGHTAPI_LLM_API_FORMAT`） |
+| `RIGHTAPI_IMAGE_KEY` | Image 渠道通用 Key，**GPT-Image 与 Nano-Banana 共用** | 见下方按模型分流 |
+
+画图按所选模型名自动分流（`app/engine/image_router.py`），请求同时携带 `Authorization: Bearer` 与 `x-goog-api-key`：
+
+| 模型 | 接口 |
+|---|---|
+| `gpt-image-2.5` / `gpt-image-2` | 参考图 0 张 → `POST /v1/images/generations`；≥1 张 → `POST /v1/images/edits`；返回 `b64_json` 或 `url`（自动下载） |
+| `nano-banana-pro` / `nano-banana-2` / `nano-banana-2-lite` | 优先 `POST /v1beta/models/{model}:generateContent`（禁止 `:streamGenerateContent`），参考图以 base64 `inline_data` 放入 `contents.parts`，`imageConfig` 带比例与 `1K/2K/4K`；支持 `"async": true` + `task_id` 轮询；原生端点 404/405 时自动回退 OpenAI Images 兼容端点 |
 
 - 路由依据是槽位**实际绑定**的参考图数量，而不是策划时的模式字段。
-- 三把 Key 互不混用；Key 只从环境变量读取，日志中不得打印 Key。
+- LLM Key 只用于文本，Image Key 只用于画图，二者不混用；Key 只从环境变量读取，日志与诊断结果中只显示打码后的 Key。
+- 旧变量名 `RIGHTAPI_OPENAI_IMAGE_KEY` / `RIGHTAPI_GEMINI_IMAGE_KEY` 仅作读取兼容，界面与 `.env.example` 统一使用 `RIGHTAPI_IMAGE_KEY`。
+- 「🩺 连通性诊断」（`app/engine/diagnostics.py`）：LLM 发一条极短消息，画图只请求 `GET /v1/models`，不消耗画图额度。
 
 ### 5.4 视频：MiniMax H3 原生音画一体
 
@@ -166,7 +176,7 @@ variables: [product_name]        # 选填，声明正文使用的变量
 
 ### 5.6 真实 API / 零 Key 演示双模式
 
-- 每个通道（`llm` / `openai_image` / `gemini_image` / `modal_h3`）独立判定：填写了 Key / 地址 → 真实接口；未填写 → 演示兜底。判定入口统一为 `EngineRuntime.is_live(channel)`。
+- 每个通道（`llm` / `image` / `modal_h3`）独立判定：填写了 Key / 地址 → 真实接口；未填写 → 演示兜底。判定入口统一为 `EngineRuntime.is_live(channel)`。
 - `DEMO_MODE=true` 或界面「本地演示测试模式」开关可强制全部走演示。
 - 演示模式输出的 JSON 结构与真实 Skill 输出**完全一致**（`app/providers/demo/content.py`），后续编辑 / 确认 / 渲染流程无差别；演示图由 PIL 绘制真实中文排版并合成参考图缩略图，右上角带「DEMO 演示预览」角标。
 - LLM 同时兼容 `/v1/messages`（Anthropic 原生）与 `/v1/chat/completions`（OpenAI 兼容），`RIGHTAPI_LLM_API_FORMAT=auto` 时自动探测。

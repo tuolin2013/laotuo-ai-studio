@@ -3,7 +3,7 @@ skill_id: gpt_image_2
 name: GPT-Image-2 / 2.5 电商生图提示词
 description: 将策划槽位编译为 GPT-Image-2 系列的英文主提示词，覆盖文生图、单图保真编辑、多图融合与中文排版。
 version: "1.0"
-target_models: [gpt-image-2, gpt-image-2.5-flare, gpt-image-2.5-sunburst]
+target_models: [gpt-image-2.5, gpt-image-2]
 variables: [slot_json, category_json, platform_json, aspect_ratio, reference_roles]
 ---
 # 角色

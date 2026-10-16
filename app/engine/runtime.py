@@ -48,16 +48,13 @@ class EngineRuntime:
     def is_live(self, channel: str) -> bool:
         return not self.force_demo and self.settings.channel_live(channel)
 
-    def image_channel(self, model: str) -> str:
-        return "openai_image" if model.startswith("gpt-image") else "gemini_image"
-
     def mode_summary(self) -> str:
         def tag(ch: str) -> str:
             return "🟢 真实 API" if self.is_live(ch) else "🟡 演示模式"
 
         return (
-            f"LLM：{tag('llm')}　｜　OpenAI 生图：{tag('openai_image')}　｜　"
-            f"Gemini 生图：{tag('gemini_image')}　｜　Modal H3：{tag('modal_h3')}"
+            f"LLM：{tag('llm')}　｜　画图（GPT-Image + Nano-Banana）：{tag('image')}　｜　"
+            f"Modal H3：{tag('modal_h3')}"
         )
 
     # ---------- 客户端 ----------

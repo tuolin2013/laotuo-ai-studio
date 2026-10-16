@@ -7,9 +7,10 @@ from dataclasses import dataclass
 import gradio as gr
 
 from app.engine.compliance import compliance_report
+from app.engine.diagnostics import diagnose
 from app.engine.project_service import create_project
 from app.schemas.skill import SKILL_SLOTS
-from app.settings import save_env
+from app.settings import IMAGE_RESOLUTIONS, save_env
 from app.ui.state import UIError, Workspace, friendly
 
 MAX_FORM_FIELDS = 8
@@ -111,21 +112,24 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
                     "（本地生成逼真预览，不消耗额度）。")
         demo_toggle = gr.Checkbox(value=s.demo_mode, label="🧪 本地演示测试模式（勾选后即使填了 Key 也不调用真实接口）")
         with gr.Row():
-            llm_key = gr.Textbox(value=s.llm_key, label="RIGHTAPI_LLM_KEY（Claude）", type="password")
+            llm_key = gr.Textbox(value=s.llm_key, label="RightAPI LLM 密钥 (RIGHTAPI_LLM_KEY)",
+                                 info="填入 Claude AwsQ 或 Claude 官渠 Key", type="password")
             llm_fmt = gr.Dropdown([("自动探测", "auto"), ("Anthropic /v1/messages", "anthropic"),
                                    ("OpenAI /v1/chat/completions", "openai")], value=s.llm_api_format,
                                   label="LLM 接口格式")
         with gr.Row():
-            oai_key = gr.Textbox(value=s.openai_image_key, label="RIGHTAPI_OPENAI_IMAGE_KEY（GPT-Image）",
+            img_key = gr.Textbox(value=s.image_key, label="RightAPI 画图通用密钥 (RIGHTAPI_IMAGE_KEY)",
+                                 info="填入 Image 渠道 Key（如 draw），同时支持 GPT-Image 与 Nano-Banana",
                                  type="password")
-            gem_key = gr.Textbox(value=s.gemini_image_key, label="RIGHTAPI_GEMINI_IMAGE_KEY（Gemini 图像）",
-                                 type="password")
+            img_res = gr.Dropdown(list(IMAGE_RESOLUTIONS), value=s.image_resolution, label="画图分辨率")
         with gr.Row():
             modal_url = gr.Textbox(value=s.modal_h3_url, label="MODAL_H3_ENDPOINT_URL",
                                    placeholder="https://xxx.modal.run")
             comfy_url = gr.Textbox(value=s.comfyui_url, label="COMFYUI_URL",
                                    placeholder="https://xxx.modal.run（ComfyUI MiniMax All-in-One）")
-        save_btn = gr.Button("💾 保存配置到 .env", variant="primary")
+        with gr.Row():
+            save_btn = gr.Button("💾 保存配置到 .env", variant="primary")
+            diag_btn = gr.Button("🩺 连通性诊断（不消耗画图额度）")
         save_status = gr.Markdown()
 
     # ================= 事件
@@ -218,11 +222,11 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
     apply_override.click(do_apply, [preview_slot, skill_body, *dd], skill_status)
     reset_override.click(do_reset, [preview_slot, *dd], [skill_body, skill_status])
 
-    def do_save(demo, k1, fmt, k2, k3, murl, curl):
+    def do_save(demo, k1, fmt, k2, res, murl, curl):
         try:
             new = save_env({
-                "RIGHTAPI_LLM_KEY": k1, "RIGHTAPI_LLM_API_FORMAT": fmt, "RIGHTAPI_OPENAI_IMAGE_KEY": k2,
-                "RIGHTAPI_GEMINI_IMAGE_KEY": k3, "MODAL_H3_ENDPOINT_URL": murl, "COMFYUI_URL": curl,
+                "RIGHTAPI_LLM_KEY": k1, "RIGHTAPI_LLM_API_FORMAT": fmt, "RIGHTAPI_IMAGE_KEY": k2,
+                "RIGHTAPI_IMAGE_RESOLUTION": res, "MODAL_H3_ENDPOINT_URL": murl, "COMFYUI_URL": curl,
                 "DEMO_MODE": "true" if demo else "false",
             })
         except (ValueError, OSError) as e:
@@ -231,8 +235,15 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
         rt.force_demo = bool(demo)
         return "✅ 已保存到 .env 并立即生效", rt.mode_summary()
 
-    save_btn.click(do_save, [demo_toggle, llm_key, llm_fmt, oai_key, gem_key, modal_url, comfy_url],
+    save_btn.click(do_save, [demo_toggle, llm_key, llm_fmt, img_key, img_res, modal_url, comfy_url],
                    [save_status, mode_status])
+
+    async def do_diag():
+        yield "🩺 正在检测连通性…"
+        report = await diagnose(rt.settings)
+        yield report
+
+    diag_btn.click(do_diag, None, save_status, concurrency_id="diagnose")
 
     def toggle_demo(demo):
         rt.force_demo = bool(demo)

@@ -11,6 +11,7 @@ from app.engine.prompt_compiler import PromptCompiler, global_continuous_prompt,
 from app.engine.render_engine import RenderEngine
 from app.engine.script_engine import ScriptEngine
 from app.schemas.video import VIDEO_TYPE_LABELS, VideoScript
+from app.settings import IMAGE_RESOLUTIONS
 from app.ui.header import Header, collect_info, require_project
 from app.ui.image_tab import MAX_REF_ROLES
 from app.ui.state import (
@@ -145,6 +146,7 @@ def build_video_tab(ws: Workspace, header: Header) -> None:
             with gr.Row():
                 frame_model = gr.Dropdown(rt.settings.image_models, value=rt.settings.image_models[0],
                                           label="首帧生图模型")
+                frame_res = gr.Dropdown(list(IMAGE_RESOLUTIONS), value=rt.settings.image_resolution, label="分辨率")
                 frame_n = gr.Slider(1, 4, value=2, step=1, label="每镜首帧候选数")
             frame_btn = gr.Button("🖼️ 生成各分镜静态首帧图", variant="primary")
             frames = gr.Gallery(label="首帧候选（比例已锁定为视频比例）", columns=4, height=360,
@@ -415,14 +417,15 @@ def build_video_tab(ws: Workspace, header: Header) -> None:
 
     reuse_btn.click(do_reuse, [header.project_id, logs], [logs, *refresh_outputs], api_name="video_reuse")
 
-    async def do_frames(pid, m, n, prev):
+    async def do_frames(pid, m, n, r, prev):
         p = require_project(ws, pid)
         s = p.video_script
         if s is None or s.plan_status != "confirmed":
             raise gr.Error("请先确认视频分镜剧本，再生成首帧")
         log = prev
         try:
-            async for ev in renderer.render_first_frames(p, s, m, image_skill_for_model(m), count=int(n)):
+            async for ev in renderer.render_first_frames(p, s, m, image_skill_for_model(m), count=int(n),
+                                                         resolution=r):
                 log = _log(log, ev.message)
                 if ev.image_path or ev.done:
                     yield [log, *_refresh(pid)]
@@ -432,7 +435,7 @@ def build_video_tab(ws: Workspace, header: Header) -> None:
             log = _log(log, friendly(e))
         yield [log, *_refresh(pid)]
 
-    frame_btn.click(do_frames, [header.project_id, frame_model, frame_n, logs], [logs, *refresh_outputs],
+    frame_btn.click(do_frames, [header.project_id, frame_model, frame_n, frame_res, logs], [logs, *refresh_outputs],
                     concurrency_id="video_render", concurrency_limit=2, api_name="video_first_frames")
 
     def on_lock_shot(pid, sid):

@@ -11,12 +11,14 @@ from dotenv import load_dotenv, set_key
 from app.engine.config_loader import PROJECT_ROOT
 
 ENV_FILE = PROJECT_ROOT / ".env"
+DEFAULT_BASE_URL = "https://rightapi.ai"
+IMAGE_RESOLUTIONS = ("1K", "2K", "4K")
 
 # 界面「API 配置」面板允许写回 .env 的键
 EDITABLE_ENV_KEYS = (
     "RIGHTAPI_LLM_KEY",
-    "RIGHTAPI_OPENAI_IMAGE_KEY",
-    "RIGHTAPI_GEMINI_IMAGE_KEY",
+    "RIGHTAPI_IMAGE_KEY",
+    "RIGHTAPI_IMAGE_RESOLUTION",
     "MODAL_H3_ENDPOINT_URL",
     "COMFYUI_URL",
     "RIGHTAPI_LLM_API_FORMAT",
@@ -32,24 +34,36 @@ def _bool(value: str | None) -> bool:
     return (value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def normalize_base_url(url: str | None) -> str:
+    """容错处理：补全 https://、去掉结尾的 / 以及误填的 /v1、/v1beta 后缀。"""
+    url = (url or "").strip() or DEFAULT_BASE_URL
+    if "://" not in url:
+        url = "https://" + url
+    url = url.rstrip("/")
+    for suffix in ("/v1beta", "/v1"):
+        if url.endswith(suffix):
+            url = url[: -len(suffix)]
+    return url.rstrip("/")
+
+
 @dataclass(frozen=True)
 class Settings:
-    rightapi_base_url: str = "https://www.rightapi.ai"
+    rightapi_base_url: str = DEFAULT_BASE_URL
     llm_key: str = field(default="", repr=False)
     llm_model: str = "claude-opus-5-5"
     # auto：先试 /v1/messages（Anthropic 原生），404/405 时回退 /v1/chat/completions
     llm_api_format: str = "auto"
     llm_timeout: float = 180
-    openai_image_key: str = field(default="", repr=False)
-    openai_image_model: str = "gpt-image-2"
-    openai_image_models: list[str] = field(
-        default_factory=lambda: ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst", "gpt-image-2"]
-    )
-    gemini_image_key: str = field(default="", repr=False)
-    gemini_image_model: str = "gemini-3-pro-image-preview"
+    # Image 渠道通用 Key：GPT-Image 与 Nano-Banana 共用
+    image_key: str = field(default="", repr=False)
+    openai_image_models: list[str] = field(default_factory=lambda: ["gpt-image-2.5", "gpt-image-2"])
     gemini_image_models: list[str] = field(
-        default_factory=lambda: ["gemini-3-pro-image-preview", "gemini-nano-banana-2.1"]
+        default_factory=lambda: ["nano-banana-pro", "nano-banana-2", "nano-banana-2-lite"]
     )
+    # Nano-Banana 输出分辨率：1K / 2K / 4K
+    image_resolution: str = "2K"
+    # Nano-Banana 原生接口 404/405 时，是否回退 OpenAI Images 兼容端点
+    gemini_openai_fallback: bool = True
     gemini_async: bool = False
     gemini_task_url_template: str = ""
     image_timeout: float = 300
@@ -78,12 +92,16 @@ class Settings:
         return bool(
             {
                 "llm": self.llm_key,
-                "openai_image": self.openai_image_key,
-                "gemini_image": self.gemini_image_key,
+                "image": self.image_key,
                 "modal_h3": self.modal_h3_url,
                 "fal_ai": self.fal_key,
             }[channel]
         )
+
+
+def _resolution(value: str) -> str:
+    v = (value or "").strip().upper()
+    return v if v in IMAGE_RESOLUTIONS else "2K"
 
 
 def load_settings(env_file: Path | None = None, override: bool = False) -> Settings:
@@ -92,17 +110,18 @@ def load_settings(env_file: Path | None = None, override: bool = False) -> Setti
     workspace = Path(e("WORKSPACE_DIR", "workspace"))
     defaults = Settings()
     return Settings(
-        rightapi_base_url=e("RIGHTAPI_BASE_URL", "https://www.rightapi.ai").rstrip("/"),
+        rightapi_base_url=normalize_base_url(e("RIGHTAPI_BASE_URL")),
         llm_key=e("RIGHTAPI_LLM_KEY", ""),
         llm_model=e("RIGHTAPI_LLM_MODEL", "claude-opus-5-5"),
         llm_api_format=e("RIGHTAPI_LLM_API_FORMAT", "auto").strip().lower() or "auto",
         llm_timeout=float(e("RIGHTAPI_LLM_TIMEOUT_SECONDS", "180")),
-        openai_image_key=e("RIGHTAPI_OPENAI_IMAGE_KEY", ""),
-        openai_image_model=e("RIGHTAPI_OPENAI_IMAGE_MODEL", "gpt-image-2"),
+        # 兼容旧版的两个变量名（RIGHTAPI_OPENAI_IMAGE_KEY / RIGHTAPI_GEMINI_IMAGE_KEY）
+        image_key=(e("RIGHTAPI_IMAGE_KEY", "") or e("RIGHTAPI_OPENAI_IMAGE_KEY", "")
+                   or e("RIGHTAPI_GEMINI_IMAGE_KEY", "")),
         openai_image_models=_list(e("RIGHTAPI_OPENAI_IMAGE_MODELS", "")) or defaults.openai_image_models,
-        gemini_image_key=e("RIGHTAPI_GEMINI_IMAGE_KEY", ""),
-        gemini_image_model=e("RIGHTAPI_GEMINI_IMAGE_MODEL", "gemini-3-pro-image-preview"),
         gemini_image_models=_list(e("RIGHTAPI_GEMINI_IMAGE_MODELS", "")) or defaults.gemini_image_models,
+        image_resolution=_resolution(e("RIGHTAPI_IMAGE_RESOLUTION", "2K")),
+        gemini_openai_fallback=_bool(e("RIGHTAPI_GEMINI_OPENAI_FALLBACK", "true")),
         gemini_async=_bool(e("RIGHTAPI_GEMINI_ASYNC")),
         gemini_task_url_template=e("RIGHTAPI_GEMINI_TASK_URL_TEMPLATE", ""),
         image_timeout=float(e("RIGHTAPI_IMAGE_TIMEOUT_SECONDS", "300")),

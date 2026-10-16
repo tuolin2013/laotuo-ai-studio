@@ -13,6 +13,7 @@ from app.engine.prompt_compiler import image_skill_for_model
 from app.engine.render_engine import RenderEngine
 from app.providers.demo.content import auto_detail_screens
 from app.schemas.plan import ImagePlan
+from app.settings import IMAGE_RESOLUTIONS
 from app.ui.header import Header, collect_info, require_project
 from app.ui.state import (
     MODE_CHOICES,
@@ -181,6 +182,7 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
                 single_btn = gr.Button("📎 绑定到该槽位")
             with gr.Row():
                 model = gr.Dropdown(rt.settings.image_models, value=rt.settings.image_models[0], label="生图模型")
+                res = gr.Dropdown(list(IMAGE_RESOLUTIONS), value=rt.settings.image_resolution, label="分辨率")
                 cand = gr.Slider(1, 4, value=2, step=1, label="每槽位候选图数量")
             render_btn = gr.Button(f"🚀 开始并发生成{spec.label}", variant="primary", size="lg")
 
@@ -410,7 +412,7 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
 
     single_btn.click(do_single, [header.project_id, single_slot, single_img, logs], [logs, *refresh_outputs])
 
-    async def do_render(pid, m, n, prev):
+    async def do_render(pid, m, n, r, prev):
         p = require_project(ws, pid)
         plan = getattr(p, spec.attr)
         if plan is None:
@@ -422,7 +424,7 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
         log = prev
         skill = image_skill_for_model(m)
         try:
-            async for ev in renderer.render_plan(p, plan, m, skill):
+            async for ev in renderer.render_plan(p, plan, m, skill, resolution=r):
                 log = _log(log, ev.message)
                 # 有新图时整体刷新（回显画廊），否则只刷新日志
                 if ev.image_path or ev.done:
@@ -433,7 +435,7 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
             log = _log(log, friendly(e))
         yield [log, *_refresh(pid)]
 
-    render_btn.click(do_render, [header.project_id, model, cand, logs], [logs, *refresh_outputs],
+    render_btn.click(do_render, [header.project_id, model, cand, res, logs], [logs, *refresh_outputs],
                      concurrency_id=f"{spec.key}_render", concurrency_limit=2, api_name=f"{spec.key}_render")
 
     def do_save_winner(pid, selected, prev):

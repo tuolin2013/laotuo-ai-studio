@@ -67,7 +67,7 @@ async def test_main_image_full_pipeline(rt, png):
         plan.upload_reference(role, png(f"{role}.png", (120, 30, 30)))
     assert plan.missing_references() == []
 
-    events = await collect(RenderEngine(rt).render_plan(project, plan, "gpt-image-2.5-flare", "gpt_image_2"))
+    events = await collect(RenderEngine(rt).render_plan(project, plan, "gpt-image-2.5", "gpt_image_2"))
     images = [e.image_path for e in events if e.image_path]
     assert len(images) == 5 and all(p.exists() for p in images)
     assert events[-1].done and not any(e.error for e in events)
@@ -109,7 +109,7 @@ async def test_detail_page_auto_screens_and_cross_module_reuse(rt, png):
 
     reused = reuse_references(project, "detail_page_plan")
     assert "product_package" in reused
-    events = await collect(RenderEngine(rt).render_plan(project, detail, "gemini-3-pro-image-preview",
+    events = await collect(RenderEngine(rt).render_plan(project, detail, "nano-banana-pro",
                                                         "gemini_nano_banana"))
     assert sum(1 for e in events if e.image_path) == len(detail.slots)
     assert len(winners_in_order(project, "detail_page_plan")) == len(detail.slots)
@@ -183,9 +183,9 @@ async def test_video_full_pipeline(rt, png):
 
 
 async def test_force_demo_overrides_keys(tmp_path):
-    rt = EngineRuntime(settings=Settings(workspace_dir=tmp_path, llm_key="x", openai_image_key="y",
+    rt = EngineRuntime(settings=Settings(workspace_dir=tmp_path, llm_key="x", image_key="y",
                                          modal_h3_url="https://m.run"), demo_delay=0)
-    assert rt.is_live("llm") and rt.is_live("modal_h3")
+    assert rt.is_live("llm") and rt.is_live("image") and rt.is_live("modal_h3")
     rt.force_demo = True
     assert not rt.is_live("llm") and "演示模式" in rt.mode_summary()
     assert rt.video_provider("modal_minimax_h3").provider_id == "demo"

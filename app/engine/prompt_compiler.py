@@ -21,7 +21,7 @@ DEFAULT_IMAGE_SKILL = {"openai": "gpt_image_2", "gemini": "gemini_nano_banana"}
 
 
 def image_skill_for_model(model: str) -> str:
-    return DEFAULT_IMAGE_SKILL["gemini" if model.startswith("gemini") else "openai"]
+    return DEFAULT_IMAGE_SKILL["openai" if model.lower().startswith("gpt-image") else "gemini"]
 
 
 def slot_prompt_data(slot: ImageSlot) -> dict[str, Any]:
