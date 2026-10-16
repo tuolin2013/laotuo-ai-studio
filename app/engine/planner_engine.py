@@ -45,13 +45,19 @@ class PlannerEngine:
         count: int | None,
         user_creative_idea: str | None,
         product_info: dict[str, str] | None = None,
-        skill_id: str = "default_planner",
+        skill_id: str | None = None,
         existing: ImagePlan | None = None,
     ) -> tuple[ImagePlan, str]:
         """生成（或覆盖重新生成）整套策划案。返回 (策划案, 使用的模式说明)。"""
         cat, plat = self.rt.category(category_id), self.rt.platform(platform_id)
         info = {k: v for k, v in (product_info or {}).items() if v}
         n = self._resolve_count(deliverable_type, platform_id, count)
+        if not skill_id:
+            # 未指定时使用该类目的专属策划卡带（没有则回落到通用默认卡带）
+            cards = self.rt.skills.list("ecommerce_planner", category_id)
+            if not cards:
+                raise KeyError(f"卡槽 ecommerce_planner 中没有适用于类目 {category_id} 的 Skill")
+            skill_id = cards[0].skill_id
         skill = self.rt.skills.get("ecommerce_planner", skill_id)
         prompt = compile_planner(skill, deliverable_type, cat, plat, aspect_ratio, n, user_creative_idea,
                                  product_info=info)

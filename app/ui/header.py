@@ -92,7 +92,7 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
     with gr.Accordion("🔌 插卡式 Skill 管理与在线微调", open=False):
         with gr.Row():
             for slot in SKILL_SLOTS:
-                choices = rt.skills.choices(slot)
+                choices = rt.skills.choices(slot, default_cat)
                 skill_dropdowns[slot] = gr.Dropdown(choices, value=choices[0][1] if choices else None,
                                                     label=SLOT_LABELS[slot])
         with gr.Row():
@@ -208,13 +208,19 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
         sid = dict(zip(SKILL_SLOTS, ids, strict=True))[slot]
         return rt.skills.get(slot, sid).body if sid else ""
 
-    def do_rescan(*ids):
-        rt.skills.refresh()
+    def _skill_updates(cid, ids, keep_current: bool) -> list:
+        """按类目刷新各卡槽下拉框：类目专属卡带优先；keep_current 时尽量保留当前选择。"""
         ups = []
         for slot, cur in zip(SKILL_SLOTS, ids, strict=True):
-            ch = rt.skills.choices(slot)
+            ch = rt.skills.choices(slot, cid)
             vals = [c[1] for c in ch]
-            ups.append(gr.update(choices=ch, value=cur if cur in vals else (vals[0] if vals else None)))
+            keep = keep_current and cur in vals
+            ups.append(gr.update(choices=ch, value=cur if keep else (vals[0] if vals else None)))
+        return ups
+
+    def do_rescan(cid, *ids):
+        rt.skills.refresh()
+        ups = _skill_updates(cid, ids, keep_current=True)
         errs = "\n".join(f"- ⚠️ {e}" for e in rt.skills.errors.values())
         total = sum(len(rt.skills.list(s)) for s in SKILL_SLOTS)
         return [*ups, f"✅ 已扫描到 {total} 张卡带" + (f"\n{errs}" if errs else "")]
@@ -233,7 +239,9 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
     preview_slot.change(show_skill, [preview_slot, *dd], skill_body)
     for d in dd:
         d.change(show_skill, [preview_slot, *dd], skill_body)
-    rescan.click(do_rescan, dd, [*dd, skill_status])
+    rescan.click(do_rescan, [category, *dd], [*dd, skill_status])
+    # 切换类目时自动切换到该类目的专属卡带（没有专属卡带则用通用卡带）
+    category.change(lambda cid, *ids: _skill_updates(cid, ids, keep_current=False), [category, *dd], dd)
     apply_override.click(do_apply, [preview_slot, skill_body, *dd], skill_status)
     reset_override.click(do_reset, [preview_slot, *dd], [skill_body, skill_status])
 

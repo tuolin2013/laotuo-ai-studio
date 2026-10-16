@@ -8,7 +8,9 @@ from app.engine.skill_loader import SKILLS_DIR, SkillRegistry
 from app.schemas.skill import SKILL_SLOTS, SkillRenderError
 
 EXPECTED = {
-    "ecommerce_planner": {"default_planner"},
+    "ecommerce_planner": {
+        "default_planner", "laotuo_zhangjiajie_meicha_planner", "laotuo_pet_supplement_chenrong_beikang_planner",
+    },
     "video_scriptwriter": {"default_scriptwriter"},
     "image_prompt": {"gpt_image_2", "gemini_nano_banana"},
     "video_prompt": {"official_h3_prompt_writing", "minimax_h3_prompt"},
@@ -105,3 +107,22 @@ def test_override_is_temporary_and_not_written_to_disk(skills_copy):
 
     reg.clear_override("video_scriptwriter", "default_scriptwriter")
     assert reg.get("video_scriptwriter", "default_scriptwriter").body == original.body
+
+
+def test_category_specific_planner_is_filtered_and_preferred():
+    """类目专属卡带只在对应类目下出现，并排在第一位作为默认选中；通用卡带所有类目可见。"""
+    reg = SkillRegistry()
+    tea = [c.skill_id for c in reg.list("ecommerce_planner", "zhangjiajie_berry_tea")]
+    assert tea == ["laotuo_zhangjiajie_meicha_planner", "default_planner"]
+    pet = [c.skill_id for c in reg.list("ecommerce_planner", "pet_supplement")]
+    assert pet == ["laotuo_pet_supplement_chenrong_beikang_planner", "default_planner"]
+    assert reg.get("ecommerce_planner", "laotuo_zhangjiajie_meicha_planner").categories == ["zhangjiajie_berry_tea"]
+
+
+def test_chenrong_beikang_planner_contains_all_seven_products():
+    """辰荣贝康卡带内置 7 款单品包装信息，并能完整渲染。"""
+    card = SkillRegistry().get("ecommerce_planner", "laotuo_pet_supplement_chenrong_beikang_planner")
+    for name in ["猫静宝", "重重没", "护圣宝", "艾留平", "护宫宝", "感克消", "辰节宁"]:
+        assert name in card.body
+    out = card.render(**{v: f"<{v}>" for v in card.variables})
+    assert "{{" not in out and "湘饲预（2025）01100" in out

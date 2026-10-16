@@ -35,6 +35,8 @@ class SkillCard(BaseModel):
     references: list[str] = Field(default_factory=list)
     # 为 true 时在界面下拉框中排在第一位，作为该卡槽默认卡带
     default: bool = False
+    # 适用类目 category_id 列表；为空表示通用卡带（适用所有类目）。类目专属卡带只在对应类目下出现并优先选中
+    categories: list[str] = Field(default_factory=list)
     source_url: str = ""
     slot: SkillSlot
     body: str
@@ -50,6 +52,9 @@ class SkillCard(BaseModel):
         if not _SKILL_ID_PATTERN.match(v):
             raise ValueError(f"skill_id 只能包含小写字母、数字、下划线：{v!r}")
         return v
+
+    def applies_to(self, category_id: str | None) -> bool:
+        return not self.categories or category_id is None or category_id in self.categories
 
     @property
     def placeholders(self) -> set[str]:

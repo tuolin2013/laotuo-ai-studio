@@ -46,6 +46,8 @@ async def test_main_image_full_pipeline(rt, png):
         count=5, user_creative_idea=IDEA, product_info=project.product_info,
     )
     assert mode == "演示模式" and plan.plan_status == "draft" and len(plan.slots) == 5
+    # 未指定 Skill 时自动选用类目专属策划卡带
+    assert plan.planner_skill_id == "laotuo_zhangjiajie_meicha_planner"
     assert plan.user_creative_idea == IDEA
     assert IDEA in plan.slots[0].visual_description and "特级芽尖" in plan.slots[0].visual_description
     modes = {s.generation_mode for s in plan.slots}

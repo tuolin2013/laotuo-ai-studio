@@ -109,6 +109,7 @@ variables: [product_name]        # 选填，声明正文使用的变量
 - 解析失败的卡带不影响其他卡带，错误记录在 `registry.errors` 中供界面展示。
 - 界面支持预览卡带正文，并可临时覆盖（override）当前会话使用的指令，覆盖内容不写回 `.md` 文件。
 - 附属指南：front matter 的 `references: [references/x.txt]` 或正文中出现的 `references/*.txt` 会在加载时自动读入（只允许卡带同目录 `references/` 下，单文件 ≤200KB）；附属文件修改同样触发热重载。`default: true` 的卡带在下拉框中默认选中。
+- 类目专属卡带：front matter 写 `categories: [category_id]`，只在对应类目下出现，并在切换到该类目时自动选中（优先于 `default: true`）；不写 `categories` 的为通用卡带，所有类目可见。每个类目一张专属卡带，命名 `laotuo_{类目}_{卡槽}_skill.md`，如 `ecommerce_planner/laotuo_zhangjiajie_meicha_planner_skill.md`。
 - 官方 H3 技能：`config/skills/video_prompt/official_h3_prompt_writing.md` 收录 MiniMax-AI/MiniMax-H3 `skills/h3-prompt-writing/SKILL.md` 原文（附 `references/base-en.txt`、`references/ref-en.txt` 原版），同一份原版也放在 `.claude/skills/h3-prompt-writing/` 供 Claude Code 使用。正文使用 `{{ h3_mode }}` 的卡带即支持双模式：
   - `i2va`（默认）：按 base-en.txt 输出 I2VA 指令行 + `integrated_multimodal_description` / `overall_soundscape` / `non_diegetic_music`；视频后端只传锁定首帧。
   - `ref2va`：按 ref-en.txt 输出六段式 `subject_definitions` / `summary` / `retention_analysis` / `detailed_description` / `overall_soundscape` / `non_diegetic_music`；`<Picture 1>` = 锁定首帧，`<Picture 2>`… = 该分镜绑定的商品参考图（与后端传图顺序一致）。

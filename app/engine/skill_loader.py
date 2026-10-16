@@ -133,14 +133,18 @@ class SkillRegistry:
                 return card
         return None
 
-    def list(self, slot: SkillSlot) -> list[SkillCard]:
-        """default: true 的卡带排在最前（界面下拉框默认选中）。"""
-        with self._lock:
-            return sorted(self._cards[slot].values(), key=lambda c: not c.default)
+    def list(self, slot: SkillSlot, category_id: str | None = None) -> list[SkillCard]:
+        """按类目过滤：类目专属卡带 + 通用卡带；类目专属排最前，其次 default: true（界面下拉框默认选中）。
 
-    def choices(self, slot: SkillSlot) -> list[tuple[str, str]]:
+        category_id 为 None 时返回全部卡带。
+        """
+        with self._lock:
+            cards = [c for c in self._cards[slot].values() if c.applies_to(category_id)]
+        return sorted(cards, key=lambda c: (not (category_id and category_id in c.categories), not c.default))
+
+    def choices(self, slot: SkillSlot, category_id: str | None = None) -> list[tuple[str, str]]:
         """Gradio 下拉框选项：(显示名, skill_id)。"""
-        return [(f"{c.name}（{c.skill_id}）", c.skill_id) for c in self.list(slot)]
+        return [(f"{c.name}（{c.skill_id}）", c.skill_id) for c in self.list(slot, category_id)]
 
     def get(self, slot: SkillSlot, skill_id: str) -> SkillCard:
         """获取卡带；若界面上设置了临时覆盖，返回覆盖版本。"""
