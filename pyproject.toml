@@ -1,0 +1,43 @@
+[project]
+name = "laotuo-ai-studio"
+version = "0.1.0"
+description = "电商 AIGC 内容工厂：主图 / 详情页 / 带货短视频（MiniMax H3 原生音画一体）"
+requires-python = ">=3.11"
+dependencies = [
+    "gradio==6.30.0",
+    "pydantic==2.14.1",
+    "httpx==0.28.1",
+    "pillow==12.3.0",
+    "python-dotenv==1.2.4",
+    "pyyaml==6.0.3",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "ruff==0.17.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+# 中文字符按双宽计算，适当放宽
+line-length = 120
+target-version = "py311"
+extend-exclude = [".venv", "workspace"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+# 中文全角标点在文案/注释中是正常内容
+ignore = ["RUF001", "RUF002", "RUF003"]

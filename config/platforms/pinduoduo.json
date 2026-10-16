@@ -1,0 +1,30 @@
+{
+  "platform_id": "pinduoduo",
+  "name": "拼多多",
+  "main_image": {
+    "default_count": 6,
+    "min_count": 1,
+    "max_count": 10,
+    "default_aspect_ratio": "1:1",
+    "allowed_aspect_ratios": ["1:1"],
+    "min_resolution": 750,
+    "notes": "首图突出规格与实惠感（如“到手 2 罐”），字号要大、对比要强，手机小图也能看清。"
+  },
+  "detail_page": {
+    "default_screens": 8,
+    "min_screens": 3,
+    "max_screens": 20,
+    "width_px": 750,
+    "default_aspect_ratio": "3:4",
+    "allowed_aspect_ratios": ["3:4", "9:16", "1:1"],
+    "notes": "节奏要快，前 3 屏讲清楚“是什么、为什么值、怎么用”。"
+  },
+  "video": {
+    "default_aspect_ratio": "1:1",
+    "allowed_aspect_ratios": ["1:1", "3:4", "9:16"],
+    "recommended_duration_seconds": [10, 30],
+    "notes": "直给实物与使用过程，减少空镜。"
+  },
+  "copy_style": "口语化、直给、强调实惠与真实，短句大字",
+  "forbidden_words": ["最", "第一", "国家级", "全网最低", "假一赔万"]
+}

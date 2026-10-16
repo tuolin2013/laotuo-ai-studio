@@ -1,0 +1,30 @@
+{
+  "platform_id": "taobao",
+  "name": "淘宝 / 天猫",
+  "main_image": {
+    "default_count": 5,
+    "min_count": 1,
+    "max_count": 8,
+    "default_aspect_ratio": "1:1",
+    "allowed_aspect_ratios": ["1:1", "3:4"],
+    "min_resolution": 800,
+    "notes": "第 1 张为搜索首图，需白底或干净背景、主体占比约 70%；第 5 张建议白底图用于活动报名。"
+  },
+  "detail_page": {
+    "default_screens": 10,
+    "min_screens": 3,
+    "max_screens": 20,
+    "width_px": 750,
+    "default_aspect_ratio": "3:4",
+    "allowed_aspect_ratios": ["3:4", "9:16", "1:1", "2:3"],
+    "notes": "首屏讲核心卖点，中段讲产地/工艺/证据，尾屏讲售后与冲泡/使用说明。"
+  },
+  "video": {
+    "default_aspect_ratio": "3:4",
+    "allowed_aspect_ratios": ["3:4", "9:16", "1:1", "16:9"],
+    "recommended_duration_seconds": [15, 30],
+    "notes": "主图视频建议 3:4 或 1:1，前 3 秒必须出现商品。"
+  },
+  "copy_style": "信息密度高、卖点分层清晰，适合理性对比与证据展示",
+  "forbidden_words": ["最", "第一", "国家级", "顶级", "极品", "全网最低"]
+}

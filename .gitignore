@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.env
+.gradio/
+# 项目运行产物不入库，只保留目录占位
+workspace/*
+!workspace/.gitkeep
+*.egg-info/

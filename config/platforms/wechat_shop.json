@@ -1,0 +1,30 @@
+{
+  "platform_id": "wechat_shop",
+  "name": "微信小店 / 视频号小店",
+  "main_image": {
+    "default_count": 5,
+    "min_count": 1,
+    "max_count": 9,
+    "default_aspect_ratio": "1:1",
+    "allowed_aspect_ratios": ["1:1", "3:4"],
+    "min_resolution": 750,
+    "notes": "社交分享场景，画面要有温度和生活感，适合朋友圈转发。"
+  },
+  "detail_page": {
+    "default_screens": 8,
+    "min_screens": 3,
+    "max_screens": 15,
+    "width_px": 750,
+    "default_aspect_ratio": "9:16",
+    "allowed_aspect_ratios": ["9:16", "3:4", "1:1"],
+    "notes": "竖屏阅读，故事感优先：人、地、物的真实叙事。"
+  },
+  "video": {
+    "default_aspect_ratio": "9:16",
+    "allowed_aspect_ratios": ["9:16", "3:4"],
+    "recommended_duration_seconds": [15, 60],
+    "notes": "视频号信息流竖屏，前 3 秒用人物或强声音钩子留住用户。"
+  },
+  "copy_style": "真诚、有温度、讲故事，像朋友推荐",
+  "forbidden_words": ["最", "第一", "国家级", "顶级"]
+}
