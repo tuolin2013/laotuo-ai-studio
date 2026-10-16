@@ -31,9 +31,16 @@ class SkillCard(BaseModel):
     version: str = "1.0"
     target_models: list[str] = Field(default_factory=list)
     variables: list[str] = Field(default_factory=list)
+    # 附属指南文件（相对卡带所在目录，如 references/base-en.txt）；正文中出现的 references/*.txt 也会自动识别
+    references: list[str] = Field(default_factory=list)
+    # 为 true 时在界面下拉框中排在第一位，作为该卡槽默认卡带
+    default: bool = False
+    source_url: str = ""
     slot: SkillSlot
     body: str
     source_path: Path | None = None
+    # 加载时读入的附属指南全文：{相对路径: 内容}
+    reference_texts: dict[str, str] = Field(default_factory=dict)
     # 是否为界面上的临时覆盖版本（不写回 .md 文件）
     is_override: bool = False
 
@@ -55,6 +62,19 @@ class SkillCard(BaseModel):
         if missing:
             raise SkillRenderError(f"Skill {self.skill_id} 缺少变量：{', '.join(missing)}")
         return _VAR_PATTERN.sub(lambda m: str(values[m.group(1)]), self.body)
+
+    @property
+    def reference_paths(self) -> list[Path]:
+        base = self.source_path.parent if self.source_path else Path(".")
+        return [base / r for r in self.reference_texts]
+
+    def reference_context(self, names: list[str] | None = None) -> str:
+        """把附属指南拼成追加在指令后面的上下文。names 为文件名（如 base-en.txt），None 表示全部。"""
+        parts = []
+        for rel, text in self.reference_texts.items():
+            if names is None or Path(rel).name in names:
+                parts.append(f'<reference_file path="{rel}">\n{text.strip()}\n</reference_file>')
+        return "\n\n".join(parts)
 
     def with_override(self, body: str) -> SkillCard:
         """返回一个使用临时正文的副本，原卡带与磁盘文件不受影响。"""

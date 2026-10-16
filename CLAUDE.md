@@ -108,6 +108,12 @@ variables: [product_name]        # 选填，声明正文使用的变量
 - `SkillRegistry` 负责扫描、解析、热重载（按文件修改时间检测）。新卡带放进文件夹即可被识别，无需改代码。
 - 解析失败的卡带不影响其他卡带，错误记录在 `registry.errors` 中供界面展示。
 - 界面支持预览卡带正文，并可临时覆盖（override）当前会话使用的指令，覆盖内容不写回 `.md` 文件。
+- 附属指南：front matter 的 `references: [references/x.txt]` 或正文中出现的 `references/*.txt` 会在加载时自动读入（只允许卡带同目录 `references/` 下，单文件 ≤200KB）；附属文件修改同样触发热重载。`default: true` 的卡带在下拉框中默认选中。
+- 官方 H3 技能：`config/skills/video_prompt/official_h3_prompt_writing.md` 收录 MiniMax-AI/MiniMax-H3 `skills/h3-prompt-writing/SKILL.md` 原文（附 `references/base-en.txt`、`references/ref-en.txt` 原版），同一份原版也放在 `.claude/skills/h3-prompt-writing/` 供 Claude Code 使用。正文使用 `{{ h3_mode }}` 的卡带即支持双模式：
+  - `i2va`（默认）：按 base-en.txt 输出 I2VA 指令行 + `integrated_multimodal_description` / `overall_soundscape` / `non_diegetic_music`；视频后端只传锁定首帧。
+  - `ref2va`：按 ref-en.txt 输出六段式 `subject_definitions` / `summary` / `retention_analysis` / `detailed_description` / `overall_soundscape` / `non_diegetic_music`；`<Picture 1>` = 锁定首帧，`<Picture 2>`… = 该分镜绑定的商品参考图（与后端传图顺序一致）。
+  - 画面与声音用英文，台词与包装可见文字保留中文原文；时长取分镜时长并限制在 4–15 秒；输出经 `h3_structure_issues()` 校验字段与顺序。
+  - 分镜可同时保存两种版本（`h3_prompt_variants`），`h3_prompt` 为视频生成实际使用的版本。
 
 ## 5. 核心业务流程
 

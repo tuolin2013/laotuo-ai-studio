@@ -114,3 +114,80 @@ def compile_h3_prompt(skill: SkillCard, shot, aspect_ratio: str, category: Categ
         category_json=_dump(category),
         camera_tag_hint=" ".join(camera_tags(shot.camera_movement, shot.shot_size)),
     )
+
+
+# ---------------------------------------------------------------- 官方 h3-prompt-writing（I2VA / Ref2VA）
+
+H3_MIN_SECONDS, H3_MAX_SECONDS = 4.0, 15.0
+H3_GUIDE_FOR_MODE = {"i2va": "base-en.txt", "ref2va": "ref-en.txt"}
+I2VA_INSTRUCTION = ("For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) "
+                    "is fully referenced.")
+I2VA_FIELDS = ("integrated_multimodal_description", "overall_soundscape", "non_diegetic_music")
+REF2VA_SECTIONS = ("subject_definitions", "summary", "retention_analysis", "detailed_description",
+                   "overall_soundscape", "non_diegetic_music")
+MAX_PICTURES = 9  # 与 Modal H3 ref2va 后端一致：首帧 + 最多 8 张商品参考
+
+
+def h3_target_seconds(duration_seconds: float) -> float:
+    """官方要求描述时长落在 4–15 秒：分镜时长超出范围时就近取值。"""
+    return round(min(max(float(duration_seconds), H3_MIN_SECONDS), H3_MAX_SECONDS), 2)
+
+
+def picture_roles(reference_roles: list[str]) -> list[str]:
+    """<Picture 1> 固定为锁定首帧，其后依次为该分镜绑定的商品参考图（与视频后端传图顺序一致）。"""
+    return ["locked_first_frame", *reference_roles][:MAX_PICTURES]
+
+
+def picture_label_lines(mode: str, reference_roles: list[str]) -> str:
+    """i2va 只传锁定首帧；ref2va 依次列出首帧与商品参考图（与视频后端传图顺序一致）。"""
+    first = "- <Picture 1>: the locked first frame of [Shot 1] at 0.00 seconds (packaging verified undistorted)."
+    if mode == "i2va":
+        return first
+    roles = picture_roles(reference_roles)
+    lines = [first, *(f"- <Picture {i}>: product reference photo, role `{r}`." for i, r in
+                      enumerate(roles[1:], start=2))]
+    return "\n".join(lines)
+
+
+def supports_h3_modes(skill: SkillCard) -> bool:
+    """卡带正文使用了 {{ h3_mode }} 即视为支持官方双模式。"""
+    return "h3_mode" in skill.placeholders
+
+
+def compile_official_h3_prompt(
+    skill: SkillCard, shot, aspect_ratio: str, category: CategoryConfig, mode: str, reference_roles: list[str]
+) -> str:
+    """渲染官方卡带，并把所选模式对应的 references 指南全文附在指令之后。"""
+    shot_data = shot.model_dump(mode="json", include=H3_SHOT_FIELDS)
+    text = _render(
+        skill,
+        h3_mode=mode,
+        shot_json=_json(shot_data),
+        aspect_ratio=aspect_ratio,
+        duration_seconds=f"{h3_target_seconds(shot.duration_seconds):.2f}",
+        category_json=_dump(category),
+        picture_labels=picture_label_lines(mode, reference_roles),
+        camera_tag_hint=" ".join(camera_tags(shot.camera_movement, shot.shot_size)),
+    )
+    guide = skill.reference_context([H3_GUIDE_FOR_MODE[mode]])
+    return f"{text}\n\n# Attached Reference Guide\n\n{guide}" if guide else text
+
+
+def h3_structure_issues(prompt: str, mode: str) -> list[str]:
+    """检查提示词是否符合官方结构：字段齐全且顺序正确。返回问题列表（空表示合格）。"""
+    names = I2VA_FIELDS if mode == "i2va" else REF2VA_SECTIONS
+    issues: list[str] = []
+    if mode == "i2va" and not prompt.lstrip().startswith(I2VA_INSTRUCTION):
+        issues.append("第一行不是官方 I2VA 首帧指令")
+    positions = []
+    for name in names:
+        pos = prompt.find(f"{name}:")
+        if pos == -1:
+            issues.append(f"缺少字段 {name}")
+        positions.append(pos)
+    found = [p for p in positions if p != -1]
+    if found != sorted(found):
+        issues.append("字段顺序与官方规范不一致")
+    if mode == "ref2va" and "<Picture 1>" not in prompt:
+        issues.append("缺少 <Picture 1> 标签")
+    return issues

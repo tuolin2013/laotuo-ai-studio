@@ -102,13 +102,18 @@ def test_full_workflow_through_ui(server, tmp_path):
     out = client.predict("gpt-image-2", 1, "2K", out[0], api_name="/video_first_frames")
     assert "首帧生成完成" in _last(out[0])
     out = client.predict(out[0], api_name="/video_lock_all")
-    out = client.predict("minimax_h3_prompt", out[0], api_name="/video_h3")
+    out = client.predict("minimax_h3_prompt", "i2va", out[0], api_name="/video_h3")
+    assert out[19].startswith("[") and "9:16" in out[19]  # 旧版卡带仍可用
+    # 默认官方卡带：A + B 同时生成，视频生成使用 I2VA 版本
+    out = client.predict("official_h3_prompt_writing", "both", out[0], api_name="/video_h3")
     shot1_prompt, global_prompt = out[19], out[20]
-    assert shot1_prompt.startswith("[") and "9:16" in shot1_prompt
+    assert shot1_prompt.startswith("For the target video, at 0.00 seconds") and "non_diegetic_music:" in shot1_prompt
     assert "第 1 分镜锁定首帧" in global_prompt and "镜头 4" in global_prompt
 
     script = rt.store.load(project.project_id).video_script
     assert all(s.confirmed_first_frame_id and s.h3_prompt for s in script.shots)
+    assert all(s.h3_prompt_mode == "i2va" and set(s.h3_prompt_variants) == {"i2va", "ref2va"} for s in script.shots)
+    assert all("<Picture 1>" in s.h3_prompt_variants["ref2va"] for s in script.shots)
     for s in script.shots:
         with Image.open(s.confirmed_first_frame.file_path) as im:
             assert abs(im.width / im.height - 9 / 16) < 0.01

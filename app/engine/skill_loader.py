@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from pathlib import Path
 
@@ -21,6 +22,28 @@ class SkillParseError(ValueError):
     pass
 
 
+# 正文中引用的附属指南文件，如 `references/base-en.txt`
+_REF_PATTERN = re.compile(r"references/[A-Za-z0-9_.\-]+\.(?:txt|md)")
+MAX_REFERENCE_BYTES = 200_000
+
+
+def _load_references(path: Path, declared: list[str], body: str) -> dict[str, str]:
+    """读取卡带声明或正文中引用的 references/* 附属文件（只允许卡带同目录下的 references/）。"""
+    names = list(dict.fromkeys([*declared, *_REF_PATTERN.findall(body)]))
+    base = path.parent.resolve()
+    texts: dict[str, str] = {}
+    for rel in names:
+        target = (base / rel).resolve()
+        if not target.is_relative_to(base / "references"):
+            raise SkillParseError(f"{path.name}：附属文件 {rel} 必须位于同目录的 references/ 下")
+        if not target.is_file():
+            raise SkillParseError(f"{path.name}：找不到附属文件 {rel}")
+        if target.stat().st_size > MAX_REFERENCE_BYTES:
+            raise SkillParseError(f"{path.name}：附属文件 {rel} 超过 {MAX_REFERENCE_BYTES} 字节")
+        texts[rel] = target.read_text(encoding="utf-8-sig").replace("\r\n", "\n")
+    return texts
+
+
 def parse_skill_file(path: Path, slot: SkillSlot) -> SkillCard:
     text = path.read_text(encoding="utf-8-sig").replace("\r\n", "\n")
     if not text.startswith("---\n"):
@@ -36,9 +59,20 @@ def parse_skill_file(path: Path, slot: SkillSlot) -> SkillCard:
         raise SkillParseError(f"{path.name}：YAML 元数据必须是键值对")
     body = text[end + 4 :].lstrip("\n")
     try:
-        return SkillCard(**meta, slot=slot, body=body, source_path=path)
+        card = SkillCard(**meta, slot=slot, body=body, source_path=path)
     except (ValidationError, TypeError) as e:
         raise SkillParseError(f"{path.name}：元数据不合法：{e}") from e
+    texts = _load_references(path, card.references, body)
+    return card.model_copy(update={"reference_texts": texts}) if texts else card
+
+
+def _signature(path: Path) -> tuple[float, float]:
+    """卡带及其 references/ 目录的修改时间：附属文件改动同样触发热重载。"""
+    ref_dir = path.parent / "references"
+    ref_mtime = 0.0
+    if ref_dir.is_dir():
+        ref_mtime = max((p.stat().st_mtime for p in ref_dir.iterdir() if p.is_file()), default=0.0)
+    return path.stat().st_mtime, ref_mtime
 
 
 class SkillRegistry:
@@ -47,7 +81,7 @@ class SkillRegistry:
     def __init__(self, skills_dir: Path = SKILLS_DIR):
         self.skills_dir = Path(skills_dir)
         self._cards: dict[SkillSlot, dict[str, SkillCard]] = {s: {} for s in SKILL_SLOTS}
-        self._mtimes: dict[Path, float] = {}
+        self._mtimes: dict[Path, tuple[float, float]] = {}
         self._overrides: dict[tuple[SkillSlot, str], str] = {}
         self.errors: dict[Path, str] = {}
         self._lock = threading.RLock()
@@ -66,7 +100,7 @@ class SkillRegistry:
                 # 按修改时间排序：skill_id 重复时先放入的卡带优先，新放入的冲突卡带报错
                 for path in sorted(slot_dir.glob("*.md"), key=lambda p: (p.stat().st_mtime, p.name)):
                     seen.add(path)
-                    mtime = path.stat().st_mtime
+                    mtime = _signature(path)
                     cached = self._find_cached(slot, path)
                     if cached is not None and self._mtimes.get(path) == mtime:
                         card = cached
@@ -100,8 +134,9 @@ class SkillRegistry:
         return None
 
     def list(self, slot: SkillSlot) -> list[SkillCard]:
+        """default: true 的卡带排在最前（界面下拉框默认选中）。"""
         with self._lock:
-            return list(self._cards[slot].values())
+            return sorted(self._cards[slot].values(), key=lambda c: not c.default)
 
     def choices(self, slot: SkillSlot) -> list[tuple[str, str]]:
         """Gradio 下拉框选项：(显示名, skill_id)。"""

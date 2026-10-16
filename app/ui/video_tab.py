@@ -11,7 +11,7 @@ from app.engine.prompt_compiler import PromptCompiler, global_continuous_prompt,
 from app.engine.render_engine import RenderEngine
 from app.engine.script_engine import ScriptEngine
 from app.providers.image_models import choices as model_choices
-from app.schemas.video import VIDEO_TYPE_LABELS, VideoScript
+from app.schemas.video import H3_MODE_LABELS, VIDEO_TYPE_LABELS, VideoScript
 from app.settings import IMAGE_RESOLUTIONS
 from app.ui.header import Header, collect_info, require_project
 from app.ui.image_tab import MAX_REF_ROLES
@@ -27,6 +27,10 @@ from app.ui.state import (
 )
 
 VIDEO_RATIOS = ["9:16", "16:9", "1:1"]
+# 官方 h3-prompt-writing 两种输入模式；both = 两种都生成，视频生成默认使用 I2VA 版本
+H3_MODE_CHOICES = [("模式 A：I2VA / FL2VA 首帧模式（默认 · base-en.txt 三段式）", "i2va"),
+                   ("模式 B：Ref2VA 全参考模式（ref-en.txt 六段式 · <Picture N> 标签）", "ref2va"),
+                   ("A + B 同时生成（视频生成使用模式 A）", "both")]
 PROVIDERS = [("Modal MiniMax H3", "modal_minimax_h3"), ("fal.ai（预留）", "fal_ai"),
              ("ComfyUI 手动桥接", "manual_comfyui")]
 
@@ -48,8 +52,9 @@ def _status_md(s: VideoScript | None) -> str:
                 "MiniMax H3 原生带声音：说话请写进「人物同期声对白」，**不要写画外音**。")
     locked = sum(1 for x in s.shots if x.confirmed_first_frame_id)
     prompts = sum(1 for x in s.shots if x.h3_prompt)
+    modes = sorted({H3_MODE_LABELS[x.h3_prompt_mode] for x in s.shots if x.h3_prompt and x.h3_prompt_variants})
     return (f"🔒 **剧本已确认**　{head}\n\n首帧已锁定 {locked}/{len(s.shots)}　｜　"
-            f"H3 提示词已生成 {prompts}/{len(s.shots)}")
+            f"H3 提示词已生成 {prompts}/{len(s.shots)}" + (f"（视频生成使用：{'、'.join(modes)}）" if modes else ""))
 
 
 def _checklist_md(s: VideoScript | None) -> str:
@@ -161,10 +166,15 @@ def build_video_tab(ws: Workspace, header: Header) -> None:
 
             # ---------------------------------------------------------- Step 3
             gr.Markdown("### Step 3　MiniMax H3 音画提示词 · ComfyUI 协同 · 视频生成")
+            h3_mode = gr.Radio(H3_MODE_CHOICES, value="i2va", label="官方 h3-prompt-writing 输入模式",
+                               info="I2VA：以 Step 2 锁定首帧为 <Picture 1> 起始帧；Ref2VA：首帧 + 商品参考图"
+                                    "按 <Picture 1>、<Picture 2>… 全参考输入。"
+                                    "画面/声音描述为英文，中文台词与包装文字保留原文")
             h3_btn = gr.Button("🪄 运行 H3 Skill 生成专用音画提示词（全部已锁定首帧的分镜）", variant="primary")
             with gr.Row():
                 edit_shot = gr.Dropdown(label="微调哪个分镜的 H3 提示词", choices=[])
-                save_h3 = gr.Button("💾 保存提示词微调")
+                edit_mode = gr.Radio(H3_MODE_CHOICES[:2], value="i2va", label="查看 / 微调哪个模式的版本")
+                save_h3 = gr.Button("💾 保存微调并设为视频生成使用的版本")
             h3_edit = gr.Textbox(label="H3 提示词（可手动微调）", lines=5, buttons=["copy"])
 
             with gr.Group(elem_classes=["comfy-zone"]):
@@ -473,7 +483,7 @@ def build_video_tab(ws: Workspace, header: Header) -> None:
     lock_all_btn.click(do_lock_all, [header.project_id, logs], [logs, *refresh_outputs], api_name="video_lock_all")
 
     # ================================================================ Step 3
-    async def do_h3(pid, skill_id, prev):
+    async def do_h3(pid, skill_id, mode, prev):
         p = require_project(ws, pid)
         s = p.video_script
         if s is None or s.plan_status != "confirmed":
@@ -481,45 +491,58 @@ def build_video_tab(ws: Workspace, header: Header) -> None:
         ready = [x for x in s.shots if x.confirmed_first_frame_id]
         if not ready:
             raise gr.Error("还没有锁定任何首帧：请先在 Step 2 勾选并锁定首帧图")
-        log = _log(prev, f"🪄 运行 H3 Skill（{skill_id}）：{len(ready)} 个已锁定首帧的分镜")
+        modes = ["i2va", "ref2va"] if mode == "both" else [mode or "i2va"]
+        names = "、".join(H3_MODE_LABELS[m] for m in modes)
+        log = _log(prev, f"🪄 运行 H3 Skill（{skill_id}｜{names}）：{len(ready)} 个已锁定首帧的分镜")
         yield [log, *_refresh(pid)]
         for x in ready:
             i = s._index_of(x.shot_id) + 1
-            try:
-                prompt = await compiler.h3_prompt(s, x, skill_id)
-                (rt.store.asset_dir(p.project_id, "prompts") / f"h3_{x.shot_id}.txt").write_text(prompt, "utf-8")
-                log = _log(log, f"✅ 镜头 {i} H3 提示词完成：{prompt[:40]}…")
-            except Exception as e:
-                log = _log(log, f"镜头 {i}：{friendly(e)}")
-            ws.save(p)
-            yield [log, *_refresh(pid)]
+            for k, m in enumerate(modes):
+                try:
+                    # 同时生成时，第一个模式（I2VA）作为视频生成使用的版本
+                    prompt = await compiler.h3_prompt(s, x, skill_id, mode=m, activate=k == 0)
+                    suffix = f"_{m}" if x.h3_prompt_variants else ""
+                    (rt.store.asset_dir(p.project_id, "prompts") / f"h3_{x.shot_id}{suffix}.txt").write_text(
+                        prompt, "utf-8")
+                    label = H3_MODE_LABELS[m] if x.h3_prompt_variants else "H3"
+                    log = _log(log, f"✅ 镜头 {i} {label} 提示词完成：{prompt[:48]}…")
+                except Exception as e:
+                    log = _log(log, f"镜头 {i}：{friendly(e)}")
+                ws.save(p)
+                yield [log, *_refresh(pid)]
         skipped = len(s.shots) - len(ready)
         if skipped:
             log = _log(log, f"⚠️ 另有 {skipped} 个分镜未锁定首帧，已跳过")
         yield [log, *_refresh(pid)]
 
-    h3_btn.click(do_h3, [header.project_id, header.skill_dropdowns["video_prompt"], logs],
+    h3_btn.click(do_h3, [header.project_id, header.skill_dropdowns["video_prompt"], h3_mode, logs],
                  [logs, *refresh_outputs], concurrency_id="video_tab", api_name="video_h3")
 
-    def on_edit_shot(pid, sid):
+    def on_edit_shot(pid, sid, m):
         s = ws.get(pid).video_script if pid else None
-        return (s.get_shot(sid).h3_prompt or "") if s and sid else ""
+        if not (s and sid):
+            return ""
+        shot = s.get_shot(sid)
+        return shot.h3_prompt_variants.get(m) or ("" if shot.h3_prompt_variants else shot.h3_prompt or "")
 
-    edit_shot.change(on_edit_shot, [header.project_id, edit_shot], h3_edit)
+    edit_shot.change(on_edit_shot, [header.project_id, edit_shot, edit_mode], h3_edit)
+    edit_mode.change(on_edit_shot, [header.project_id, edit_shot, edit_mode], h3_edit)
 
-    def do_save_h3(pid, sid, text, prev):
+    def do_save_h3(pid, sid, m, text, prev):
         s = _script(ws, pid)
         try:
             if not sid:
                 raise ValueError("请选择分镜")
-            s.set_h3_prompt(sid, text.strip())
+            shot = s.get_shot(sid)
+            # 旧版卡带生成的提示词没有模式之分，按原样保存
+            s.set_h3_prompt(sid, text.strip(), mode=m if shot.h3_prompt_variants else None)
             ws.save(ws.get(pid))
-            msg = "💾 已保存 H3 提示词微调"
+            msg = f"💾 已保存 H3 提示词微调（视频生成使用：{H3_MODE_LABELS[s.get_shot(sid).h3_prompt_mode]}）"
         except Exception as e:
             msg = friendly(e)
         return [_log(prev, msg), *_refresh(pid, sid)]
 
-    save_h3.click(do_save_h3, [header.project_id, edit_shot, h3_edit, logs], [logs, *refresh_outputs])
+    save_h3.click(do_save_h3, [header.project_id, edit_shot, edit_mode, h3_edit, logs], [logs, *refresh_outputs])
 
     def do_back(pid, sid, file, prev):
         s = _script(ws, pid)

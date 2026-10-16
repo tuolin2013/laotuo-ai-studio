@@ -297,6 +297,8 @@ class RenderEngine:
             extra={
                 "reference_paths": [a.file_path for a in script.references_for(shot_id) if a.file_path.exists()],
                 "reference_roles": [a.role for a in script.references_for(shot_id) if a.file_path.exists()],
+                # 官方 h3-prompt-writing 模式（i2va / ref2va）；旧版卡带为 None
+                "h3_prompt_mode": shot.h3_prompt_mode if shot.h3_prompt_variants else None,
                 "seed": int(hashlib.sha256(script.script_id.encode()).hexdigest()[:8], 16),
             },
         )

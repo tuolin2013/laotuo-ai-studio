@@ -6,6 +6,8 @@
 
 调用约定（与服务端 modal/h3_diffusers_service.py 对齐）：
 - 有锁定首帧时走 ref2va：images[0] = 锁定首帧（<Picture 1>），其后为该分镜绑定的参考图（<Picture 2>…，最多 9 张）。
+- 官方 h3-prompt-writing 提示词自带 <Picture N> 定义：i2va 模式只传锁定首帧；ref2va 模式传首帧 + 参考图；
+  两种模式都不再在前面拼接中文角色声明（官方要求指令/字段位于开头）。
 - 帧数按 24fps 换算；服务端会把帧数调整到 17n+5 且在 124~345（约 5.2~14.4 秒）之间。
 - 鉴权使用本机 Modal 登录（~/.modal.toml 或 MODAL_TOKEN_ID / MODAL_TOKEN_SECRET 环境变量）。
 """
@@ -119,10 +121,11 @@ class ModalMiniMaxH3Provider(VideoProvider):
     async def generate(self, request: VideoRequest) -> AsyncIterator[VideoProgress]:
         if not self.is_configured():
             raise VideoProviderNotConfigured("本机未登录 Modal，无法调用 MiniMax H3")
-        refs: list[Path] = list(request.extra.get("reference_paths") or [])
+        official_mode = request.extra.get("h3_prompt_mode")
+        refs: list[Path] = [] if official_mode == "i2va" else list(request.extra.get("reference_paths") or [])
         images = [request.first_frame_path.read_bytes(), *[p.read_bytes() for p in refs]][:MAX_REF_IMAGES]
         roles = list(request.extra.get("reference_roles") or [p.stem for p in refs])[: len(images) - 1]
-        prompt = build_ref2va_prompt(request.prompt, roles)
+        prompt = request.prompt if official_mode else build_ref2va_prompt(request.prompt, roles)
         frames = h3_frames(request.duration_seconds)
         seed = int(request.extra.get("seed") or stable_seed(request.shot_id))
         actual = frames / FPS

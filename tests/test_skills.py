@@ -11,7 +11,7 @@ EXPECTED = {
     "ecommerce_planner": {"default_planner"},
     "video_scriptwriter": {"default_scriptwriter"},
     "image_prompt": {"gpt_image_2", "gemini_nano_banana"},
-    "video_prompt": {"minimax_h3_prompt"},
+    "video_prompt": {"official_h3_prompt_writing", "minimax_h3_prompt"},
 }
 
 

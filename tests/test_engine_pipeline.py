@@ -5,6 +5,7 @@ import zipfile
 import pytest
 from PIL import Image
 
+from app.engine.compiler import I2VA_INSTRUCTION, h3_structure_issues
 from app.engine.planner_engine import PlannerEngine
 from app.engine.project_service import create_project, export_winners, reuse_references, winners_in_order
 from app.engine.prompt_compiler import PromptCompiler, global_continuous_prompt
@@ -165,10 +166,15 @@ async def test_video_full_pipeline(rt, png):
         await compiler.h3_prompt(script, first)
     for shot in script.shots:
         script.confirm_first_frame(shot.shot_id, shot.first_frame_candidates[0].frame_id)
+        # 旧版自定义卡带仍按原格式编译
+        legacy = await compiler.h3_prompt(script, shot, "minimax_h3_prompt")
+        assert legacy.startswith("[") and "9:16" in legacy and "画外音" not in legacy
+        # 默认官方卡带：I2VA 三段式（并设为视频生成使用的版本）
         prompt = await compiler.h3_prompt(script, shot)
-        assert prompt.startswith("[") and "9:16" in prompt and "画外音" not in prompt
+        assert prompt.startswith(I2VA_INSTRUCTION) and h3_structure_issues(prompt, "i2va") == []
+        assert script.get_shot(shot.shot_id).h3_prompt_mode == "i2va"
     talk_prompt = script.get_shot(talk.shot_id).h3_prompt
-    assert "它自己就跑过来了" in talk_prompt and "口型" in talk_prompt
+    assert "<d>[Chinese] 它自己就跑过来了！</d>" in talk_prompt
 
     total = global_continuous_prompt(script)
     assert "第 1 分镜锁定首帧" in total and "镜头 5" in total and "不使用画外音" in total

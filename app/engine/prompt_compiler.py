@@ -10,15 +10,24 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from app.engine.compiler import SYSTEM_PROMPT, compile_h3_prompt, compile_image_prompt
+from app.engine.compiler import (
+    SYSTEM_PROMPT,
+    compile_h3_prompt,
+    compile_image_prompt,
+    compile_official_h3_prompt,
+    h3_structure_issues,
+    supports_h3_modes,
+)
 from app.engine.runtime import EngineRuntime
 from app.providers.demo import content as demo
+from app.providers.demo.h3_official import demo_official_h3_prompt
 from app.providers.image_models import protocol_of
 from app.schemas.editable import ReferenceAsset
 from app.schemas.plan import ImageSlot
-from app.schemas.video import StoryboardShot, VideoScript
+from app.schemas.video import H3PromptMode, StoryboardShot, VideoScript
 
 DEFAULT_IMAGE_SKILL = {"openai": "gpt_image_2", "gemini": "gemini_nano_banana"}
+DEFAULT_H3_SKILL = "official_h3_prompt_writing"
 
 
 def image_skill_for_model(model: str) -> str:
@@ -84,18 +93,42 @@ class PromptCompiler:
         return await self.image_prompt(shot_frame_data(shot, script.aspect_ratio), references, script.category_id,
                                        script.platform_id, script.aspect_ratio, skill_id)
 
-    async def h3_prompt(self, script: VideoScript, shot: StoryboardShot, skill_id: str = "minimax_h3_prompt") -> str:
+    async def h3_prompt(
+        self,
+        script: VideoScript,
+        shot: StoryboardShot,
+        skill_id: str = DEFAULT_H3_SKILL,
+        mode: H3PromptMode = "i2va",
+        activate: bool = True,
+    ) -> str:
+        """编译单个分镜的 H3 提示词。
+
+        官方 h3-prompt-writing 卡带支持两种模式：i2va（base-en.txt 三段式）/ ref2va（ref-en.txt 六段式）；
+        旧版自定义卡带（正文不含 {{ h3_mode }}）仍按原格式编译。
+        """
         script.require_first_frame_confirmed(shot.shot_id)
         cat = self.rt.category(script.category_id)
+        roles = [a.role for a in script.references_for(shot.shot_id)]
+        skill = self.rt.skills.get("video_prompt", skill_id)
+        official = supports_h3_modes(skill)
         if self.rt.is_live("llm"):
-            skill = self.rt.skills.get("video_prompt", skill_id)
-            text = compile_h3_prompt(skill, shot, script.aspect_ratio, cat)
+            if official:
+                text = compile_official_h3_prompt(skill, shot, script.aspect_ratio, cat, mode, roles)
+            else:
+                text = compile_h3_prompt(skill, shot, script.aspect_ratio, cat)
             out = await self.rt.llm().complete_json(SYSTEM_PROMPT, text)
         else:
             await asyncio.sleep(self.rt.demo_delay / 2)
-            out = demo.demo_h3_prompt(shot.model_dump(mode="json"), script.aspect_ratio)
+            if official:
+                out = demo_official_h3_prompt(shot.model_dump(mode="json"), script.aspect_ratio, cat, mode, roles)
+            else:
+                out = demo.demo_h3_prompt(shot.model_dump(mode="json"), script.aspect_ratio)
         prompt = str(out.get("prompt", "")).strip()
-        script.set_h3_prompt(shot.shot_id, prompt)
+        if official:
+            issues = h3_structure_issues(prompt, mode)
+            if issues:
+                raise ValueError(f"H3 提示词不符合官方 {mode} 结构：{'；'.join(issues)}")
+        script.set_h3_prompt(shot.shot_id, prompt, mode=mode if official else None, activate=activate)
         return prompt
 
 

@@ -28,6 +28,11 @@ VIDEO_TYPE_LABELS: dict[str, str] = {
     "immersive_demo": "沉浸冲泡 / 喂食展示",
 }
 
+# 官方 h3-prompt-writing 的两种输入模式：I2VA 首帧模式（base-en.txt）/ Ref2VA 全参考模式（ref-en.txt）
+H3PromptMode = Literal["i2va", "ref2va"]
+H3_PROMPT_MODES: tuple[H3PromptMode, ...] = ("i2va", "ref2va")
+H3_MODE_LABELS: dict[str, str] = {"i2va": "I2VA 首帧模式", "ref2va": "Ref2VA 全参考模式"}
+
 _DIALOGUE_MODES = {"native_dialogue", "dialogue_and_ambient"}
 _AMBIENT_MODES = {"ambient_sfx", "dialogue_and_ambient"}
 
@@ -74,7 +79,9 @@ class StoryboardShot(BindableItem):
     first_frame_prompt: str | None = None
     first_frame_candidates: list[FirstFrameImage] = Field(default_factory=list)
     confirmed_first_frame_id: str | None = None
-    h3_prompt: str | None = None
+    h3_prompt: str | None = None  # 当前用于视频生成的提示词（= 当前模式的版本）
+    h3_prompt_mode: H3PromptMode = "i2va"
+    h3_prompt_variants: dict[H3PromptMode, str] = Field(default_factory=dict)
     videos: list[VideoAsset] = Field(default_factory=list)
 
     @model_validator(mode="before")
@@ -125,7 +132,8 @@ class VideoScript(EditablePlanBase):
 
     ITEMS_FIELD: ClassVar[str] = "shots"
     LOCKED_FIELDS: ClassVar[frozenset[str]] = frozenset(
-        {"first_frame_candidates", "confirmed_first_frame_id", "videos", "h3_prompt", "first_frame_prompt"}
+        {"first_frame_candidates", "confirmed_first_frame_id", "videos", "h3_prompt", "first_frame_prompt",
+         "h3_prompt_mode", "h3_prompt_variants"}
     )
 
     script_id: str = Field(default_factory=lambda: new_id("script"))
@@ -164,6 +172,7 @@ class VideoScript(EditablePlanBase):
         item.first_frame_prompt = None
         item.confirmed_first_frame_id = None
         item.h3_prompt = None
+        item.h3_prompt_variants = {}
         item.videos = []
 
     @property
@@ -203,6 +212,7 @@ class VideoScript(EditablePlanBase):
             raise KeyError(f"找不到首帧：{frame_id}")
         shot.confirmed_first_frame_id = frame_id
         shot.h3_prompt = None
+        shot.h3_prompt_variants = {}
         self._log("confirm_first_frame", shot_id, frame_id=frame_id)
 
     def require_first_frame_confirmed(self, shot_id: str) -> FirstFrameImage:
@@ -213,10 +223,18 @@ class VideoScript(EditablePlanBase):
             raise PlanStateError("该分镜首帧尚未确认，请先勾选一张商品不变形的首帧图")
         return frame
 
-    def set_h3_prompt(self, shot_id: str, prompt: str) -> None:
+    def set_h3_prompt(
+        self, shot_id: str, prompt: str, mode: H3PromptMode | None = None, activate: bool = True
+    ) -> None:
+        """保存某个模式的 H3 提示词；activate=True 时设为视频生成使用的版本。"""
         self.require_first_frame_confirmed(shot_id)
-        self.get_shot(shot_id).h3_prompt = prompt
-        self._log("set_h3_prompt", shot_id)
+        shot = self.get_shot(shot_id)
+        mode = mode or shot.h3_prompt_mode
+        shot.h3_prompt_variants[mode] = prompt
+        if activate or shot.h3_prompt is None:
+            shot.h3_prompt_mode = mode
+            shot.h3_prompt = prompt
+        self._log("set_h3_prompt", shot_id, mode=mode)
 
     def bind_video(
         self, shot_id: str, file_path: Path | str, provider: str, source: str = "generated"
