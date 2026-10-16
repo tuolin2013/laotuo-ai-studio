@@ -13,6 +13,7 @@ from typing import Any
 from app.engine.compiler import SYSTEM_PROMPT, compile_h3_prompt, compile_image_prompt
 from app.engine.runtime import EngineRuntime
 from app.providers.demo import content as demo
+from app.providers.image_models import protocol_of
 from app.schemas.editable import ReferenceAsset
 from app.schemas.plan import ImageSlot
 from app.schemas.video import StoryboardShot, VideoScript
@@ -21,7 +22,8 @@ DEFAULT_IMAGE_SKILL = {"openai": "gpt_image_2", "gemini": "gemini_nano_banana"}
 
 
 def image_skill_for_model(model: str) -> str:
-    return DEFAULT_IMAGE_SKILL["openai" if model.lower().startswith("gpt-image") else "gemini"]
+    """按模型目录登记的协议选择默认生图提示词 Skill。"""
+    return DEFAULT_IMAGE_SKILL[protocol_of(model)]
 
 
 def slot_prompt_data(slot: ImageSlot) -> dict[str, Any]:

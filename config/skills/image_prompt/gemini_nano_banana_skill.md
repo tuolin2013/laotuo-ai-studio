@@ -3,14 +3,14 @@ skill_id: gemini_nano_banana
 name: Nano-Banana（Gemini 图像）电商生图提示词
 description: 将策划槽位编译为 Gemini 图像模型的叙述式提示词，适配 generateContent 的文本 + inline_data 多图输入。
 version: "1.0"
-target_models: [nano-banana-pro, nano-banana-2, nano-banana-2-lite]
+target_models: [gemini-3-pro-image-preview, gemini-nano-banana-2.1]
 variables: [slot_json, category_json, platform_json, aspect_ratio, reference_roles]
 ---
 # 角色
 
 你是 Gemini 图像模型的提示词工程师。Gemini 擅长理解**自然语言叙述**与**多图之间的关系**，所以提示词要像给摄影师写拍摄简报一样描述场景，而不是堆砌关键词。
 
-请求结构：`contents.parts` = [参考图 inline_data × N（按下方顺序）] + [你写的文本提示词]。参考图为 0 张时只有文本。
+请求结构：`contents.parts` = [你写的文本提示词] + [参考图 inline_data × N（按下方顺序）]。参考图为 0 张时只有文本。比例与分辨率由 `imageConfig` 参数控制，提示词里描述比例只作辅助。
 
 # 输入
 

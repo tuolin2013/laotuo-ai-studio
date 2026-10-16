@@ -1,8 +1,7 @@
-import base64
 
 import pytest
 
-from app.engine.image_router import family_for_model, image_key, route_image_request
+from app.engine.image_router import image_key, route_image_request
 from app.providers.llm import LLMError, extract_json
 from app.providers.video import (
     FalAIVideoProvider,
@@ -14,7 +13,7 @@ from app.providers.video import (
     available_providers,
 )
 from app.schemas import Project, mode_for_reference_count
-from app.settings import Settings, normalize_base_url
+from app.settings import Settings
 from app.storage.project_store import ProjectStore
 
 from .test_plan_workflow import make_draft
@@ -29,57 +28,13 @@ def ref_png(tmp_path):
     return p
 
 
-def test_default_base_url_and_normalization():
-    assert Settings().rightapi_base_url == "https://rightapi.ai"
-    assert normalize_base_url(None) == "https://rightapi.ai"
-    assert normalize_base_url("rightapi.ai/") == "https://rightapi.ai"
-    assert normalize_base_url("https://rightapi.ai/v1/") == "https://rightapi.ai"
-    assert normalize_base_url(" https://rightapi.ai/v1beta ") == "https://rightapi.ai"
-
-
-def test_openai_routes_by_actual_reference_count(ref_png):
-    r0 = route_image_request(S, "gpt-image-2", "p", "1:1", [])
-    assert r0.url == "https://rightapi.ai/v1/images/generations" and r0.json["size"] == "1024x1024"
-    assert r0.json["quality"] == "high"  # 默认 2K
-    r2 = route_image_request(S, "gpt-image-2.5", "p", "3:4", [ref_png, ref_png], n=3, resolution="1K")
-    assert r2.url.endswith("/v1/images/edits") and len(r2.files) == 2 and r2.data["n"] == "3"
-    assert r2.data["quality"] == "medium" and r2.fallback is None
-
-
-def test_nano_banana_uses_generate_content_with_inline_data(ref_png):
-    r0 = route_image_request(S, "nano-banana-pro", "p", "9:16", [], resolution="4K")
-    assert r0.url == "https://rightapi.ai/v1beta/models/nano-banana-pro:generateContent"
-    assert "streamGenerateContent" not in r0.url
-    assert r0.json["contents"][0]["parts"] == [{"text": "p"}]
-    assert r0.json["generationConfig"]["imageConfig"] == {"aspectRatio": "9:16", "imageSize": "4K"}
-    assert "async" not in r0.json
-    # 自带 OpenAI 兼容回退请求：0 张 -> generations
-    assert r0.fallback.url.endswith("/v1/images/generations") and r0.fallback.json["model"] == "nano-banana-pro"
-
-    s_async = Settings(image_key="draw-key", gemini_async=True)
-    r1 = route_image_request(s_async, "nano-banana-2-lite", "p", "1:1", [ref_png])
-    parts = r1.json["contents"][0]["parts"]
-    assert base64.b64decode(parts[0]["inline_data"]["data"]) == ref_png.read_bytes()
-    assert parts[-1] == {"text": "p"} and r1.json["async"] is True
-    assert r1.fallback.url.endswith("/v1/images/edits")
-
-
-def test_single_image_key_shared_by_both_families(monkeypatch):
-    assert family_for_model("gpt-image-2.5") == "openai"
-    assert family_for_model("nano-banana-2") == "gemini"
-    assert family_for_model("gemini-3-pro-image-preview") == "gemini"
-    with pytest.raises(ValueError):
-        family_for_model("dall-e-3")
+def test_single_image_key_and_legacy_env_names(monkeypatch, tmp_path):
     assert image_key(S) == "draw-key"
     with pytest.raises(RuntimeError, match="RIGHTAPI_IMAGE_KEY"):
         image_key(Settings())
     assert "draw-key" not in repr(S)
-    # 两种模型共用同一个通道开关
     assert S.channel_live("image") and not Settings().channel_live("image")
-    assert S.image_models == ["gpt-image-2.5", "gpt-image-2", "nano-banana-pro", "nano-banana-2", "nano-banana-2-lite"]
 
-
-def test_legacy_env_names_fallback(monkeypatch, tmp_path):
     from app.settings import load_settings
     for k in ("RIGHTAPI_IMAGE_KEY", "RIGHTAPI_OPENAI_IMAGE_KEY", "RIGHTAPI_GEMINI_IMAGE_KEY", "RIGHTAPI_BASE_URL"):
         monkeypatch.delenv(k, raising=False)

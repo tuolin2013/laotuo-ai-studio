@@ -67,7 +67,7 @@ async def test_main_image_full_pipeline(rt, png):
         plan.upload_reference(role, png(f"{role}.png", (120, 30, 30)))
     assert plan.missing_references() == []
 
-    events = await collect(RenderEngine(rt).render_plan(project, plan, "gpt-image-2.5", "gpt_image_2"))
+    events = await collect(RenderEngine(rt).render_plan(project, plan, "gpt-image-2.5-flare", "gpt_image_2"))
     images = [e.image_path for e in events if e.image_path]
     assert len(images) == 5 and all(p.exists() for p in images)
     assert events[-1].done and not any(e.error for e in events)
@@ -109,7 +109,7 @@ async def test_detail_page_auto_screens_and_cross_module_reuse(rt, png):
 
     reused = reuse_references(project, "detail_page_plan")
     assert "product_package" in reused
-    events = await collect(RenderEngine(rt).render_plan(project, detail, "nano-banana-pro",
+    events = await collect(RenderEngine(rt).render_plan(project, detail, "gemini-3-pro-image-preview",
                                                         "gemini_nano_banana"))
     assert sum(1 for e in events if e.image_path) == len(detail.slots)
     assert len(winners_in_order(project, "detail_page_plan")) == len(detail.slots)

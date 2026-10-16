@@ -42,7 +42,8 @@ filterwarnings = [
 # 中文字符按双宽计算，适当放宽
 line-length = 120
 target-version = "py311"
-extend-exclude = [".venv", "workspace"]
+# modal/ 为用户自有的 Modal 部署脚本，独立于本项目代码规范
+extend-exclude = [".venv", "workspace", "modal"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]

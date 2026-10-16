@@ -69,7 +69,8 @@ class EngineRuntime:
         if self.image_client_override is not None:
             return self.image_client_override
         s = self.settings
-        return RightAPIImageClient(timeout=s.image_timeout, task_url_template=s.gemini_task_url_template)
+        return RightAPIImageClient(base_url=s.rightapi_base_url, timeout=s.image_timeout,
+                                   poll_interval=s.image_poll_interval)
 
     def video_provider(self, provider_id: str) -> VideoProvider:
         """按界面选择返回视频后端；Modal 未配置（或演示模式）时自动换成本地演示后端。"""

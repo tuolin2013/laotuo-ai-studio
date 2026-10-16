@@ -9,12 +9,11 @@ import pytest
 from PIL import Image
 
 from app.engine.diagnostics import diagnose
-from app.engine.image_router import route_image_request
 from app.engine.planner_engine import PlannerEngine
 from app.engine.project_service import create_project
 from app.engine.render_engine import RenderEngine
 from app.engine.runtime import EngineRuntime
-from app.providers.image import ImageAPIError, RightAPIImageClient
+from app.providers.image import RightAPIImageClient
 from app.providers.llm import LLMError, RightAPILLM
 from app.settings import EDITABLE_ENV_KEYS, Settings, load_settings, save_env
 
@@ -70,92 +69,44 @@ async def test_llm_anthropic_format():
                           transport=httpx.MockTransport(lambda r: httpx.Response(401))).complete("s", "u")
 
 
-async def test_gemini_async_task_polling():
-    seen = []
-
-    def handler(req: httpx.Request):
-        seen.append(req.url.path)
-        if req.method == "POST":
-            assert req.url.path.endswith(":generateContent")
-            assert json.loads(req.content)["async"] is True
-            return httpx.Response(200, json={"task_id": "t1"})
-        if len(seen) < 3:
-            return httpx.Response(200, json={"status": "running"})
-        return httpx.Response(200, json={"status": "succeeded", "result": {
-            "candidates": [{"content": {"parts": [{"inlineData": {"data": _png_b64()}}]}}]}})
-
-    req = route_image_request(Settings(gemini_async=True), "nano-banana-2", "p", "1:1", [])
-    client = RightAPIImageClient(task_url_template="https://rightapi.ai/v1/tasks/{task_id}", poll_interval=0,
-                                 transport=httpx.MockTransport(handler))
-    imgs = await client.send(req, "g-key")
-    assert len(imgs) == 1 and seen[1] == "/v1/tasks/t1"
-
-    no_template = RightAPIImageClient(transport=httpx.MockTransport(handler))
-    with pytest.raises(ImageAPIError, match="TASK_URL_TEMPLATE"):
-        await no_template.send(req, "g-key")
-
-
-async def test_nano_banana_native_then_openai_fallback_and_url_download():
-    """同一把 Image Key：原生端点 404 时自动回退 OpenAI 兼容端点；返回 url 时自动下载。"""
-    seen = []
-    png = base64.b64decode(_png_b64())
-
-    def handler(req: httpx.Request):
-        seen.append((req.url.path, req.headers.get("authorization"), req.headers.get("x-goog-api-key")))
-        if req.url.path.endswith(":generateContent"):
-            return httpx.Response(404, json={"error": "not found"})
-        if req.url.path == "/v1/images/generations":
-            assert json.loads(req.content)["model"] == "nano-banana-pro"
-            return httpx.Response(200, json={"data": [{"url": "https://cdn.rightapi.ai/out/1.png"}]})
-        if req.url.host == "cdn.rightapi.ai":
-            return httpx.Response(200, content=png)
-        return httpx.Response(500)
-
-    req = route_image_request(Settings(image_key="DRAW"), "nano-banana-pro", "p", "1:1", [])
-    imgs = await RightAPIImageClient(transport=httpx.MockTransport(handler)).send(req, "DRAW")
-    assert imgs == [png]
-    assert [x[0] for x in seen] == ["/v1beta/models/nano-banana-pro:generateContent", "/v1/images/generations",
-                                    "/out/1.png"]
-    # 两个画图请求都带同一把 Key 的两种头
-    assert all(a == "Bearer DRAW" and g == "DRAW" for _, a, g in seen[:2])
-
-    # 关闭回退：原生 404 直接报错
-    no_fb = route_image_request(Settings(image_key="DRAW", gemini_openai_fallback=False), "nano-banana-pro", "p",
-                                "1:1", [])
-    with pytest.raises(ImageAPIError, match="404"):
-        await RightAPIImageClient(transport=httpx.MockTransport(handler)).send(no_fb, "DRAW")
-
-
 async def test_live_plan_and_render_use_two_keys(tmp_path):
-    """真实模式全链路：LLM Key 只用于策划/提示词，Image Key 同时用于 GPT-Image 与 Nano-Banana。"""
+    """真实模式全链路（官方异步协议）：LLM Key 只用于策划/提示词；Image Key 同时用于 GPT Image 与 Gemini。"""
     log = []
+    png = base64.b64decode(_png_b64())
+    tasks: dict[str, str] = {}
 
     def handler(req: httpx.Request):
         path, auth = req.url.path, req.headers.get("authorization")
         log.append((path, auth))
+        if req.url.host == "cdn.example.com":
+            return httpx.Response(200, content=png)
         if path == "/v1/messages":
             assert auth == "Bearer LLM"
             content = json.loads(req.content)["messages"][0]["content"]
-            if "slot_json" in content or "槽位策划" in content:
-                out = {"prompt": "real prompt", "negative_notes": "none"}
-            else:
-                out = PLAN_JSON
+            out = {"prompt": "real prompt", "negative_notes": "none"} if "槽位策划" in content else PLAN_JSON
             return httpx.Response(200, json={"content": [{"type": "text", "text": json.dumps(out)}]})
-        if path in ("/v1/images/generations", "/v1/images/edits"):
+        if path in ("/v1/images/generations", "/v1/images/edits") or path.endswith(":generateContent"):
             assert auth == "Bearer DRAW"
-            return httpx.Response(200, json={"data": [{"b64_json": _png_b64()}]})
-        if path.endswith(":generateContent"):
-            assert auth == "Bearer DRAW" and req.headers["x-goog-api-key"] == "DRAW"
-            return httpx.Response(200, json={"candidates": [{"content": {"parts": [
-                {"inline_data": {"mime_type": "image/png", "data": _png_b64()}}]}}]})
+            body = json.loads(req.content)
+            assert body["async"] is True
+            tid = f"task_{len(tasks)}"
+            tasks[tid] = "gemini" if path.endswith(":generateContent") else "openai"
+            return httpx.Response(200, json={"task_id": tid, "status": "processing", "progress": 0})
+        if path.startswith("/v1/tasks/"):
+            assert auth == "Bearer DRAW"
+            tid = path.rsplit("/", 1)[-1]
+            url = f"https://cdn.example.com/{tid}.png"
+            if tasks[tid] == "openai":
+                return httpx.Response(200, json={"created": 1, "data": [{"url": url}]})
+            return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": url}]}}]})
         return httpx.Response(404)
 
     transport = httpx.MockTransport(handler)
-    settings = Settings(workspace_dir=tmp_path, llm_key="LLM", llm_api_format="anthropic",
-                        image_key="DRAW")
+    settings = Settings(workspace_dir=tmp_path, llm_key="LLM", llm_api_format="anthropic", image_key="DRAW")
     rt = EngineRuntime(settings=settings, demo_delay=0)
     rt.llm_override = RightAPILLM(settings.rightapi_base_url, "LLM", "m", "anthropic", transport=transport)
-    rt.image_client_override = RightAPIImageClient(transport=transport)
+    rt.image_client_override = RightAPIImageClient(base_url=settings.rightapi_base_url, poll_interval=0,
+                                                   transport=transport)
 
     project = create_project(rt, "live", "zhangjiajie_berry_tea", "taobao")
     plan, mode = await PlannerEngine(rt).generate(
@@ -169,20 +120,31 @@ async def test_live_plan_and_render_use_two_keys(tmp_path):
     ref = tmp_path / "pkg.png"
     Image.new("RGB", (32, 32)).save(ref)
     plan.upload_reference("product_package", ref)
+    for s in plan.slots:
+        plan.set_candidate_count(s.slot_id, 2)
 
-    events = [e async for e in RenderEngine(rt).render_plan(project, plan, "gpt-image-2", "gpt_image_2")]
-    assert sum(1 for e in events if e.image_path) == 2, [e.message for e in events]
+    events = [e async for e in RenderEngine(rt).render_plan(project, plan, "gpt-image-2.5-sunburst", "gpt_image_2",
+                                                            resolution="4K", quality="max")]
+    assert sum(1 for e in events if e.image_path) == 4, [e.message for e in events]
     paths = [p for p, _ in log]
-    assert "/v1/images/edits" in paths and "/v1/images/generations" in paths
+    # 有参考图的槽位走 edits，无参考图的槽位走 generations
+    assert paths.count("/v1/images/edits") == 2 and paths.count("/v1/images/generations") == 2
+    # 1:1 的 4K 受总像素上限 8,294,400 约束，取最大合法值 2880x2880
+    assert any("OpenAI 生成 /v1/images/edits · size 2880x2880" in e.message for e in events)
+    assert any("quality max" in e.message for e in events)
     assert plan.slots[0].compiled_prompt.startswith("real prompt")
+    assert all(c.file_path.read_bytes() == png for s in plan.slots for c in s.candidates)
 
-    # 换成 Nano-Banana：同一把 Key，走 Gemini 原生端点
-    events = [e async for e in RenderEngine(rt).render_plan(project, plan, "nano-banana-2", "gemini_nano_banana",
-                                                            resolution="4K")]
-    assert sum(1 for e in events if e.image_path) == 2
-    assert any(p.endswith("nano-banana-2:generateContent") for p, _ in log)
+    # 换成 Gemini 模型：同一把 Key，文生图与参考图编辑都走 generateContent
+    log.clear()
+    events = [e async for e in RenderEngine(rt).render_plan(project, plan, "gemini-3-pro-image-preview",
+                                                            "gemini_nano_banana", resolution="4K")]
+    assert sum(1 for e in events if e.image_path) == 4
+    gen_paths = [p for p, _ in log if p.startswith("/v1beta")]
+    assert gen_paths == ["/v1beta/models/gemini-3-pro-image-preview:generateContent"] * 4
+    assert not any(p.startswith("/v1/images") for p, _ in log)
     # 画图请求从不使用 LLM Key
-    assert all(a != "Bearer LLM" for p, a in log if "images" in p or "generateContent" in p)
+    assert all(a != "Bearer LLM" for p, a in log if p != "/v1/messages")
 
 
 def test_save_env_roundtrip_and_whitelist(tmp_path, monkeypatch):
@@ -211,18 +173,21 @@ async def test_diagnostics_without_spending_image_quota():
         calls.append(req.url.path)
         if req.url.path == "/v1/messages":
             return httpx.Response(200, json={"content": [{"type": "text", "text": "OK"}]})
-        if req.url.path == "/v1/models":
+        if req.url.path.startswith("/v1/tasks/task_"):
             assert req.headers["authorization"] == "Bearer DRAW-KEY-123456"
-            return httpx.Response(200, json={"data": [{"id": "gpt-image-2.5"}, {"id": "nano-banana-pro"}]})
-        return httpx.Response(404)
+            return httpx.Response(404, json={"error": {"message": "任务不存在"}})
+        return httpx.Response(500)
 
     s = Settings(llm_key="LLM-KEY-1234567", image_key="DRAW-KEY-123456", llm_api_format="anthropic")
     report = await diagnose(s, httpx.MockTransport(handler))
-    assert "🟢 LLM" in report and "🟢 画图" in report and "匹配 2/5" in report
+    assert "🟢 LLM" in report and "🟢 画图" in report and "gemini-3-pro-image-preview(gemini)" in report
     # Key 打码显示
     assert "DRAW-KEY-123456" not in report and "LLM-KEY-1234567" not in report
-    # 诊断不调用画图接口，不消耗额度
-    assert "/v1/images/generations" not in calls
+    # 诊断不提交画图任务，不消耗额度
+    assert not any(c.startswith(("/v1/images", "/v1beta")) for c in calls)
+
+    bad = await diagnose(s, httpx.MockTransport(lambda r: httpx.Response(401)))
+    assert "❌ 画图" in bad and "Key 无效" in bad
 
     empty = await diagnose(Settings(), httpx.MockTransport(handler))
     assert empty.count("🟡") == 3

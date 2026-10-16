@@ -76,7 +76,7 @@ def test_full_workflow_through_ui(server, tmp_path):
     plan = rt.store.load(project.project_id).main_image_plan
     assert [a.role for a in plan.reference_assets] == [first_role]
 
-    out = client.predict("gpt-image-2.5", 2, "2K", out[0], api_name="/main_image_render")
+    out = client.predict("gpt-image-2.5-flare", 2, "2K", "high", out[0], api_name="/main_image_render")
     assert "全部完成" in _last(out[0])
     gallery = out[-2]
     assert len(gallery) == 10
@@ -89,7 +89,7 @@ def test_full_workflow_through_ui(server, tmp_path):
     out = client.predict(out[2], out[0], api_name="/detail_page_confirm")
     out = client.predict(out[0], api_name="/detail_page_reuse")
     assert first_role in _last(out[0])
-    out = client.predict("nano-banana-pro", 1, "1K", out[0], api_name="/detail_page_render")
+    out = client.predict("gemini-nano-banana-2.1", 1, "1K", "high", out[0], api_name="/detail_page_render")
     assert len(out[-1]) == screens  # 长图序列每屏一张
 
     # ---------------- 视频：剧本 -> 确认 -> 复用参考图 -> 首帧 -> 锁定 -> H3 -> 生成

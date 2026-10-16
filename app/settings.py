@@ -9,16 +9,21 @@ from pathlib import Path
 from dotenv import load_dotenv, set_key
 
 from app.engine.config_loader import PROJECT_ROOT
+from app.providers.image_models import CATALOG, HQ_MODELS
 
 ENV_FILE = PROJECT_ROOT / ".env"
-DEFAULT_BASE_URL = "https://rightapi.ai"
+# 官方文档 https://docs.rightapi.ai/docs/rc_draw/ 的基础地址（不带 www 时任务查询接口不可达）
+DEFAULT_BASE_URL = "https://www.rightapi.ai"
 IMAGE_RESOLUTIONS = ("1K", "2K", "4K")
+IMAGE_QUALITIES = ("auto", "low", "medium", "high", "xhigh", "max")
 
 # 界面「API 配置」面板允许写回 .env 的键
 EDITABLE_ENV_KEYS = (
     "RIGHTAPI_LLM_KEY",
     "RIGHTAPI_IMAGE_KEY",
     "RIGHTAPI_IMAGE_RESOLUTION",
+    "RIGHTAPI_IMAGE_QUALITY",
+    "RIGHTAPI_BASE_URL",
     "MODAL_H3_ENDPOINT_URL",
     "COMFYUI_URL",
     "RIGHTAPI_LLM_API_FORMAT",
@@ -35,7 +40,8 @@ def _bool(value: str | None) -> bool:
 
 
 def normalize_base_url(url: str | None) -> str:
-    """容错处理：补全 https://、去掉结尾的 / 以及误填的 /v1、/v1beta 后缀。"""
+    """容错处理：补全 https://、去掉结尾的 / 以及误填的 /v1、/v1beta 后缀；
+    裸域名 rightapi.ai 统一改为文档中的 www.rightapi.ai（裸域名下 /v1/tasks 不可达）。"""
     url = (url or "").strip() or DEFAULT_BASE_URL
     if "://" not in url:
         url = "https://" + url
@@ -43,7 +49,11 @@ def normalize_base_url(url: str | None) -> str:
     for suffix in ("/v1beta", "/v1"):
         if url.endswith(suffix):
             url = url[: -len(suffix)]
-    return url.rstrip("/")
+    url = url.rstrip("/")
+    scheme, _, host = url.partition("://")
+    if host == "rightapi.ai":
+        url = f"{scheme}://www.rightapi.ai"
+    return url
 
 
 @dataclass(frozen=True)
@@ -54,19 +64,19 @@ class Settings:
     # auto：先试 /v1/messages（Anthropic 原生），404/405 时回退 /v1/chat/completions
     llm_api_format: str = "auto"
     llm_timeout: float = 180
-    # Image 渠道通用 Key：GPT-Image 与 Nano-Banana 共用
+    # 画图 Key：GPT Image 与 Nano Banana 共用（生产使用「image 高质量」渠道的 Key）
     image_key: str = field(default="", repr=False)
-    openai_image_models: list[str] = field(default_factory=lambda: ["gpt-image-2.5", "gpt-image-2"])
-    gemini_image_models: list[str] = field(
-        default_factory=lambda: ["nano-banana-pro", "nano-banana-2", "nano-banana-2-lite"]
-    )
-    # Nano-Banana 输出分辨率：1K / 2K / 4K
+    # 界面可选的画图模型（必须在 app/providers/image_models.py 的目录中，协议由目录决定）
+    image_models: list[str] = field(default_factory=lambda: list(HQ_MODELS))
+    # 分辨率档位：GPT Image 换算为合法像素尺寸，Gemini 直接作为 imageSize
     image_resolution: str = "2K"
-    # Nano-Banana 原生接口 404/405 时，是否回退 OpenAI Images 兼容端点
-    gemini_openai_fallback: bool = True
-    gemini_async: bool = False
-    gemini_task_url_template: str = ""
-    image_timeout: float = 300
+    # GPT Image 质量档；gpt-image-2 不支持 xhigh/max，会自动降为 high
+    image_quality: str = "high"
+    # 单个异步任务的最长等待（提交 + 轮询）
+    image_timeout: float = 600
+    image_poll_interval: float = 4.0
+    # 同时进行的画图任务数（高质量渠道不限并发，此处只为保护本机带宽）
+    image_concurrency: int = 8
     default_video_provider: str = "modal_minimax_h3"
     video_timeout: float = 600
     modal_h3_url: str = ""
@@ -80,10 +90,6 @@ class Settings:
     workspace_dir: Path = PROJECT_ROOT / "workspace"
     server_name: str = "127.0.0.1"
     server_port: int = 7860
-
-    @property
-    def image_models(self) -> list[str]:
-        return [*self.openai_image_models, *self.gemini_image_models]
 
     def channel_live(self, channel: str) -> bool:
         """某个通道是否走真实接口（否则走零 Key 演示兜底）。"""
@@ -104,11 +110,16 @@ def _resolution(value: str) -> str:
     return v if v in IMAGE_RESOLUTIONS else "2K"
 
 
+def _models(value: str) -> list[str]:
+    """只保留目录中登记过协议的模型，未知模型直接忽略，避免调用错接口。"""
+    picked = [m for m in _list(value) if m in CATALOG]
+    return picked or list(HQ_MODELS)
+
+
 def load_settings(env_file: Path | None = None, override: bool = False) -> Settings:
     load_dotenv(env_file or ENV_FILE, override=override)
     e = os.environ.get
     workspace = Path(e("WORKSPACE_DIR", "workspace"))
-    defaults = Settings()
     return Settings(
         rightapi_base_url=normalize_base_url(e("RIGHTAPI_BASE_URL")),
         llm_key=e("RIGHTAPI_LLM_KEY", ""),
@@ -118,13 +129,12 @@ def load_settings(env_file: Path | None = None, override: bool = False) -> Setti
         # 兼容旧版的两个变量名（RIGHTAPI_OPENAI_IMAGE_KEY / RIGHTAPI_GEMINI_IMAGE_KEY）
         image_key=(e("RIGHTAPI_IMAGE_KEY", "") or e("RIGHTAPI_OPENAI_IMAGE_KEY", "")
                    or e("RIGHTAPI_GEMINI_IMAGE_KEY", "")),
-        openai_image_models=_list(e("RIGHTAPI_OPENAI_IMAGE_MODELS", "")) or defaults.openai_image_models,
-        gemini_image_models=_list(e("RIGHTAPI_GEMINI_IMAGE_MODELS", "")) or defaults.gemini_image_models,
+        image_models=_models(e("RIGHTAPI_IMAGE_MODELS", "")),
         image_resolution=_resolution(e("RIGHTAPI_IMAGE_RESOLUTION", "2K")),
-        gemini_openai_fallback=_bool(e("RIGHTAPI_GEMINI_OPENAI_FALLBACK", "true")),
-        gemini_async=_bool(e("RIGHTAPI_GEMINI_ASYNC")),
-        gemini_task_url_template=e("RIGHTAPI_GEMINI_TASK_URL_TEMPLATE", ""),
-        image_timeout=float(e("RIGHTAPI_IMAGE_TIMEOUT_SECONDS", "300")),
+        image_quality=q if (q := e("RIGHTAPI_IMAGE_QUALITY", "high").strip().lower()) in IMAGE_QUALITIES else "high",
+        image_timeout=float(e("RIGHTAPI_IMAGE_TIMEOUT_SECONDS", "600")),
+        image_poll_interval=float(e("RIGHTAPI_IMAGE_POLL_SECONDS", "4")),
+        image_concurrency=max(1, int(e("RIGHTAPI_IMAGE_CONCURRENCY", "8"))),
         default_video_provider=e("DEFAULT_VIDEO_PROVIDER", "modal_minimax_h3"),
         video_timeout=float(e("VIDEO_TIMEOUT_SECONDS", "600")),
         # 兼容旧变量名 MODAL_MINIMAX_H3_URL

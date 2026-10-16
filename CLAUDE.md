@@ -135,26 +135,33 @@ variables: [product_name]        # 选填，声明正文使用的变量
 - 每个槽位可设置候选图数量 1~4，并发生成供勾选定稿。
 - 主图 / 详情页张数不锁死：平台配置给出默认建议值，用户可自由指定数量与比例。
 
-### 5.3 RightAPI 两把 Key
+### 5.3 RightAPI 两把 Key 与画图接口（以官方文档为准）
 
-默认 Base URL：`https://rightapi.ai`（`normalize_base_url` 自动补 `https://`、去掉结尾 `/`、`/v1`、`/v1beta`）。
+权威文档：https://docs.rightapi.ai/docs/rc_draw/ 。默认 Base URL：`https://www.rightapi.ai`（`normalize_base_url` 自动补 `https://`、去掉结尾 `/`、`/v1`、`/v1beta`；裸域名 `rightapi.ai` 下 `/v1/tasks` 不可达，自动改为 `www`）。
 
-| Key | 用途 | 接口 |
-|---|---|---|
-| `RIGHTAPI_LLM_KEY` | Claude LLM（AwsQ / 官渠），执行全部 Skill | `/v1/messages` 或 `/v1/chat/completions`（`RIGHTAPI_LLM_API_FORMAT`） |
-| `RIGHTAPI_IMAGE_KEY` | Image 渠道通用 Key，**GPT-Image 与 Nano-Banana 共用** | 见下方按模型分流 |
-
-画图按所选模型名自动分流（`app/engine/image_router.py`），请求同时携带 `Authorization: Bearer` 与 `x-goog-api-key`：
-
-| 模型 | 接口 |
+| Key | 用途 |
 |---|---|
-| `gpt-image-2.5` / `gpt-image-2` | 参考图 0 张 → `POST /v1/images/generations`；≥1 张 → `POST /v1/images/edits`；返回 `b64_json` 或 `url`（自动下载） |
-| `nano-banana-pro` / `nano-banana-2` / `nano-banana-2-lite` | 优先 `POST /v1beta/models/{model}:generateContent`（禁止 `:streamGenerateContent`），参考图以 base64 `inline_data` 放入 `contents.parts`，`imageConfig` 带比例与 `1K/2K/4K`；支持 `"async": true` + `task_id` 轮询；原生端点 404/405 时自动回退 OpenAI Images 兼容端点 |
+| `RIGHTAPI_LLM_KEY` | Claude LLM（AwsQ / 官渠），执行全部 Skill；`/v1/messages` 或 `/v1/chat/completions` |
+| `RIGHTAPI_IMAGE_KEY` | 画图 Key，GPT Image 与 Nano Banana 共用。**生产使用「image 高质量」渠道**（全模型 4K、异步、不限并发） |
 
+**模型决定协议，绝不按名字猜测**。所有画图模型在 `app/providers/image_models.py` 的 `CATALOG` 中显式登记协议，未登记的模型直接报错拒绝调用（用错接口会 404 / 400）：
+
+| 渠道 | 模型 | 协议 | 接口 |
+|---|---|---|---|
+| image 高质量（生产默认） | `gpt-image-2.5-flare`、`gpt-image-2.5-sunburst`、`gpt-image-2` | OpenAI 生成 | 0 张参考图 `POST /v1/images/generations`；≥1 张 `POST /v1/images/edits`（JSON `images` 数组传 data URL） |
+| image 高质量（生产默认） | `gemini-3-pro-image-preview`、`gemini-nano-banana-2.1` | Gemini 生成 | `POST /v1beta/models/{model}:generateContent`，文生图与参考图编辑同一接口（`parts` = 文本 + 按序 `inline_data` 纯 base64）；禁止 `:streamGenerateContent` |
+| image 普通 | `gpt-image-2-vip`、`gpt-image-2.5` | OpenAI 生成 | 同上 |
+| image 普通 | `nano-banana-pro`、`nano-banana-2`、`nano-banana-2-lite` | Gemini 生成 | 同上 |
+
+参数规则（`app/providers/image.py`）：
+- 统一异步：请求体固定 `"async": true` → 返回 `task_id` → 每 3~5 秒轮询 `GET /v1/tasks/{task_id}`，整体上限 600 秒。完成态不带 `status`：OpenAI 取 `data[].url`，Gemini 取 `candidates[].content.parts[].text`（文本即 URL）；`failed / expired / canceled` 按失败处理；提交即失败时响应 `status=failed` 并带 `error`。
+- 结果只有图片 URL（不返回 base64、`response_format` 不生效），由客户端下载保存；下载 CDN 时不携带 API Key。
+- GPT Image 尺寸用像素值：`gpt_image_size()` 把「比例 + 1K/2K/4K」换算为 16 的倍数、长边 ≤3840、总像素 655,360~8,294,400 的合法值；超过 2560x1440 为实验性大图。`quality` 中 `xhigh / max` 仅 2.5 模型可用，`gpt-image-2` 自动降为 `high`。每次请求 `n=1`，候选图通过并发多个任务获得。
+- Gemini 用 `generationConfig.imageConfig = {aspectRatio, imageSize}`，`imageSize` 为大写 `1K / 2K / 4K`。
+- 参考图长边 >2048 或 >4MB 时先压缩再上传。
 - 路由依据是槽位**实际绑定**的参考图数量，而不是策划时的模式字段。
-- LLM Key 只用于文本，Image Key 只用于画图，二者不混用；Key 只从环境变量读取，日志与诊断结果中只显示打码后的 Key。
-- 旧变量名 `RIGHTAPI_OPENAI_IMAGE_KEY` / `RIGHTAPI_GEMINI_IMAGE_KEY` 仅作读取兼容，界面与 `.env.example` 统一使用 `RIGHTAPI_IMAGE_KEY`。
-- 「🩺 连通性诊断」（`app/engine/diagnostics.py`）：LLM 发一条极短消息，画图只请求 `GET /v1/models`，不消耗画图额度。
+- LLM Key 只用于文本，Image Key 只用于画图；Key 只从环境变量读取，日志与诊断结果中只显示打码后的 Key。旧变量名 `RIGHTAPI_OPENAI_IMAGE_KEY` / `RIGHTAPI_GEMINI_IMAGE_KEY` 仅作读取兼容。
+- 「🩺 连通性诊断」（`app/engine/diagnostics.py`）：LLM 发一条极短消息；画图只查询一个不存在的任务 `GET /v1/tasks/{随机id}` 来验证 Key，不提交画图任务、不消耗额度。
 
 ### 5.4 视频：MiniMax H3 原生音画一体
 

@@ -122,7 +122,7 @@ def test_first_frame_ratio_locked_to_video_ratio(tmp_path):
     script = make_script(aspect_ratio="3:4")
     script.confirm_plan()
     sid = script.shots[0].shot_id
-    frame = script.add_first_frame(sid, tmp_path / "f.png", model="nano-banana-pro")
+    frame = script.add_first_frame(sid, tmp_path / "f.png", model="gemini-3-pro-image-preview")
     assert frame.aspect_ratio == "3:4"
     with pytest.raises(ValueError, match="不一致"):
         script.add_first_frame(sid, tmp_path / "g.png", model="gpt-image-2", aspect_ratio="1:1")

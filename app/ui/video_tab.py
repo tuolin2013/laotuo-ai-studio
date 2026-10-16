@@ -10,6 +10,7 @@ from app.engine.project_service import reuse_references
 from app.engine.prompt_compiler import PromptCompiler, global_continuous_prompt, image_skill_for_model
 from app.engine.render_engine import RenderEngine
 from app.engine.script_engine import ScriptEngine
+from app.providers.image_models import choices as model_choices
 from app.schemas.video import VIDEO_TYPE_LABELS, VideoScript
 from app.settings import IMAGE_RESOLUTIONS
 from app.ui.header import Header, collect_info, require_project
@@ -144,7 +145,7 @@ def build_video_tab(ws: Workspace, header: Header) -> None:
                     uploads.append(gr.Image(type="filepath", visible=False, height=170, key=f"video_up_{i}",
                                             sources=["upload", "clipboard"]))
             with gr.Row():
-                frame_model = gr.Dropdown(rt.settings.image_models, value=rt.settings.image_models[0],
+                frame_model = gr.Dropdown(model_choices(rt.settings.image_models), value=rt.settings.image_models[0],
                                           label="首帧生图模型")
                 frame_res = gr.Dropdown(list(IMAGE_RESOLUTIONS), value=rt.settings.image_resolution, label="分辨率")
                 frame_n = gr.Slider(1, 4, value=2, step=1, label="每镜首帧候选数")
