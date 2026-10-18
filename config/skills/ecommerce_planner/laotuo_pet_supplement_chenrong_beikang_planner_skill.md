@@ -185,8 +185,8 @@ variables: [deliverable_type, category_json, platform_json, product_info_json, r
       "selling_point": "本槽位承载的卖点",
       "visual_description": "画面描述：主体、构图、景别、光线、背景、道具、色调",
       "differentiator": "防雷同：这张图的独特之处",
-  "aesthetic_style": "auto",
-  "composition_mode": "auto",
+      "aesthetic_style": "clinical_lab_minimal | nordic_warm_lifestyle | high_impact_retail（科学配方/成分/资质屏用 clinical_lab_minimal，喂食与居家场景用 nordic_warm_lifestyle，拼多多首图可用 high_impact_retail）",
+      "composition_mode": "rule_of_thirds_negative_space | extreme_macro_texture | depth_layering | diagonal_dynamic_flow | split_screen_comparison | knolling_flat_lay（白底图填 auto）",
       "generation_mode": "text_to_image | single_image_edit | multi_image_fusion",
       "required_references": [
         {"role": "product_package", "description": "需要用户提供什么样的参考图"}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,16 +14,16 @@ from app.engine.prompt_compiler import image_skill_for_model
 from app.engine.render_engine import RenderEngine
 from app.providers.demo.content import auto_detail_screens
 from app.providers.image_models import choices as model_choices
-from app.schemas.plan import ImagePlan
+from app.schemas.plan import AESTHETIC_STYLE_NAMES, ImagePlan
 from app.settings import IMAGE_QUALITIES, IMAGE_RESOLUTIONS
 from app.ui.header import Header, collect_info, require_project
 from app.ui.state import (
     AESTHETIC_CHOICES,
-    COMPOSITION_CHOICES,
     MODE_CHOICES,
-    SLOT_HEADERS_EXTENDED,
+    SLOT_HEADERS,
     Workspace,
     apply_slot_rows,
+    design_hint,
     friendly,
     log_line,
     mode_hint,
@@ -58,8 +59,10 @@ def _status_md(plan: ImagePlan | None, spec: TabSpec) -> str:
     if plan is None:
         return f"尚未生成{spec.label}策划案"
     if plan.plan_status == "draft":
-        return (f"📝 **草稿（可编辑）**　共 {len(plan.slots)} 张　｜　{plan.plan_summary}\n\n"
-                f"直接在表格中修改文字、生图模式或参考图角色，完成后点「✅ 确认」。{mode_hint()}")
+        style = AESTHETIC_STYLE_NAMES.get(plan.aesthetic_style, "自动匹配")
+        return (f"📝 **草稿（可编辑）**　共 {len(plan.slots)} 张　｜　全局美学：{style}　｜　{plan.plan_summary}\n\n"
+                f"直接在表格中修改文字、生图模式、美学流派、构图模式或参考图角色，完成后点「✅ 确认」。"
+                f"{mode_hint()}\n\n{design_hint()}")
     return f"🔒 **已确认定稿**　共 {len(plan.slots)} 张　｜　如需修改请点「🔓 解锁返回修改」"
 
 
@@ -142,17 +145,10 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
                     count_mode = gr.State("manual")
                     count = gr.Slider(1, 10, value=5, step=1, label="主图数量（随平台默认，可改）")
                 ratio = gr.Dropdown(list(spec.ratios), value=spec.default_ratio, label=f"{spec.label}比例")
-            with gr.Row():
-                gr.Dropdown(
-                    AESTHETIC_CHOICES, value="auto",
-                    label="🎨 全局视觉设计美学流派（影响策划 AI 自动匹配，表格中可单独改）",
-                    scale=3
-                )
-                gr.Dropdown(
-                    COMPOSITION_CHOICES, value="auto",
-                    label="📐 全局默认构图模式（影响策划 AI 自动匹配，表格中可单独改）",
-                    scale=3
-                )
+            aesthetic = gr.Dropdown(
+                AESTHETIC_CHOICES, value="auto", label="🎨 全局视觉设计美学流派",
+                info="选「自动匹配」时 AI 为每张图分别挑选流派；选定某个流派则整套统一使用，生成后仍可在表格中逐张修改",
+            )
             idea = gr.Textbox(
                 label="💡 我的策划想法（选填）", lines=2,
                 placeholder="不填：按类目与平台自动策划；填写：优先按您的想法定制。例如：中秋主题、暖金色调、重点突出白霜对比",
@@ -162,11 +158,10 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
                 regen_btn = gr.Button("🔄 按新想法重新生成")
             status = gr.Markdown(f"尚未生成{spec.label}策划案")
             table = gr.Dataframe(
-                headers=SLOT_HEADERS_EXTENDED,
-                datatype=["number", "str", "str", "str", "str", "str", "str", "str", "str"],
+                headers=SLOT_HEADERS, datatype=["number", "str", "str", "str", "str", "str", "str", "str", "str"],
                 interactive=True, wrap=True, static_columns=[0],
-                column_widths=["4%", "10%", "9%", "12%", "25%", "10%", "12%", "10%", "8%"],
-                label="可编辑策划区（生图模式、美学流派、构图模式可直接修改，详见下拉提示）",
+                column_widths=["4%", "10%", "9%", "11%", "26%", "10%", "10%", "10%", "10%"],
+                label=f"可编辑策划区（生图模式可填：{' / '.join(MODE_CHOICES)}；美学流派、构图模式填中文名或「自动」）",
             )
             with gr.Row():
                 save_edit = gr.Button("💾 保存表格修改")
@@ -225,7 +220,7 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
         ch = _slot_choices(plan)
         wch, wsel = _winner_choices(plan)
         outs = [
-            _status_md(plan, spec), slots_to_rows(plan, extended=True),
+            _status_md(plan, spec), slots_to_rows(plan),
             gr.update(choices=ch, value=ch[0][1] if ch else None),
             gr.update(choices=ch, value=ch[0][1] if ch else None),
             _checklist_md(plan), *_upload_updates(plan), _gallery(plan),
@@ -243,7 +238,7 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
         return (prev + "\n" if prev else "") + log_line(msg)
 
     # ================================================================ Step 1
-    async def do_generate(pid, cid, pfid, cmode, n, r, idea_text, skill_id, prev_log, *info_vals):
+    async def do_generate(pid, cid, pfid, cmode, n, r, style, idea_text, skill_id, prev_log, *info_vals):
         p = require_project(ws, pid)
         info = collect_info(ws, cid, info_vals)
         p.category_id, p.platform_id, p.product_info = cid, pfid, info
@@ -257,6 +252,7 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
         log = _log(prev_log, f"开始{spec.label}策划：{rt.category(cid).name} · {plat.name} · {hint} · {r}")
         log = _log(log, "我的策划想法：" + (idea_text.strip() if idea_text and idea_text.strip()
                                         else "（未填写，交由 AI 按类目与平台自动策划）"))
+        log = _log(log, "全局美学流派：" + AESTHETIC_STYLE_NAMES.get(style, "自动匹配（AI 按每张图的作用选择）"))
         log = _log(log, f"执行 Skill：{skill_id}（{'真实 LLM' if rt.is_live('llm') else '演示模式'}）")
         yield [log, *_refresh(pid)]
         try:
@@ -264,6 +260,7 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
                 plan, mode = await planner.generate(
                     deliverable_type=spec.key, category_id=cid, platform_id=pfid, aspect_ratio=r, count=count_val,
                     user_creative_idea=idea_text, product_info=info, skill_id=skill_id, existing=existing,
+                    aesthetic_style=style or "auto",
                 )
                 setattr(p, spec.attr, plan)
                 ws.save(p)
@@ -271,11 +268,13 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
             yield [_log(log, friendly(e)), *_refresh(pid)]
             return
         counts = {m: sum(1 for s in plan.slots if s.generation_mode == m) for m in MODE_CHOICES}
+        styles = Counter(AESTHETIC_STYLE_NAMES.get(s.aesthetic_style, "自动") for s in plan.slots)
         log = _log(log, f"✅ 策划完成（{mode}）：共 {len(plan.slots)} 张；文生图 {counts['text_to_image']}、"
-                        f"单图编辑 {counts['single_image_edit']}、多图融合 {counts['multi_image_fusion']}")
+                        f"单图编辑 {counts['single_image_edit']}、多图融合 {counts['multi_image_fusion']}；"
+                        "🎨 美学流派：" + "、".join(f"{k} {v}" for k, v in styles.items()))
         yield [log, *_refresh(pid)]
 
-    gen_inputs = [header.project_id, header.category, header.platform, count_mode, count, ratio, idea,
+    gen_inputs = [header.project_id, header.category, header.platform, count_mode, count, ratio, aesthetic, idea,
                   header.skill_dropdowns["ecommerce_planner"], logs, *header.info_fields]
     for btn in (gen_btn, regen_btn):
         btn.click(do_generate, gen_inputs, [logs, *refresh_outputs], concurrency_id=f"{spec.key}_tab",
@@ -284,7 +283,7 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
     def do_save_edit(pid, tbl, prev):
         plan = _plan(ws, pid, spec)
         try:
-            n = apply_slot_rows(plan, tbl, rt.category(plan.category_id).reference_image_roles, extended=True)
+            n = apply_slot_rows(plan, tbl, rt.category(plan.category_id).reference_image_roles)
             ws.save(ws.get(pid))
             msg = f"💾 已保存表格修改（{n} 个槽位有变化）"
         except Exception as e:
@@ -300,7 +299,7 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
         log = _log(prev, "🎲 正在单独重新生成所选槽位…")
         yield [log, *_refresh(pid)]
         try:
-            apply_slot_rows(plan, tbl, rt.category(plan.category_id).reference_image_roles, extended=True)
+            apply_slot_rows(plan, tbl, rt.category(plan.category_id).reference_image_roles)
             new = await planner.regenerate_slot(plan, sid, collect_info(ws, cid, info_vals))
             ws.save(ws.get(pid))
             log = _log(log, f"✅ 已重新生成：「{new.title}」（{new.generation_mode}）")
@@ -316,7 +315,7 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
         def handler(pid, sid, tbl, prev):
             plan = _plan(ws, pid, spec)
             try:
-                apply_slot_rows(plan, tbl, rt.category(plan.category_id).reference_image_roles, extended=True)
+                apply_slot_rows(plan, tbl, rt.category(plan.category_id).reference_image_roles)
                 msg = op(plan, sid)
                 ws.save(ws.get(pid))
             except Exception as e:
@@ -354,7 +353,7 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
         plan = _plan(ws, pid, spec)
         try:
             if plan.plan_status == "draft":
-                apply_slot_rows(plan, tbl, rt.category(plan.category_id).reference_image_roles, extended=True)
+                apply_slot_rows(plan, tbl, rt.category(plan.category_id).reference_image_roles)
             checklist_items = plan.confirm_plan()
             ws.save(ws.get(pid))
             roles = "、".join(c.role for c in checklist_items) or "无（全部文生图）"

@@ -70,7 +70,7 @@ def test_full_workflow_through_ui(server, tmp_path):
     client.predict("UI验收", TEA, "taobao", *INFO, api_name="/new_project")
 
     # ---------------- 主图：生成 -> 确认 -> 上传参考图 -> 渲染
-    out = client.predict(TEA, "taobao", 5, "1:1", "中秋主题，暖金色调", "default_planner", "", *INFO,
+    out = client.predict(TEA, "taobao", 5, "1:1", "auto", "中秋主题，暖金色调", "default_planner", "", *INFO,
                          api_name="/main_image_generate")
     assert "策划完成" in _last(out[0]) and len(out[2]["data"]) == 5 and "草稿" in out[1]
     out = client.predict(out[2], out[0], api_name="/main_image_confirm")
@@ -93,7 +93,7 @@ def test_full_workflow_through_ui(server, tmp_path):
     assert len(gallery) == 10
 
     # ---------------- 详情页：自动屏数 -> 确认 -> 一键复用主图参考图 -> 渲染 -> 长图序列
-    out = client.predict(TEA, "taobao", "auto", 8, "3:4", "", "default_planner", "", *INFO,
+    out = client.predict(TEA, "taobao", "auto", 8, "3:4", "clinical_lab_minimal", "", "default_planner", "", *INFO,
                          api_name="/detail_page_generate")
     screens = len(out[2]["data"])
     assert screens >= 3

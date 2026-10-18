@@ -18,25 +18,48 @@ from app.schemas.common import (
 )
 from app.schemas.editable import BindableItem, EditablePlanBase, ReferenceRequirement
 
-# 电商图片三维设计体系
+# 电商图片三维设计体系（详见 config/skills/image_prompt/references/ecommerce_aesthetics_guide.md）
+# auto = 交给策划 / 生图 Skill 按指南自动匹配
 AestheticStyle = Literal[
-    "auto",  # AI 自动匹配
-    "new_chinese_zen",  # 新中式茶席禅意美学
-    "organic_nature_sunlight",  # 原生态山野呼吸感美学
-    "clinical_lab_minimal",  # 科学实证与临床极简美学
-    "nordic_warm_lifestyle",  # 北欧暖阳治愈生活美学
-    "high_impact_retail",  # 高对比零售视觉锤美学
+    "auto", "new_chinese_zen", "organic_nature_sunlight", "clinical_lab_minimal", "nordic_warm_lifestyle",
+    "high_impact_retail",
+]
+CompositionMode = Literal[
+    "auto", "rule_of_thirds_negative_space", "extreme_macro_texture", "depth_layering", "diagonal_dynamic_flow",
+    "split_screen_comparison", "knolling_flat_lay",
 ]
 
-CompositionMode = Literal[
-    "auto",  # AI 自动匹配
-    "rule_of_thirds_negative_space",  # 三分留白构图
-    "extreme_macro_texture",  # 光学微距局部满画幅
-    "depth_layering",  # 前中远三层景深构图
-    "diagonal_dynamic_flow",  # 对角线流体动态构图
-    "split_screen_comparison",  # 黄金比例分屏对比构图
-    "knolling_flat_lay",  # 90° 垂直俯拍秩序美学
-]
+# 中文名（界面、策划指令与演示图共用）
+AESTHETIC_STYLE_NAMES: dict[str, str] = {
+    "new_chinese_zen": "新中式茶席禅意",
+    "organic_nature_sunlight": "原生态山野呼吸",
+    "clinical_lab_minimal": "科学实证极简",
+    "nordic_warm_lifestyle": "北欧暖阳治愈",
+    "high_impact_retail": "高对比零售视觉锤",
+}
+COMPOSITION_MODE_NAMES: dict[str, str] = {
+    "rule_of_thirds_negative_space": "三分留白构图",
+    "extreme_macro_texture": "光学微距满画幅",
+    "depth_layering": "前中远三层景深",
+    "diagonal_dynamic_flow": "对角线动态构图",
+    "split_screen_comparison": "分屏对比构图",
+    "knolling_flat_lay": "90°俯拍秩序构图",
+}
+
+
+def design_code(value: Any, names: dict[str, str]) -> str | None:
+    """把代码或中文名（可带 emoji、引号、只写一部分）解析为设计代码。
+
+    空值 / auto / 自动… 返回 "auto"；无法识别或同时匹配多个时返回 None。
+    """
+    text = str(value or "").strip().strip("`'\"").strip()
+    if not text or text.lower() == "auto" or text.startswith("自动"):
+        return "auto"
+    if text in names:
+        return text
+    hits = [code for code, name in names.items()
+            if code in text or name in text or (len(text) >= 2 and text in name)]
+    return hits[0] if len(hits) == 1 else None
 
 
 class CandidateImage(BaseModel):
@@ -91,6 +114,8 @@ class ImagePlan(EditablePlanBase):
     planner_skill_id: str
     plan_summary: str = ""
     default_aspect_ratio: AspectRatio
+    # Step 1 选择的全局美学流派：非 auto 时所有槽位统一使用该流派（表格中仍可逐张修改）
+    aesthetic_style: AestheticStyle = "auto"
     slots: list[ImageSlot] = Field(default_factory=list)
 
     # ---- 语义化别名，便于 UI 层调用 ----
@@ -140,7 +165,7 @@ def slot_from_llm(data: dict[str, Any], default_aspect_ratio: AspectRatio) -> Im
     allowed = set(ImageSlot.model_fields) - {"slot_id", "candidates", "required_references"}
     fields = {k: v for k, v in data.items() if k in allowed}
     fields.setdefault("aspect_ratio", default_aspect_ratio)
-    # 如果 LLM 没有输出美学与构图字段，默认为 auto
-    fields.setdefault("aesthetic_style", "auto")
-    fields.setdefault("composition_mode", "auto")
+    # 美学与构图是 LLM 自由输出的字段：缺失或无法识别时退回 auto，不让整套策划失败
+    fields["aesthetic_style"] = design_code(fields.get("aesthetic_style"), AESTHETIC_STYLE_NAMES) or "auto"
+    fields["composition_mode"] = design_code(fields.get("composition_mode"), COMPOSITION_MODE_NAMES) or "auto"
     return ImageSlot(required_references=refs, **fields)

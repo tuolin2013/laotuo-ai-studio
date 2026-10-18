@@ -24,6 +24,20 @@ _BOLD = [
 ]
 
 
+# 美学流派绑定的字体气质：宋刻衬线 / 亲和圆体；找不到时退回黑体
+_STYLED = {
+    "serif": [
+        "C:/Windows/Fonts/STSONG.TTF",
+        "C:/Windows/Fonts/simsun.ttc",
+        "/System/Library/Fonts/Supplemental/Songti.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
+    ],
+    "rounded": [
+        "C:/Windows/Fonts/SIMYOU.TTF",
+    ],
+}
+
+
 @cache
 def font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     for path in _BOLD if bold else _REGULAR:
@@ -31,6 +45,15 @@ def font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.Im
             return ImageFont.truetype(path, size)
     # 没有中文字体时退化为 PIL 内置字体（中文会显示为方框，但不影响流程）
     return ImageFont.load_default(size)
+
+
+@cache
+def styled_font(size: int, kind: str = "sans", bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    """kind：serif（宋刻衬线）/ rounded（圆体）/ sans（黑体）。"""
+    for path in _STYLED.get(kind, []):
+        if Path(path).exists():
+            return ImageFont.truetype(path, size)
+    return font(size, bold)
 
 
 def wrap(draw: ImageDraw.ImageDraw, text: str, fnt, max_width: int, max_lines: int = 4) -> list[str]:

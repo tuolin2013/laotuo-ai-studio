@@ -19,6 +19,7 @@ from pathlib import Path
 from app.engine.image_router import image_key, route_image_request
 from app.engine.prompt_compiler import PromptCompiler
 from app.engine.runtime import EngineRuntime
+from app.providers.demo.aesthetics import pill_from_copy
 from app.providers.demo.render import DemoArt, render_demo_image
 from app.providers.image import gpt_image_size, gpt_quality_for, is_experimental_size
 from app.providers.image_models import protocol_of
@@ -207,6 +208,8 @@ class RenderEngine:
                 palette=cat.visual_style.palette, references=[a.file_path for a in refs],
                 reference_labels=[a.role for a in refs], seed=f"{slot.slot_id}-{i}-{_ts()}",
                 badge=f"{res} · 候选 {i + 1}/{n}",
+                aesthetic=slot.aesthetic_style, composition=slot.composition_mode,
+                pill=pill_from_copy(slot.copy_text, slot.title, slot.subtitle),
             )
 
         async for ev in self._render_items(

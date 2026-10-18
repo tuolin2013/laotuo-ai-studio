@@ -51,6 +51,8 @@ references: [references/ecommerce_aesthetics_guide.md]
 
 如果参数为 `auto`，则根据《电商图片设计三维体系》第四部分的映射表，结合槽位的 `title`、`visual_description` 和类目，自动匹配最优构图与美学组合。
 
+如果 `slot_json` 中没有这两个字段且 `copy_text` 为空（例如视频分镜的静止首帧），只借用美学流派的色板与光线，**画面中不排任何文字，也不刻意预留文字留白区**。
+
 **第二步：按三维体系编译提示词**
 
 严格按以下顺序写成一段连贯的英文：

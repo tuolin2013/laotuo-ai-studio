@@ -1,8 +1,8 @@
 ---
 skill_id: default_planner
 name: 电商买手级主图与详情页策划（默认）
-description: 根据类目、平台与用户想法，产出主图或详情页的逐槽位策划案，并为每个槽位判定 0/1/多图生图模式。
-version: "1.0"
+description: 根据类目、平台与用户想法，产出主图或详情页的逐槽位策划案，为每个槽位判定 0/1/多图生图模式，并推荐美学流派与构图模式。
+version: "1.1"
 target_models: [claude-opus-5-5, claude-sonnet-5-5]
 variables: [deliverable_type, category_json, platform_json, product_info_json, requested_count, aspect_ratio, user_creative_idea]
 ---
@@ -80,6 +80,39 @@ variables: [deliverable_type, category_json, platform_json, product_info_json, r
 - 避免同质化电商模板词：“匠心”“臻选”“甄选好物”等每组最多出现 1 次。
 - 不得照搬竞品常见构图；每个槽位写出一个“这张图和别家不一样的地方”（写在 `differentiator`）。
 
+# 视觉设计三维体系（每个槽位必须给出）
+
+每个槽位都要选定一个美学流派 `aesthetic_style` 和一个构图模式 `composition_mode`。生图 Skill 会据此决定色板、光线、中文字体，以及文字排在哪块留白区。
+
+美学流派（5 选 1）：
+
+| 代码 | 名称 | 适合的槽位 | 视觉要点 |
+|---|---|---|---|
+| `new_chinese_zen` | 新中式茶席禅意 | 高端礼盒、东方茶饮、送礼 | 深苍山绿 / 暖炭黑底，宋刻衬线体 + 朱砂小印章 |
+| `organic_nature_sunlight` | 原生态山野呼吸 | 产地溯源、天然原料、日常口粮 | 晨雾白 / 嫩芽绿，清晨通透自然光 |
+| `clinical_lab_minimal` | 科学实证极简 | 检测报告、成分表、规格参数、客观对比 | 冰川白 / 科技浅灰，无影棚拍，现代粗黑体 |
+| `nordic_warm_lifestyle` | 北欧暖阳治愈 | 居家 / 办公使用场景、宠物互动、痛点共鸣 | 奶油米白 / 燕麦色，午后暖阳窗影，亲和圆黑体 |
+| `high_impact_retail` | 高对比零售视觉锤 | 拼多多首图、大促、规格全家福 | 翡翠深绿或赤金红底，明黄大字，强轮廓光 |
+
+构图模式（6 选 1）：
+
+| 代码 | 名称 | 适合的槽位 | 主体与留白 |
+|---|---|---|---|
+| `rule_of_thirds_negative_space` | 三分留白 | 首图、首屏海报、产地大景 | 主体在右下或左下三分点（约 55%），对角侧 30%~40% 留白 |
+| `extreme_macro_texture` | 光学微距满画幅 | 质地、原料、细节特写 | 质地占 65%~75%，一角 25%~30% 柔焦留白 |
+| `depth_layering` | 前中远三层景深 | 多图融合、冲泡 / 喂食体验 | 前景虚化道具 + 中景主体清晰 + 远景虚化，顶部约 30% 留白 |
+| `diagonal_dynamic_flow` | 对角线动态 | 冲泡、倾倒、使用瞬间 | 动作沿 45° 对角线，另一侧三角区约 30% 留白 |
+| `split_screen_comparison` | 分屏对比 | 选购小知识、客观对比 | 70% 本品 vs 30% 普通对照，顶部 20% 标题区；只做客观科普，不贬低同行 |
+| `knolling_flat_lay` | 90° 俯拍秩序 | 检测背书、规格全家福、参数屏 | 正上方俯拍网格陈列，上方 25%~30% 留白 |
+
+选择规则：
+
+1. 指令末尾如果有「全局美学流派」段落，所有槽位的 `aesthetic_style` 都用它；否则按每个槽位的作用、类目与平台调性选择，整组建议控制在 2~3 种流派，保持统一感。
+2. 用户策划想法里提到的色调或风格优先（例如「暖金色调」可选新中式或北欧暖阳）。
+3. `visual_description` 必须写出主体位置、占比，以及文字留白区的位置和大小（例如「主体位于右下三分点约占 55%，左上方预留约 35% 柔焦云雾留白区排版标题」）。留白区不得压在包装、内料细节或检测报告上。
+4. 平台白底图等规范图不需要留白构图，`composition_mode` 填 `auto`。
+5. 只能填上表中的代码或 `auto`，不要自造新值。
+
 # 文案规则
 
 - 主图标题 ≤ 12 个汉字，副标题 ≤ 18 个汉字；详情页每屏标题 ≤ 14 个汉字，正文 ≤ 60 个汉字。
@@ -102,8 +135,8 @@ variables: [deliverable_type, category_json, platform_json, product_info_json, r
       "selling_point": "本槽位承载的卖点",
       "visual_description": "画面描述：主体、构图、景别、光线、背景、道具、色调",
       "differentiator": "防雷同：这张图的独特之处",
-  "aesthetic_style": "auto",
-  "composition_mode": "auto",
+      "aesthetic_style": "5 个美学流派代码之一（见上文三维设计）",
+      "composition_mode": "6 个构图模式代码之一，平台白底图填 auto",
       "generation_mode": "text_to_image | single_image_edit | multi_image_fusion",
       "required_references": [
         {"role": "product_package", "description": "需要用户提供什么样的参考图"}
@@ -118,6 +151,7 @@ variables: [deliverable_type, category_json, platform_json, product_info_json, r
 
 1. **`slots` 数组元素数量精确等于 `requested_count` 指定的数量（或平台默认值）**；
 2. 每个槽位 `generation_mode` 与 `required_references` 数量一致（0 / 1 / 2~3）；
-3. 无禁用词、无功效承诺；
-4. 用户想法已被落实到具体槽位中（若填写了）。
+3. 每个槽位都有合法的 `aesthetic_style` 与 `composition_mode`，`visual_description` 写清了留白区位置；
+4. 无禁用词、无功效承诺；
+5. 用户想法已被落实到具体槽位中（若填写了）。
 

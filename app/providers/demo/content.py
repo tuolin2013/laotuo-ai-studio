@@ -9,7 +9,16 @@ import re
 from typing import Any
 
 from app.engine.compliance import sanitize
+from app.providers.demo.aesthetics import (
+    COMPOSITION_BY_KIND,
+    FONT_NAMES_ZH,
+    STYLES,
+    auto_aesthetic,
+    layout,
+    pill_from_copy,
+)
 from app.schemas.config import CategoryConfig, PlatformConfig
+from app.schemas.plan import AESTHETIC_STYLE_NAMES
 
 # ---------------------------------------------------------------- 工具
 
@@ -62,7 +71,8 @@ def _clean(obj: Any, cat: CategoryConfig, plat: PlatformConfig) -> Any:
         return [_clean(v, cat, plat) for v in obj]
     if isinstance(obj, dict):
         return {k: (v if k in {"role", "generation_mode", "first_frame_generation_mode", "audio_mode",
-                               "shot_purpose", "aspect_ratio"} else _clean(v, cat, plat))
+                               "shot_purpose", "aspect_ratio", "aesthetic_style", "composition_mode"}
+                    else _clean(v, cat, plat))
                 for k, v in obj.items()}
     return obj
 
@@ -71,43 +81,47 @@ def _clean(obj: Any, cat: CategoryConfig, plat: PlatformConfig) -> Any:
 
 
 def _main_image_templates(cat: CategoryConfig, info: dict[str, str]) -> list[dict[str, Any]]:
+    """kind 为槽位作用，决定演示用的构图与自动美学（见 app/providers/demo/aesthetics.py）。"""
     r = _roles(cat)
     sp, pain = cat.core_selling_points, cat.pain_points
     props = "、".join(cat.visual_style.props[:3])
     offer = info.get("price_offer") or info.get("spec") or "规格清晰 · 放心购"
+    origin = short(cat.product_attributes.get("产地", ""), 6)
+    action = _pick(cat.video_scene_suggestions, 0, "商品被拿起使用的瞬间")
     return [
-        dict(title=short(_pick(sp, 0)), subtitle=cat.name, selling_point=_pick(sp, 0),
-             visual="商品包装正面居中，主体占画面约 70%，干净浅色背景，柔和顶光，搜索首图构图",
+        dict(kind="hero", title=short(_pick(sp, 0)), subtitle=cat.name, pill=origin, selling_point=_pick(sp, 0),
+             visual="商品包装正面完整清晰，干净背景，柔和光线，搜索首图",
              diff="首图用一个大字利益点，不堆砌卖点", mode="single_image_edit", refs=[r["PKG"]]),
-        dict(title=short(_pick(sp, 1)), subtitle="细节看得见", selling_point=_pick(sp, 1),
-             visual="核心卖点微距特写，浅景深，侧逆光勾出质感，背景虚化",
+        dict(kind="macro", title=short(_pick(sp, 1)), subtitle="细节看得见", pill="细节实拍",
+             selling_point=_pick(sp, 1), visual="核心卖点微距特写，浅景深，侧逆光勾出质感",
              diff="用微距证据代替口号", mode="single_image_edit", refs=[r["DETAIL"]]),
-        dict(title=short(_pick(sp, 2)), subtitle="包装与实物同框", selling_point=_pick(sp, 2),
-             visual=f"包装在左后方，实物（{cat.reference_image_roles.get(r['CONTENT'], '内容物')}）"
-                    "在右前方，统一暖调侧光",
+        dict(kind="experience", title=short(_pick(sp, 2)), subtitle="包装与实物同框", selling_point=_pick(sp, 2),
+             visual=f"实物（{cat.reference_image_roles.get(r['CONTENT'], '内容物')}）在前景，包装在中景，统一侧光",
              diff="前后景深层次，实物与包装同框可信", mode="multi_image_fusion", refs=[r["PKG"], r["CONTENT"]]),
-        dict(title=short(_pick(pain, 0)), subtitle="你是不是也这样？", selling_point="痛点共鸣",
-             visual=f"生活化痛点场景：{_pick(pain, 0)}，人物侧脸或背影，冷灰色调",
+        dict(kind="pain", title=short(_pick(pain, 0)), subtitle="你是不是也这样？", selling_point="痛点共鸣",
+             visual=f"生活化痛点场景：{_pick(pain, 0)}，人物侧脸或背影，光线略暗",
              diff="不出现商品，先引发共鸣", mode="text_to_image", refs=[]),
-        dict(title="检测报告可查", subtitle="安心看得见", selling_point=_pick(sp, 4, "第三方检测"),
-             visual="包装立于桌面，旁边平铺检测报告纸质页面，报告内容如实呈现，自然窗光",
+        dict(kind="proof", title="检测报告可查", subtitle="安心看得见", pill="如实呈现",
+             selling_point=_pick(sp, 4, "第三方检测"),
+             visual="包装与检测报告纸质页面平铺在桌面，报告内容如实呈现，不生成新数字与印章",
              diff="真实证据同框，拒绝空口承诺", mode="multi_image_fusion", refs=[r["PKG"], r["REPORT"]]),
-        dict(title=short(cat.visual_style.mood or cat.name), subtitle=cat.product_attributes.get("产地", "源头好物"),
+        dict(kind="origin", title=short(cat.visual_style.mood or cat.name),
+             subtitle=cat.product_attributes.get("产地", "源头好物"),
              visual=f"原产地 / 使用环境氛围大景，{cat.visual_style.mood}，晨光与薄雾",
              selling_point=_pick(sp, 0), diff="大景别氛围图，拉开与同质化主图的差距",
              mode="text_to_image", refs=[]),
-        dict(title=short(_pick(sp, 5, _pick(sp, 3))), subtitle="日常场景随手用",
+        dict(kind="lifestyle", title=short(_pick(sp, 5, _pick(sp, 3))), subtitle="日常场景随手用",
              selling_point=_pick(sp, 5, _pick(sp, 3)),
-             visual=f"使用场景：商品放在生活场景中，道具 {props}，中景",
+             visual=f"使用场景的动态瞬间：{action}，商品包装清晰可见，道具 {props}",
              diff="真实使用场景，带入感强", mode="single_image_edit", refs=[r["PKG"]]),
-        dict(title=short(offer), subtitle="规格一目了然", selling_point="规格与优惠",
-             visual="多件商品陈列，规格标签清晰，大字价格利益点，高对比色块",
+        dict(kind="spec", title=short(offer), subtitle="规格一目了然", selling_point="规格与优惠",
+             visual="多件商品按网格整齐陈列，规格标签清晰",
              diff="规格信息可视化", mode="single_image_edit", refs=[r["PKG"]]),
-        dict(title=cat.name[:12], subtitle="白底图", selling_point="平台白底图",
+        dict(kind="white", title=cat.name[:12], subtitle="白底图", selling_point="平台白底图",
              visual="纯白背景商品正面图，无任何文字与道具，阴影柔和", diff="满足平台活动报名要求",
              mode="single_image_edit", refs=[r["PKG"]]),
-        dict(title="一图看懂好在哪", subtitle="包装 · 实物 · 细节", selling_point="卖点汇总",
-             visual="包装、实物、细节特写三者同框的组合构图，信息分区清晰",
+        dict(kind="spec", title="一图看懂好在哪", subtitle="包装 · 实物 · 细节", selling_point="卖点汇总",
+             visual="包装、实物与细节特写分区平铺，信息分区清晰",
              diff="三图融合的信息总览", mode="multi_image_fusion", refs=[r["PKG"], r["CONTENT"], r["DETAIL"]]),
     ]
 
@@ -116,36 +130,38 @@ def _detail_templates(cat: CategoryConfig, screens: int) -> list[dict[str, Any]]
     r = _roles(cat)
     sp, pain = cat.core_selling_points, cat.pain_points
     head = [
-        dict(title=short(_pick(pain, 0), 14), subtitle="首屏 · 痛点钩子", selling_point="痛点共鸣",
-             visual=f"痛点情境大图：{_pick(pain, 0)}，冷色调、人物情绪特写", mode="text_to_image", refs=[]),
-        dict(title=short(_pick(sp, 0), 14), subtitle="核心利益", selling_point=_pick(sp, 0),
-             visual="商品包装英雄图，居中大主体，光线高级，背景简洁留白", mode="single_image_edit", refs=[r["PKG"]]),
+        dict(kind="pain", title=short(_pick(pain, 0), 14), subtitle="首屏 · 痛点钩子", selling_point="痛点共鸣",
+             visual=f"痛点情境大图：{_pick(pain, 0)}，人物情绪特写", mode="text_to_image", refs=[]),
+        dict(kind="hero", title=short(_pick(sp, 0), 14), subtitle="核心利益", selling_point=_pick(sp, 0),
+             visual="商品包装英雄图，光线高级，背景简洁", mode="single_image_edit", refs=[r["PKG"]]),
     ]
     tail = [
-        dict(title="产地与工艺", subtitle="源头讲起", selling_point=cat.product_attributes.get("产地", "源头"),
+        dict(kind="origin", title="产地与工艺", subtitle="源头讲起",
+             selling_point=cat.product_attributes.get("产地", "源头"),
              visual=f"原产地全景 + 工艺流程氛围图，{cat.visual_style.mood}", mode="text_to_image", refs=[]),
-        dict(title="检测报告 如实呈现", subtitle="证据屏", selling_point="第三方检测",
-             visual="检测报告页面平铺于桌面，包装立于一旁，报告信息清晰可读", mode="multi_image_fusion",
+        dict(kind="proof", title="检测报告 如实呈现", subtitle="证据屏", pill="报告原件", selling_point="第三方检测",
+             visual="检测报告页面与包装平铺于桌面，报告信息清晰可读", mode="multi_image_fusion",
              refs=[r["PKG"], r["REPORT"]]),
-        dict(title="这样用更好", subtitle="使用方法", selling_point="使用 / 冲泡方法",
+        dict(kind="experience", title="这样用更好", subtitle="使用方法", selling_point="使用 / 冲泡方法",
              visual=f"分步骤使用示意：{_pick(list(cat.product_attributes.values()), 4, '按说明使用')}",
              mode="single_image_edit", refs=[r["CONTENT"]]),
-        dict(title="规格与包装", subtitle="收到长这样", selling_point="规格展示",
-             visual="多角度包装展示，标注净含量与规格", mode="single_image_edit", refs=[r["PKG"]]),
-        dict(title="售后无忧", subtitle="放心下单", selling_point="售后保障",
-             visual="温暖的品牌承诺屏，简洁图标与留白排版", mode="text_to_image", refs=[]),
+        dict(kind="spec", title="规格与包装", subtitle="收到长这样", selling_point="规格展示",
+             visual="多角度包装平铺展示，标注净含量与规格", mode="single_image_edit", refs=[r["PKG"]]),
+        dict(kind="promise", title="售后无忧", subtitle="放心下单", selling_point="售后保障",
+             visual="温暖的品牌承诺屏，简洁图标", mode="text_to_image", refs=[]),
     ]
     middle_modes = [
-        ("single_image_edit", [r["DETAIL"]], "卖点细节微距，浅景深"),
-        ("multi_image_fusion", [r["PKG"], r["CONTENT"]], "包装与实物同框演示该卖点"),
-        ("text_to_image", [], "卖点的场景化表达，不出现包装"),
+        ("macro", "single_image_edit", [r["DETAIL"]], "卖点细节微距，浅景深"),
+        ("compare", "single_image_edit", [r["DETAIL"]], "选购小知识：本品细节与普通形态客观并排对比"),
+        ("experience", "multi_image_fusion", [r["PKG"], r["CONTENT"]], "包装与实物同框演示该卖点"),
+        ("lifestyle", "text_to_image", [], "卖点的场景化动态表达，不出现包装"),
     ]
     middle_count = max(0, screens - len(head) - len(tail))
     middle = []
     for i in range(middle_count):
-        mode, refs, visual = middle_modes[i % len(middle_modes)]
+        kind, mode, refs, visual = middle_modes[i % len(middle_modes)]
         point = _pick(sp, i + 1)
-        middle.append(dict(title=short(point, 14), subtitle=f"卖点 {i + 1}", selling_point=point,
+        middle.append(dict(kind=kind, title=short(point, 14), subtitle=f"卖点 {i + 1}", selling_point=point,
                            visual=f"{visual}：{point}", mode=mode, refs=refs))
     screens_all = head + middle + tail
     if screens < len(screens_all):
@@ -171,7 +187,9 @@ def demo_plan(
     aspect_ratio: str,
     idea: str | None,
     product_info: dict[str, str],
+    aesthetic_style: str = "auto",
 ) -> dict[str, Any]:
+    """aesthetic_style 非 auto 时整套使用该美学流派；构图模式按每个槽位的作用匹配。"""
     info_line = _info_line(product_info)
     if deliverable_type == "main_image":
         n = count or plat.main_image.default_count
@@ -182,17 +200,24 @@ def demo_plan(
         picked = _detail_templates(cat, n)
     slots = []
     for i, t in enumerate(picked):
-        visual = t["visual"] + _idea_clause(idea)
+        role = t.get("kind", "hero")
+        style = (aesthetic_style if aesthetic_style != "auto"
+                 else auto_aesthetic(cat.category_id, plat.platform_id, role))
+        composition = COMPOSITION_BY_KIND.get(role, "auto")
+        lay = layout(composition, style)
+        visual = t["visual"] + (f"；{lay[0]}" if lay else "") + _idea_clause(idea)
         if info_line and i == 0:
             visual += f"；商品信息：{info_line}"
         slots.append({
             "title": t["title"],
             "subtitle": t.get("subtitle", ""),
-            "copy_text": " ".join(x for x in (t["title"], t.get("subtitle", "")) if x),
+            "copy_text": " ".join(x for x in (t["title"], t.get("subtitle", ""), t.get("pill", "")) if x),
             "selling_point": t.get("selling_point", ""),
             "visual_description": visual,
             "differentiator": t.get("diff", f"第 {i + 1} 屏独立视角与景别"),
             "generation_mode": t["mode"],
+            "aesthetic_style": style,
+            "composition_mode": composition,
             "required_references": [_ref(cat, role) for role in t["refs"]],
             "aspect_ratio": aspect_ratio,
         })
@@ -202,9 +227,10 @@ def demo_plan(
     return _clean({"plan_summary": summary, "slots": slots}, cat, plat)
 
 
-def demo_slot(deliverable_type, cat, plat, aspect_ratio, idea, product_info, index: int) -> dict[str, Any]:
+def demo_slot(deliverable_type, cat, plat, aspect_ratio, idea, product_info, index: int,
+              aesthetic_style: str = "auto") -> dict[str, Any]:
     """单独重新生成某个槽位：换一个模板视角。"""
-    plan = demo_plan(deliverable_type, cat, plat, index + 4, aspect_ratio, idea, product_info)
+    plan = demo_plan(deliverable_type, cat, plat, index + 4, aspect_ratio, idea, product_info, aesthetic_style)
     slot = plan["slots"][(index + 3) % len(plan["slots"])]
     slot["differentiator"] = "（重新生成）" + slot["differentiator"]
     return slot
@@ -370,21 +396,42 @@ def demo_image_prompt(skill_id: str, slot: dict[str, Any], roles: list[str], asp
     palette = "、".join(cat.visual_style.palette)
     copy = slot.get("copy_text") or slot.get("title", "")
     visual = slot.get("visual_description") or slot.get("first_frame_description", "")
+    # 三维设计：美学流派给出色板 / 光线 / 字体，构图给出主体位置与留白区（首帧等无此字段时按 auto 处理）
+    aesthetic = slot.get("aesthetic_style", "auto")
+    spec = STYLES.get(aesthetic)
+    lay = layout(slot.get("composition_mode", "auto"), aesthetic)
+    title, sub = slot.get("title", ""), slot.get("subtitle", "")
+    pill = pill_from_copy(slot.get("copy_text", ""), title, sub)
     if skill_id.startswith("gemini"):
         lines = [f"请生成一张用于电商的商业摄影图，最终画面必须是 {aspect_ratio} 比例。"]
+        if lay and lay[0] not in visual:
+            lines.append(f"{lay[0]}。")
         if len(roles) == 1:
             lines.append("以附件中的商品照片为准，商品本身的形状、颜色、logo 与印刷文字必须像素级保持不变，"
                          "只改变周围环境。")
         elif roles:
             refs = "、".join(f"第{i + 1}张附件（{r}）" for i, r in enumerate(roles))
             lines.append(f"按附件顺序使用 {refs}，所有元素统一光源方向，像同一次拍摄；包装与中文字体不得变形。")
-        lines.append(f"画面：{visual}。色调参考 {palette}，氛围 {cat.visual_style.mood}。")
-        if copy:
+        if spec:
+            lines.append(f"画面：{visual}。美学流派「{AESTHETIC_STYLE_NAMES[aesthetic]}」：背景 {spec.background[0]} "
+                         f"渐变到 {spec.background[1]}，点睛色 {spec.accent}；光线：{spec.light}。")
+        else:
+            lines.append(f"画面：{visual}。色调参考 {palette}，氛围 {cat.visual_style.mood}。")
+        if spec and title:
+            text = f"在留白区排版主标题“{title}”，{FONT_NAMES_ZH[spec.font]}，颜色 {spec.text}"
+            if sub:
+                text += f"；副标题“{sub}”约为主标题 40% 字号，颜色 {spec.sub}"
+            if pill:
+                text += f"；短卖点“{pill}”装进 {spec.accent} 圆角胶囊框"
+            lines.append(text + "；文字全部落在留白区，不压商品。")
+        elif copy:
             lines.append(f"在画面上方安全区排版中文文字“{copy}”，粗体无衬线，与背景高对比。")
         lines.append("不要水印、不要多余 logo、商品不变形、手部结构正确。")
         return {"prompt": "".join(lines), "negative_notes": "水印、错字、商品形变、多余肢体",
                 "size_hint": aspect_ratio}
     parts = [f"E-commerce commercial photo for {cat.name}, {aspect_ratio} composition."]
+    if lay:
+        parts.append(lay[1][0].upper() + lay[1][1:] + ".")
     if len(roles) == 1:
         parts.append("Use the provided reference image as the exact product. Keep the packaging shape, colors, "
                      "logo, and all printed Chinese text exactly unchanged.")
@@ -393,9 +440,21 @@ def demo_image_prompt(skill_id: str, slot: dict[str, Any], roles: list[str], asp
                         enumerate(roles))
         parts.append(desc + " Compose them naturally in one scene with unified lighting; do not distort the "
                      "packaging or the Chinese typography.")
-    parts.append(f"Scene: {visual}. Color palette: {palette}. Mood: {cat.visual_style.mood}.")
-    parts.append("85mm lens, shallow depth of field, crisp product detail, soft side light, 5500K.")
-    if copy:
+    if spec:
+        parts.append(f"Scene: {visual}. Color palette: background {spec.background[0]} fading to "
+                     f"{spec.background[1]}, accent {spec.accent}. Lighting: {spec.light}.")
+        parts.append("85mm lens, shallow depth of field, crisp product detail.")
+    else:
+        parts.append(f"Scene: {visual}. Color palette: {palette}. Mood: {cat.visual_style.mood}.")
+        parts.append("85mm lens, shallow depth of field, crisp product detail, soft side light, 5500K.")
+    if spec and title:
+        text = f'Render the exact Chinese headline "{title}" in {spec.font_en}, color {spec.text}'
+        if sub:
+            text += f', with the subheadline "{sub}" at about 40% of the headline size in {spec.sub}'
+        if pill:
+            text += f', and the short badge "{pill}" inside a sleek rounded pill-shaped badge filled {spec.accent}'
+        parts.append(text + ", all inside the reserved negative space and never overlapping the product.")
+    elif copy:
         parts.append(f'With the Chinese headline "{copy}" in bold sans-serif at the top safe area, high contrast.')
     parts.append("No watermark, no extra logos, no distorted packaging text.")
     return {"prompt": " ".join(parts), "negative_notes": "watermark, garbled text, deformed packaging, extra fingers",

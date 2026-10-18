@@ -141,6 +141,10 @@ variables: [product_name]        # 选填，声明正文使用的变量
 - 参考图按「角色」（如 `product_package`、`tea_soup`、`inspection_report`）登记；同一角色上传一次，自动绑定到所有需要该角色的槽位，也允许单槽位单独增删。
 - 每个槽位可设置候选图数量 1~4，并发生成供勾选定稿。
 - 主图 / 详情页张数不锁死：平台配置给出默认建议值，用户可自由指定数量与比例。
+- 视觉设计三维体系：每个槽位另有 `aesthetic_style`（5 大美学流派）与 `composition_mode`（6 大构图模式），取值与中文名定义在 `app/schemas/plan.py`，依据 `config/skills/image_prompt/references/ecommerce_aesthetics_guide.md`。`auto` 表示交给 Skill 按指南匹配；LLM 输出无法识别的值时退回 `auto`，不让整套策划失败。
+  - Step 1「🎨 全局视觉设计美学流派」选定后整套槽位统一使用该流派（策划指令末尾追加约束，结果再强制覆盖，单槽位重生成同样生效）；构图逐槽位选择。
+  - 策划表格中两列显示中文名，可填中文名、代码或「自动」。
+  - 生图 Skill 编译时把卡带声明的 `references/` 指南全文附在指令之后；演示模式按流派色板 / 字体与构图留白区绘制预览图（`app/providers/demo/aesthetics.py`）。
 
 ### 5.3 RightAPI 两把 Key 与画图接口（以官方文档为准）
 

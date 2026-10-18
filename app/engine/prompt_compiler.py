@@ -39,7 +39,7 @@ def slot_prompt_data(slot: ImageSlot) -> dict[str, Any]:
     return slot.model_dump(
         mode="json",
         include={"title", "subtitle", "copy_text", "selling_point", "visual_description", "differentiator",
-                 "generation_mode", "aspect_ratio"},
+                 "generation_mode", "aspect_ratio", "aesthetic_style", "composition_mode"},
     )
 
 

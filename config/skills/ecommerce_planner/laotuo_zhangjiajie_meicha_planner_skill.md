@@ -1,8 +1,8 @@
 ---
 skill_id: laotuo_zhangjiajie_meicha_planner
 name: 老拓·张家界莓茶主图与详情页策划
-description: 张家界莓茶专属策划卡带（v1.1）：围绕白霜、产区、回甘、冲泡四条主线，自适应产品等级与平台调性，产出带构图留白的主图组或详情页逐屏策划，并精准判定 0/1/多图生图模式。
-version: "1.1"
+description: 张家界莓茶专属策划卡带（v1.2）：围绕白霜、产区、回甘、冲泡四条主线，自适应产品等级与平台调性，产出带构图留白的主图组或详情页逐屏策划，精准判定 0/1/多图生图模式，并为每屏推荐美学流派与构图模式。
+version: "1.2"
 target_models: [claude-opus-5-5, claude-sonnet-5-5]
 categories: [zhangjiajie_berry_tea]
 variables: [deliverable_type, category_json, platform_json, product_info_json, requested_count, aspect_ratio, user_creative_idea]
@@ -137,6 +137,26 @@ variables: [deliverable_type, category_json, platform_json, product_info_json, r
    - `origin_landscape`（可选，茶园/产地实拍图；通常产区屏优先用 `text_to_image` 免传图以减轻用户负担）
    - 新增角色可从 `category_json` 的 `reference_image_roles` 中选用，如 `wet_leaf_bottom`（泡水后叶底）、`frost_detail`（白霜细节）、`tea_plant_field`（莓茶植物田间）、`brewing_process`（冲泡过程）、`harvest_scene`（采摘场景）等。
 
+# 视觉设计三维体系：美学流派 + 构图模式（每个槽位必填）
+
+每个槽位必须输出 `aesthetic_style`（美学流派）与 `composition_mode`（构图模式），生图 Skill 据此决定色板、光线、中文字体与留白区排版。只能填下表中的代码；指令末尾若有「全局美学流派」段落，所有槽位的 `aesthetic_style` 一律用它。
+
+**莓茶推荐搭配（未指定全局流派时使用）：**
+
+| 槽位 | `aesthetic_style` | `composition_mode` | 留白区与排版写法（写进 `visual_description`） |
+|---|---|---|---|
+| 主图第 1 张 / 详情首屏（淘宝、微信小店） | `new_chinese_zen` | `rule_of_thirds_negative_space` | 包装与茶汤居左下约 55%，**右上方 35% 深绿云雾留白区**，1~2 列竖排宋体标题 + 朱砂小印章 |
+| 主图第 1 张（拼多多） | `high_impact_retail` | `rule_of_thirds_negative_space` | 包装 + 满霜干茶双主体居右下，**顶部横排撞色大字区**，利益点装进胶囊角标 |
+| 白霜视觉锤 / 白霜科普屏 | `new_chinese_zen` | `extreme_macro_texture` | 深色粗陶茶则衬托银白霜，微距占 70%，**右上角 25% 暗部柔焦留白** |
+| 汤色与回甘 / 冲泡屏 | `organic_nature_sunlight`（微信小店可用 `nordic_warm_lifestyle`） | `depth_layering` 或 `diagonal_dynamic_flow` | 前景茶汤杯、中景包装、远景晨光山林，**顶部 30% 浅色留白** |
+| 产区生态 / 茶山采摘 | `organic_nature_sunlight` | `rule_of_thirds_negative_space` | 峰林云海柔焦虚化，**左上或右上云雾留白** |
+| 好莓茶客观对比屏 | `clinical_lab_minimal` | `split_screen_comparison` | 70% 满霜好茶（暖光）vs 30% 普通陈茶（冷灰光，客观不丑化），**顶部 20% 通栏标题区** |
+| 检测背书 / 规格全家福 | `clinical_lab_minimal` | `knolling_flat_lay` | 90° 俯拍包装 + 检测报告网格平铺，**上方 25% 干净桌面留白**，报告本体不压字 |
+| 办公 / 饭后生活场景 | `nordic_warm_lifestyle` | `depth_layering` 或 `diagonal_dynamic_flow` | 午后窗影暖光，**浅色墙面或桌面一侧留白** |
+| 平台白底图 | `clinical_lab_minimal` | `auto` | 纯白底居中，不排海报字 |
+
+规则：同一套主图建议控制在 2~3 种美学流派；文字只排在留白区内，严禁压在包装、白霜细节或检测报告上。
+
 # 视觉留白与防雷同规则
 
 1. **强制预留文字排版安全区（极其重要）**：
@@ -182,8 +202,8 @@ variables: [deliverable_type, category_json, platform_json, product_info_json, r
       "selling_point": "本槽位负责说服买家的核心卖点",
       "visual_description": "画面详细描述：主体细节、景别视角、光线质感、背景与道具、色调，以及明确的文字排版留白区位置",
       "differentiator": "防雷同说明：本张图在景别/色调/构图上与其他槽位的独特差异",
-  "aesthetic_style": "auto",
-  "composition_mode": "auto",
+      "aesthetic_style": "new_chinese_zen | organic_nature_sunlight | clinical_lab_minimal | nordic_warm_lifestyle | high_impact_retail",
+      "composition_mode": "rule_of_thirds_negative_space | extreme_macro_texture | depth_layering | diagonal_dynamic_flow | split_screen_comparison | knolling_flat_lay（白底图填 auto）",
       "generation_mode": "text_to_image | single_image_edit | multi_image_fusion",
       "required_references": [
         {"role": "product_package", "description": "请上传清晰的产品外包装正面或45度实拍图"}
@@ -199,7 +219,7 @@ variables: [deliverable_type, category_json, platform_json, product_info_json, r
 1. **`slots` 数组的元素个数是否 100% 精确等于 `requested_count`（若为数字）？**
 2. **每个槽位的 `generation_mode` 与 `required_references` 数组长度是否严格对应（`text_to_image`=0, `single_image_edit`=1, `multi_image_fusion`=2~3）？**
 3. 凡是描述"干茶白霜特写"的槽位，是否都已绑定干茶参考图（绝不让 AI 凭空画霜）？凡是引用检测数据的槽位，是否都已绑定检测报告参考图？
-4. 每个槽位的 `visual_description` 是否明确指出了 20%~30% 的文字排版留白区位置？
+4. 每个槽位的 `visual_description` 是否明确指出了 20%~30% 的文字排版留白区位置？`aesthetic_style` 与 `composition_mode` 是否都填了合法代码，且与留白区描述一致？
 5. 全文无功效宣传、无绝对化用语、无禁用词，数值全部来自用户填写；用户想法已被落实到具体槽位中（若填写了）。
 6. 主图文案字数控制在 **标题≤10字、副标题≤16字**；详情页控制在 **标题≤14字、副标题≤22字、copy_text≤55字**。
 7. 产品等级（芽尖/龙须）与包装形态（礼盒/罐装/袋装）已根据 `product_info_json` 自适应调整场景槽位。

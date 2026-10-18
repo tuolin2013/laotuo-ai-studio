@@ -21,6 +21,13 @@ def _normalize_slot_data(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+def _apply_style(slot: ImageSlot, aesthetic_style: str) -> ImageSlot:
+    """用户选定了全局美学流派时，LLM 漏写或写错也以界面选择为准。"""
+    if aesthetic_style != "auto":
+        slot.aesthetic_style = aesthetic_style
+    return slot
+
+
 class PlannerEngine:
     def __init__(self, rt: EngineRuntime):
         self.rt = rt
@@ -47,8 +54,12 @@ class PlannerEngine:
         product_info: dict[str, str] | None = None,
         skill_id: str | None = None,
         existing: ImagePlan | None = None,
+        aesthetic_style: str = "auto",
     ) -> tuple[ImagePlan, str]:
-        """生成（或覆盖重新生成）整套策划案。返回 (策划案, 使用的模式说明)。"""
+        """生成（或覆盖重新生成）整套策划案。返回 (策划案, 使用的模式说明)。
+
+        aesthetic_style 为界面选择的全局美学流派：auto 时由 Skill 逐槽位匹配，否则整套统一使用该流派。
+        """
         cat, plat = self.rt.category(category_id), self.rt.platform(platform_id)
         info = {k: v for k, v in (product_info or {}).items() if v}
         n = self._resolve_count(deliverable_type, platform_id, count)
@@ -60,15 +71,17 @@ class PlannerEngine:
             skill_id = cards[0].skill_id
         skill = self.rt.skills.get("ecommerce_planner", skill_id)
         prompt = compile_planner(skill, deliverable_type, cat, plat, aspect_ratio, n, user_creative_idea,
-                                 product_info=info)
+                                 product_info=info, aesthetic_style=aesthetic_style)
         if self.rt.is_live("llm"):
             data = await self._run_skill(prompt)
             mode = "真实 LLM"
         else:
             await asyncio.sleep(self.rt.demo_delay)
-            data = demo.demo_plan(deliverable_type, cat, plat, n, aspect_ratio, user_creative_idea, info)
+            data = demo.demo_plan(deliverable_type, cat, plat, n, aspect_ratio, user_creative_idea, info,
+                                  aesthetic_style=aesthetic_style)
             mode = "演示模式"
-        slots = [slot_from_llm(_normalize_slot_data(s), aspect_ratio) for s in data.get("slots") or []]
+        slots = [_apply_style(slot_from_llm(_normalize_slot_data(s), aspect_ratio), aesthetic_style)
+                 for s in data.get("slots") or []]
         if existing is not None and existing.plan_status == "draft":
             plan = existing
             plan.default_aspect_ratio = aspect_ratio
@@ -78,6 +91,7 @@ class PlannerEngine:
                 deliverable_type=deliverable_type, platform_id=platform_id, category_id=category_id,
                 planner_skill_id=skill_id, default_aspect_ratio=aspect_ratio,
             )
+        plan.aesthetic_style = aesthetic_style
         plan.replace_all_items(slots, user_creative_idea)
         plan.plan_summary = data.get("plan_summary", "")
         return plan, mode
@@ -94,7 +108,7 @@ class PlannerEngine:
         if self.rt.is_live("llm"):
             skill = self.rt.skills.get("ecommerce_planner", skill_id or plan.planner_skill_id)
             base = compile_planner(skill, plan.deliverable_type, cat, plat, old.aspect_ratio, 1,
-                                   plan.user_creative_idea, product_info=info)
+                                   plan.user_creative_idea, product_info=info, aesthetic_style=plan.aesthetic_style)
             others = [s.title for s in plan.slots if s.slot_id != slot_id]
             original = json.dumps(old.model_dump(mode="json", include={"title", "visual_description"}),
                                   ensure_ascii=False)
@@ -108,7 +122,7 @@ class PlannerEngine:
         else:
             await asyncio.sleep(self.rt.demo_delay)
             slot_data = demo.demo_slot(plan.deliverable_type, cat, plat, old.aspect_ratio, plan.user_creative_idea,
-                                       info, index)
-        new = slot_from_llm(_normalize_slot_data(slot_data), old.aspect_ratio)
+                                       info, index, aesthetic_style=plan.aesthetic_style)
+        new = _apply_style(slot_from_llm(_normalize_slot_data(slot_data), old.aspect_ratio), plan.aesthetic_style)
         new.candidate_count = old.candidate_count
         return plan.regenerate_slot(slot_id, new)

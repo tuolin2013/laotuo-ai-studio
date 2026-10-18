@@ -7,6 +7,7 @@ from typing import Any
 
 from app.providers.demo.content import camera_tags
 from app.schemas.config import CategoryConfig, PlatformConfig
+from app.schemas.plan import AESTHETIC_STYLE_NAMES
 from app.schemas.skill import SkillCard
 from app.schemas.video import ReferenceVideoSource
 
@@ -41,8 +42,9 @@ def compile_planner(
     requested_count: int | None,
     user_creative_idea: str | None,
     product_info: dict[str, str] | None = None,
+    aesthetic_style: str = "auto",
 ) -> str:
-    return _render(
+    text = _render(
         skill,
         deliverable_type=deliverable_type,
         category_json=_dump(category),
@@ -52,6 +54,13 @@ def compile_planner(
         aspect_ratio=aspect_ratio,
         user_creative_idea=_idea(user_creative_idea),
     )
+    name = AESTHETIC_STYLE_NAMES.get(aesthetic_style)
+    if name is None:
+        return text
+    # 追加在卡带之后，自定义卡带无需声明新变量也能生效
+    return (f"{text}\n\n# 全局美学流派（用户在界面选定，优先于卡带中的默认搭配）\n\n"
+            f"本次所有槽位的 `aesthetic_style` 一律填 `{aesthetic_style}`（{name}）；"
+            "`composition_mode` 仍按每个槽位的作用选择，并在 `visual_description` 中写清留白区位置。")
 
 
 def compile_scriptwriter(
@@ -124,9 +133,9 @@ def compile_image_prompt(
     aspect_ratio: str,
     reference_roles: list[str],
 ) -> str:
-    """slot_data 为槽位（或分镜首帧）的画面信息字典。"""
+    """slot_data 为槽位（或分镜首帧）的画面信息字典；卡带声明的附属指南（如电商美学指南）附在指令之后。"""
     roles = "、".join(f"图{i + 1}={r}" for i, r in enumerate(reference_roles)) or "无（纯文生图）"
-    return _render(
+    text = _render(
         skill,
         slot_json=_json(slot_data),
         category_json=_dump(category),
@@ -134,6 +143,8 @@ def compile_image_prompt(
         aspect_ratio=aspect_ratio,
         reference_roles=roles,
     )
+    guide = skill.reference_context()
+    return f"{text}\n\n# Attached Reference Guide\n\n{guide}" if guide else text
 
 
 H3_SHOT_FIELDS = {
