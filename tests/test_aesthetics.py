@@ -1,8 +1,6 @@
 """测试电商图片三维设计体系的数据模型与转换。"""
 
-import pytest
 
-from app.schemas.common import AspectRatio
 from app.schemas.plan import (
     AestheticStyle,
     CompositionMode,

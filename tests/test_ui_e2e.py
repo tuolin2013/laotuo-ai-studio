@@ -2,6 +2,7 @@
 
 import os
 import socket
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,16 @@ from app.ui.app import build_app
 
 INFO = ["特级芽尖", "霜厚", "", "张家界永定区", "50g×2罐", "到手2罐", "", ""]
 TEA = "zhangjiajie_berry_tea"
+# 视频选项卡输出位置：[logs, status, table, shot_pick, checklist, 8×上传框, frames, locked_frames, edit_shot,
+#                      h3_edit, comfy_link, shot1_prompt, global_prompt, …, clone_gallery, clone_md]
+V_TABLE, V_SHOT1, V_GLOBAL = 2, 18, 19
+
+
+def video_generate_args(mode: str, video=None, frames: int = 6, idea: str = "办公室女生冲一杯") -> tuple:
+    """/video_generate 入参：类目、平台、策划方式、视频类型、比例、分镜数、想法、编剧卡带、
+    参考视频、克隆策略、抽帧数、日志、商品信息。"""
+    return (TEA, "taobao", mode, "product_showcase", "9:16", 4, idea, "default_scriptwriter", video, "replicate",
+            frames, "", *INFO)
 
 
 def _free_port() -> int:
@@ -92,21 +103,21 @@ def test_full_workflow_through_ui(server, tmp_path):
     out = client.predict("gemini-nano-banana-2.1", 1, "1K", "high", out[0], api_name="/detail_page_render")
     assert len(out[-1]) == screens  # 长图序列每屏一张
 
-    # ---------------- 视频：剧本 -> 确认 -> 复用参考图 -> 首帧 -> 锁定 -> H3 -> 生成
-    out = client.predict(TEA, "taobao", "immersive_demo", "9:16", 4, "办公室女生冲一杯", "default_scriptwriter", "",
-                         *INFO, api_name="/video_generate")
-    rows = out[2]["data"]
+    # ---------------- 视频（📝 原创）：剧本 -> 确认 -> 复用参考图 -> 首帧 -> 锁定 -> H3 -> 生成
+    out = client.predict(*video_generate_args("original"), api_name="/video_generate")
+    rows = out[V_TABLE]["data"]
     assert len(rows) == 4 and any(r[8] for r in rows) and all(r[7] for r in rows)
+    assert "原创剧本完成" in _last(out[0]) and "来源：📝 原创策划" in out[1]
     out = client.predict(out[2], out[0], api_name="/video_confirm")
     out = client.predict(out[0], api_name="/video_reuse")
     out = client.predict("gpt-image-2", 1, "2K", out[0], api_name="/video_first_frames")
     assert "首帧生成完成" in _last(out[0])
     out = client.predict(out[0], api_name="/video_lock_all")
     out = client.predict("minimax_h3_prompt", "i2va", out[0], api_name="/video_h3")
-    assert out[19].startswith("[") and "9:16" in out[19]  # 旧版卡带仍可用
+    assert out[V_SHOT1].startswith("[") and "9:16" in out[V_SHOT1]  # 旧版卡带仍可用
     # 默认官方卡带：A + B 同时生成，视频生成使用 I2VA 版本
     out = client.predict("official_h3_prompt_writing", "both", out[0], api_name="/video_h3")
-    shot1_prompt, global_prompt = out[19], out[20]
+    shot1_prompt, global_prompt = out[V_SHOT1], out[V_GLOBAL]
     assert shot1_prompt.startswith("For the target video, at 0.00 seconds") and "non_diegetic_music:" in shot1_prompt
     assert "第 1 分镜锁定首帧" in global_prompt and "镜头 4" in global_prompt
 
@@ -123,3 +134,76 @@ def test_full_workflow_through_ui(server, tmp_path):
         out = client.predict("modal_minimax_h3", out[0], api_name="/video_generate_all")
         assert "视频已绑定" in out[0]
         assert all(s.videos for s in rt.store.load(project.project_id).video_script.shots)
+
+
+def _viral_video(path: Path) -> str:
+    """合成一段 8 秒 9:16 测试视频：红 / 蓝 / 绿 / 黄 各 2 秒。"""
+    from app.engine.video_cloner import ffmpeg_exe
+
+    exe = ffmpeg_exe()
+    if not exe:
+        pytest.skip("没有可用的 ffmpeg")
+    colors = ["red", "blue", "green", "yellow"]
+    args = [exe, "-y", "-loglevel", "error"]
+    for c in colors:
+        args += ["-f", "lavfi", "-i", f"color=c={c}:s=360x640:r=24:d=2"]
+    args += ["-filter_complex", "".join(f"[{i}:v]" for i in range(4)) + "concat=n=4:v=1:a=0",
+             "-c:v", "libx264", "-pix_fmt", "yuv420p", str(path)]
+    subprocess.run(args, check=True, timeout=120)
+    return str(path)
+
+
+def test_clone_workflow_through_ui(server, tmp_path):
+    """📹 克隆参考爆款视频：上传 -> 抽帧 + 拆解 -> 同一个分镜表 -> 确认 -> 首帧 -> H3 -> 生成视频。"""
+    client, rt, ws = server
+    client.predict("克隆验收", TEA, "taobao", *INFO, api_name="/new_project")
+    pid = next(p.project_id for p in rt.store.list_projects() if p.name == "克隆验收")
+    video = handle_file(_viral_video(tmp_path / "viral.mp4"))
+
+    out = client.predict(*video_generate_args("clone", video, frames=4, idea="人设换成宝妈"),
+                         api_name="/video_generate")
+    log, rows = out[0], out[V_TABLE]["data"]
+    assert "抽帧完成" in log and "00:01.0、00:03.0、00:05.0、00:07.0" in log
+    assert "克隆剧本完成" in _last(log) and len(rows) == 4 and rows[0][7]
+    assert "来源：📹 克隆「viral.mp4」" in out[1]
+    # clone_result 是布局容器（gr.Column），gradio_client 不返回它的值；最后两项是关键帧画廊与拆解报告
+    clone_gallery, clone_md = out[-2:]
+    assert len(clone_gallery) == 4
+    assert "原爆款视频拆解报告" in clone_md and "镜头 1 ← 00:01.0" in clone_md
+
+    project = rt.store.load(pid)
+    script = project.video_script
+    assert script.script_mode == "clone" and script.scriptwriter_skill_id == "hypit_viral_clone"
+    frames_dir = ws / "projects" / pid / "reference_video_frames"
+    assert len(list(frames_dir.rglob("keyframe_*.jpg"))) == 4 and list(frames_dir.rglob("source.mp4"))
+
+    # 同一个分镜表：在克隆结果上直接修改台词再确认
+    table = out[V_TABLE]
+    table["data"][1][7] = "native_dialogue"
+    table["data"][1][8] = "宝妈对着镜头笑着说：“孩子睡了，我也泡一杯。”"
+    table["data"][1][9] = ""
+    out = client.predict(table, out[0], api_name="/video_confirm")
+    assert "已确认" in _last(out[0])
+    edited = rt.store.load(pid).video_script.shots[1]
+    assert edited.character_dialogue.endswith("我也泡一杯。”") and edited.source_timestamp == "00:03.0"
+
+    out = client.predict(out[0], api_name="/video_reuse")
+    out = client.predict("gpt-image-2", 1, "1K", out[0], api_name="/video_first_frames")
+    assert "首帧生成完成" in _last(out[0])
+    out = client.predict(out[0], api_name="/video_lock_all")
+    out = client.predict("official_h3_prompt_writing", "both", out[0], api_name="/video_h3")
+    assert out[V_SHOT1].startswith("For the target video, at 0.00 seconds")
+    script = rt.store.load(pid).video_script
+    assert all(set(s.h3_prompt_variants) == {"i2va", "ref2va"} for s in script.shots)
+
+    from app.providers.video import DemoVideoProvider
+    if DemoVideoProvider.ffmpeg_path():
+        out = client.predict("modal_minimax_h3", out[0], api_name="/video_generate_all")
+        assert all(s.videos for s in rt.store.load(pid).video_script.shots)
+
+
+def test_clone_without_video_is_rejected(server):
+    client, _, _ = server
+    client.predict("克隆缺视频", TEA, "taobao", *INFO, api_name="/new_project")
+    with pytest.raises(Exception, match="上传参考爆款视频"):
+        client.predict(*video_generate_args("clone", None), api_name="/video_generate")

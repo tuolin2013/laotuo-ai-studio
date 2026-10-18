@@ -104,7 +104,7 @@ def frame_stats(path: Path, previous: Path | None) -> tuple[float, float]:
     if previous is None:
         return round(brightness, 1), 0.0
     prev = _thumb(previous)
-    diff = sum(abs(a - b) for a, b in zip(cur.getdata(), prev.getdata(), strict=True)) / (32 * 32 * 255)
+    diff = sum(abs(a - b) for a, b in zip(cur.tobytes(), prev.tobytes(), strict=True)) / (32 * 32 * 255)
     return round(brightness, 1), round(diff, 3)
 
 

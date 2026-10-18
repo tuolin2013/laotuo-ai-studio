@@ -124,7 +124,8 @@ def demo_clone_script(
     analysis = {
         "hook_analysis": f"【{hook_name}】{hook_desc}。复刻时第 1 镜保留该手法，"
                          f"并让{cat.name}在 3 秒内出现在画面中。",
-        "rhythm_analysis": (f"原片 {source.duration_seconds:g} 秒，抽取 {len(frames)} 张关键帧，平均每段约 {avg:.1f} 秒；"
+        "rhythm_analysis": (f"原片 {source.duration_seconds:g} 秒，抽取 {len(frames)} 张关键帧，"
+                            f"平均每段约 {avg:.1f} 秒；"
                             f"检测到 {len(cuts)} 次明显画面切换"
                             + (f"（{'、'.join(c.timestamp for c in cuts)}）" if cuts else "")
                             + "。切镜点基本落在台词转折与产品揭示处。"),

@@ -20,7 +20,10 @@ from app.schemas.common import mode_for_reference_count
 from app.schemas.video import CloneAnalysis, ReferenceVideoSource, StoryboardShot, VideoScript, shot_from_llm
 
 MIN_SHOTS, MAX_SHOTS = 3, 8
+DEFAULT_SKILL_ID = "default_scriptwriter"
 CLONE_SKILL_ID = "hypit_viral_clone"
+# 克隆卡带的标志：正文使用参考视频关键帧时间轴变量
+_CLONE_MARKER = "frame_timeline_json"
 # 克隆剧本没有「视频类型」入参，登记为产品展示类以满足 VideoScript 的类型约束
 CLONE_VIDEO_TYPE = "product_showcase"
 
@@ -48,6 +51,20 @@ class ScriptEngine:
     def __init__(self, rt: EngineRuntime):
         self.rt = rt
 
+    def is_clone_skill(self, skill_id: str | None) -> bool:
+        if not skill_id:
+            return False
+        try:
+            return _CLONE_MARKER in self.rt.skills.get("video_scriptwriter", skill_id).placeholders
+        except KeyError:
+            return False
+
+    def resolve_skill_id(self, mode: str, skill_id: str | None) -> str:
+        """界面上同一个「分镜编剧」下拉框服务两种方式：克隆只用克隆卡带，原创只用其余卡带。"""
+        if mode == "clone":
+            return skill_id if self.is_clone_skill(skill_id) else CLONE_SKILL_ID
+        return skill_id if skill_id and not self.is_clone_skill(skill_id) else DEFAULT_SKILL_ID
+
     async def generate(
         self,
         *,
@@ -65,6 +82,7 @@ class ScriptEngine:
         reference_video: ReferenceVideoSource | None = None,
         clone_strategy: str = "replicate",
     ) -> tuple[VideoScript, str]:
+        skill_id = self.resolve_skill_id(mode, skill_id)
         if mode == "clone":
             return await self._generate_clone(
                 category_id=category_id, platform_id=platform_id, aspect_ratio=aspect_ratio,
@@ -161,7 +179,7 @@ class ScriptEngine:
         info = {k: v for k, v in (product_info or {}).items() if v}
         if self.rt.is_live("llm"):
             # 克隆卡带依赖整条参考视频；单镜重写使用原创编剧卡带，并附上原片拆解报告作为结构约束
-            sid = script.scriptwriter_skill_id if script.script_mode == "original" else "default_scriptwriter"
+            sid = self.resolve_skill_id("original", script.scriptwriter_skill_id)
             skill = self.rt.skills.get("video_scriptwriter", sid)
             base = compile_scriptwriter(skill, script.video_type, script.aspect_ratio, script.target_duration_seconds,
                                         cat, plat, script.user_creative_idea, shot_count=1, product_info=info)

@@ -534,7 +534,6 @@ def demo_story(
     video_type = concept.video_type
     sp = cat.core_selling_points
     pain = cat.pain_points
-    _info_line(product_info)
 
     # 根据视频类型生成不同的剧本
     if video_type == "lifestyle_seeding":
@@ -720,9 +719,11 @@ def demo_story(
     else:  # 其他类型使用通用模板
         title = f"{cat.name}的故事"
         logline = f"展现{cat.name}的独特之处。"
+        type_label = {"trust_building": "信任背书类", "comparison_review": "对比测评类",
+                      "emotional_story": "情感故事类"}.get(video_type, "产品展示类")
         content = f"""# {title}
 
-**类型**: {{"trust_building": "信任背书类", "comparison_review": "对比测评类", "emotional_story": "情感故事类"}}.get(video_type, "产品展示类")
+**类型**: {type_label}
 **时长**: 15秒
 **一句话故事**: {logline}
 

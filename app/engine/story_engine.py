@@ -77,7 +77,7 @@ def _extract_story_fields(text: str) -> dict[str, Any]:
     locs_match = re.search(r'"locations"\s*:\s*\[(.*?)\]', text, re.S)
     if locs_match:
         locs_str = locs_match.group(1)
-        data["locations"] = [l.strip().strip('"') for l in locs_str.split(',') if l.strip()]
+        data["locations"] = [loc.strip().strip('"') for loc in locs_str.split(',') if loc.strip()]
 
     # 提取 props 数组
     props_match = re.search(r'"props"\s*:\s*\[(.*?)\]', text, re.S)
