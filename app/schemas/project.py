@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.schemas.common import new_id, utc_now
 from app.schemas.plan import ImagePlan
-from app.schemas.video import VideoScript
+from app.schemas.video import ConceptOutline, ReferenceVideoSource, StoryScript, VideoScript
 
 
 class Project(BaseModel):
@@ -25,7 +25,13 @@ class Project(BaseModel):
     # 三个选项卡各自独立的工作区
     main_image_plan: ImagePlan | None = None
     detail_page_plan: ImagePlan | None = None
-    video_script: VideoScript | None = None
+
+    # 视频三步式工作流
+    video_concept: ConceptOutline | None = None  # Step 1: 创意大纲
+    video_story: StoryScript | None = None        # Step 2: 完整剧本
+    video_script: VideoScript | None = None       # Step 3: 分镜脚本
+    # 克隆模式：最近一次上传并抽帧的参考爆款视频
+    video_reference: ReferenceVideoSource | None = None
 
     # 当前会话的 Skill 选择（卡槽 -> skill_id）
     selected_skills: dict[str, str] = Field(default_factory=dict)

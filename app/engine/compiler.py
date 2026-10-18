@@ -8,6 +8,7 @@ from typing import Any
 from app.providers.demo.content import camera_tags
 from app.schemas.config import CategoryConfig, PlatformConfig
 from app.schemas.skill import SkillCard
+from app.schemas.video import ReferenceVideoSource
 
 IDEA_PLACEHOLDER = "（未填写）"
 SYSTEM_PROMPT = "你是电商 AIGC 内容工厂中的专业 Skill 执行器。严格按照用户消息中的 Skill 指令与输出格式工作。"
@@ -70,6 +71,44 @@ def compile_scriptwriter(
         aspect_ratio=aspect_ratio,
         shot_count=shot_count,
         target_duration_seconds=target_duration_seconds,
+        category_json=_dump(category),
+        platform_json=_dump(platform),
+        product_info_json=_json(product_info or {}),
+        user_creative_idea=_idea(user_creative_idea),
+    )
+
+
+def compile_clone_scriptwriter(
+    skill: SkillCard,
+    source: ReferenceVideoSource,
+    clone_strategy: str,
+    aspect_ratio: str,
+    target_duration_seconds: int,
+    category: CategoryConfig,
+    platform: PlatformConfig,
+    user_creative_idea: str | None,
+    shot_count: int,
+    product_info: dict[str, str] | None = None,
+) -> str:
+    """克隆编剧：参考视频元信息 + 关键帧时间轴（图片本身作为多模态输入另行附带）。"""
+    from app.engine.video_cloner import format_timestamp, segment_bounds
+
+    meta = {"file_name": source.file_name, "duration_seconds": source.duration_seconds,
+            "width": source.width, "height": source.height, "aspect_ratio": source.aspect_ratio,
+            "keyframe_count": len(source.frames)}
+    timeline = [
+        {"image": f"第 {f.index} 张图", "timestamp": f.timestamp,
+         "segment": f"{format_timestamp(a)}–{format_timestamp(b)}", "change_from_previous": f.change_score}
+        for f, (a, b) in zip(source.frames, segment_bounds(source), strict=True)
+    ]
+    return _render(
+        skill,
+        clone_strategy=clone_strategy,
+        shot_count=shot_count,
+        aspect_ratio=aspect_ratio,
+        target_duration_seconds=target_duration_seconds,
+        video_meta_json=_json(meta),
+        frame_timeline_json=_json(timeline),
         category_json=_dump(category),
         platform_json=_dump(platform),
         product_info_json=_json(product_info or {}),

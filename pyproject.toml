@@ -13,6 +13,8 @@ dependencies = [
     # MiniMax H3 通过 Modal SDK 调用；python-socks 用于本机配置了 HTTP 代理时连接 Modal
     "modal==1.6.1",
     "python-socks[asyncio]==3.1.1",
+    # 参考爆款视频抽帧：自带 ffmpeg 二进制，无需单独安装 / 配置 PATH
+    "imageio-ffmpeg==0.6.0",
 ]
 
 [build-system]

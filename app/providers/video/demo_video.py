@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import asyncio
-import shutil
 import time
 from collections.abc import AsyncIterator
 
@@ -36,7 +35,9 @@ class DemoVideoProvider(VideoProvider):
 
     @staticmethod
     def ffmpeg_path() -> str | None:
-        return shutil.which("ffmpeg")
+        from app.engine.video_cloner import ffmpeg_exe
+
+        return ffmpeg_exe()
 
     async def warmup(self) -> WarmupResult:
         await asyncio.sleep(self.step_delay)

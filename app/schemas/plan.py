@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field
 
@@ -17,6 +17,26 @@ from app.schemas.common import (
     utc_now,
 )
 from app.schemas.editable import BindableItem, EditablePlanBase, ReferenceRequirement
+
+# 电商图片三维设计体系
+AestheticStyle = Literal[
+    "auto",  # AI 自动匹配
+    "new_chinese_zen",  # 新中式茶席禅意美学
+    "organic_nature_sunlight",  # 原生态山野呼吸感美学
+    "clinical_lab_minimal",  # 科学实证与临床极简美学
+    "nordic_warm_lifestyle",  # 北欧暖阳治愈生活美学
+    "high_impact_retail",  # 高对比零售视觉锤美学
+]
+
+CompositionMode = Literal[
+    "auto",  # AI 自动匹配
+    "rule_of_thirds_negative_space",  # 三分留白构图
+    "extreme_macro_texture",  # 光学微距局部满画幅
+    "depth_layering",  # 前中远三层景深构图
+    "diagonal_dynamic_flow",  # 对角线流体动态构图
+    "split_screen_comparison",  # 黄金比例分屏对比构图
+    "knolling_flat_lay",  # 90° 垂直俯拍秩序美学
+]
 
 
 class CandidateImage(BaseModel):
@@ -42,6 +62,9 @@ class ImageSlot(BindableItem):
     differentiator: str = ""
     generation_mode: GenerationMode
     aspect_ratio: AspectRatio
+    # 电商图片三维设计体系
+    aesthetic_style: AestheticStyle = "auto"
+    composition_mode: CompositionMode = "auto"
     candidate_count: int = Field(default=1, ge=1, le=MAX_CANDIDATES_PER_SLOT)
     candidates: list[CandidateImage] = Field(default_factory=list)
     compiled_prompt: str | None = None
@@ -117,4 +140,7 @@ def slot_from_llm(data: dict[str, Any], default_aspect_ratio: AspectRatio) -> Im
     allowed = set(ImageSlot.model_fields) - {"slot_id", "candidates", "required_references"}
     fields = {k: v for k, v in data.items() if k in allowed}
     fields.setdefault("aspect_ratio", default_aspect_ratio)
+    # 如果 LLM 没有输出美学与构图字段，默认为 auto
+    fields.setdefault("aesthetic_style", "auto")
+    fields.setdefault("composition_mode", "auto")
     return ImageSlot(required_references=refs, **fields)

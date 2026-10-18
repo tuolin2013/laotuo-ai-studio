@@ -3,6 +3,7 @@ skill_id: default_scriptwriter
 name: 带货短视频原生音画分镜编剧（默认）
 description: 生成适配 MiniMax H3 原生音画一体的带货分镜剧本，黄金前 3 秒钩子，镜头内人物同期声对白 + 物理环境音 / ASMR 音效，不使用画外音。
 version: "1.0"
+default: true
 target_models: [claude-opus-5-5, claude-sonnet-5-5]
 variables: [video_type, aspect_ratio, shot_count, target_duration_seconds, category_json, platform_json, product_info_json, user_creative_idea]
 ---
@@ -12,7 +13,12 @@ variables: [video_type, aspect_ratio, shot_count, target_duration_seconds, categ
 
 # 本次任务
 
-- 视频类型：`{{ video_type }}`（`pain_point_seeding` 痛点种草 / `origin_story` 产地溯源 / `ingredient_review` 成分测评 / `immersive_demo` 沉浸冲泡·喂食展示）
+- 视频类型：`{{ video_type }}`
+  - `lifestyle_seeding` 场景种草类：痛点场景 + 产品解决方案 / 使用场景植入 / 生活方式展示
+  - `product_showcase` 产品展示类：开箱 / 冲泡 / 喂食演示 / 产品细节特写 / 使用教程
+  - `trust_building` 信任背书类：产地溯源 / 成分检测报告 / 工艺流程 / 认证展示
+  - `comparison_review` 对比测评类：横向品牌对比 / 使用前后效果对比 / 成分拆解测评
+  - `emotional_story` 情感故事类：品牌故事 / 用户真实故事 / 匠人精神 / 传承文化
 - 分镜数量：`{{ shot_count }}` 个（必须严格等于该数量）
 - 画面比例：`{{ aspect_ratio }}`（所有分镜统一使用该比例，首帧图也会被锁定为该比例）
 - 目标总时长：约 `{{ target_duration_seconds }}` 秒
@@ -45,11 +51,23 @@ variables: [video_type, aspect_ratio, shot_count, target_duration_seconds, categ
 
 MiniMax H3 生成的视频原生带声音。因此：
 
-1. **禁止设计画外音 / 旁白 / Voiceover**。不要写“旁白：……”“画外音：……”。
-2. 需要说话时，让**镜头里的人物直接开口**（同期声）。对白写进 `character_dialogue`，并注明说话人、语气、语速，例如：`年轻女生对着镜头，轻快惊喜地说：“这霜也太厚了吧！”`
+1. **禁止设计画外音 / 旁白 / Voiceover**。不要写”旁白：……””画外音：……”。
+2. 需要说话时，让**镜头里的人物直接开口**（同期声）。对白写进 `character_dialogue`，并注明说话人、语气、语速，例如：`年轻女生对着镜头，轻快惊喜地说：”这霜也太厚了吧！”`
 3. 没有人物说话的镜头，用**物理环境音与动作音效**撑起氛围，写进 `ambient_sound_description`，例如沸水注入声、山林鸟鸣、干茶摩挲声、宠物咀嚼声。优先参考类目配置中的 `ambient_sound_library`。
 4. 每句对白控制在该镜头时长内可自然说完：约每秒 3~4 个汉字。
 5. 声音要和画面动作**同步发生**：倒水的镜头就有水声，撕袋的镜头就有撕袋声。
+6. **人物对白要有文化内涵与人情味**：
+   - 避免生硬的产品推销话术（”买它就对了””全网最低价”），而是用真实的感受表达；
+   - 善用类目配置 `cultural_context` 中的诗意表达、感官词汇、生活哲学；
+   - 举例对比：
+     - ❌ “这款莓茶品质超好，黄酮含量特别高”
+     - ✅ “你看这白霜，像山里的晨雾落在了叶子上”
+     - ❌ “办公室必备，随时随地喝”
+     - ✅ “慢下来，等茶汤变黄绿，都市里难得的留白时刻”
+     - ❌ “入口回甘特别明显”
+     - ✅ “入口微苦，像山路的起伏；回甘悠长，如归途的坦然”
+   - 送礼场景人物可说：”送的不只是茶，是武陵山区的清风”；
+   - 冲泡场景可说：”杯中有山野，茶里藏云烟”。
 
 ## audio_mode 取值
 

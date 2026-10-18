@@ -8,8 +8,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-SkillSlot = Literal["ecommerce_planner", "video_scriptwriter", "image_prompt", "video_prompt"]
+SkillSlot = Literal["concept_writer", "story_scriptwriter", "ecommerce_planner", "video_scriptwriter", "image_prompt", "video_prompt"]
 SKILL_SLOTS: tuple[SkillSlot, ...] = (
+    "concept_writer",
+    "story_scriptwriter",
     "ecommerce_planner",
     "video_scriptwriter",
     "image_prompt",

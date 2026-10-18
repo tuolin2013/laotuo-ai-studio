@@ -19,13 +19,15 @@ from app.schemas.editable import BindableItem, EditablePlanBase, ReferenceRequir
 
 AudioMode = Literal["native_dialogue", "ambient_sfx", "dialogue_and_ambient", "silent"]
 ShotPurpose = Literal["hook", "selling_point", "proof", "scene", "call_to_action"]
-# 痛点种草 / 产地溯源 / 成分测评 / 沉浸冲泡·喂食展示
-VideoType = Literal["pain_point_seeding", "origin_story", "ingredient_review", "immersive_demo"]
+
+# 按内容形式分类（商用成熟分类）
+VideoType = Literal["lifestyle_seeding", "product_showcase", "trust_building", "comparison_review", "emotional_story"]
 VIDEO_TYPE_LABELS: dict[str, str] = {
-    "pain_point_seeding": "痛点种草",
-    "origin_story": "产地溯源",
-    "ingredient_review": "成分测评",
-    "immersive_demo": "沉浸冲泡 / 喂食展示",
+    "lifestyle_seeding": "场景种草类（痛点场景 + 解决方案 / 使用场景植入）",
+    "product_showcase": "产品展示类（开箱 / 冲泡 / 喂食演示 / 细节特写）",
+    "trust_building": "信任背书类（产地溯源 / 成分检测 / 工艺认证）",
+    "comparison_review": "对比测评类（横向对比 / 前后效果 / 成分拆解）",
+    "emotional_story": "情感故事类（品牌故事 / 用户故事 / 匠人精神）",
 }
 
 # 官方 h3-prompt-writing 的两种输入模式：I2VA 首帧模式（base-en.txt）/ Ref2VA 全参考模式（ref-en.txt）
@@ -35,6 +37,135 @@ H3_MODE_LABELS: dict[str, str] = {"i2va": "I2VA 首帧模式", "ref2va": "Ref2VA
 
 _DIALOGUE_MODES = {"native_dialogue", "dialogue_and_ambient"}
 _AMBIENT_MODES = {"ambient_sfx", "dialogue_and_ambient"}
+
+
+class ConceptOutline(BaseModel):
+    """创意大纲：30秒电梯演讲,讲清楚钩子、卖点、行动号召。"""
+
+    concept_id: str = Field(default_factory=lambda: new_id("concept"))
+    video_type: VideoType
+    aspect_ratio: AspectRatio
+    target_duration_seconds: int = Field(default=15, ge=5, le=120)
+
+    # 核心创意
+    hook_design: str = Field(description="钩子设计:前3秒用什么抓住用户(视觉/声音/反差/冲突)")
+    core_message: str = Field(description="核心信息:这条视频要传递的一句话卖点")
+    emotional_arc: str = Field(description="情感曲线:从什么情绪到什么情绪(如:好奇→惊喜→信任)")
+    call_to_action: str = Field(description="行动号召:结尾如何促成转化")
+
+    # 结构规划
+    scenes_count: int = Field(default=3, ge=2, le=6, description="分几个场景/段落")
+    scenes_outline: list[str] = Field(default_factory=list, description="每个场景的一句话概述")
+
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class StoryScript(BaseModel):
+    """完整剧本:人类可读的 Markdown 格式,包含故事、对白、场景描述。"""
+
+    story_id: str = Field(default_factory=lambda: new_id("story"))
+    concept_id: str | None = None  # 关联的创意大纲
+    video_type: VideoType
+    aspect_ratio: AspectRatio
+
+    # 剧本正文(Markdown格式)
+    title: str = Field(description="视频标题")
+    logline: str = Field(description="一句话故事梗概")
+    content: str = Field(description="完整剧本正文(Markdown):分场景,含对白、动作、场景描述、情感标注")
+
+    # 创作元数据
+    characters: list[str] = Field(default_factory=list, description="出场人物列表")
+    locations: list[str] = Field(default_factory=list, description="拍摄场景列表")
+    props: list[str] = Field(default_factory=list, description="关键道具")
+
+    plan_status: Literal["draft", "confirmed"] = "draft"
+    created_at: datetime = Field(default_factory=utc_now)
+
+    def confirm(self) -> None:
+        """确认剧本,准备编译成分镜脚本。"""
+        if not self.content.strip():
+            raise ValueError("剧本内容不能为空")
+        self.plan_status = "confirmed"
+
+    def unlock(self) -> None:
+        """解锁剧本返回修改。"""
+        self.plan_status = "draft"
+
+
+# 剧本来源：自己策划原创 / 克隆参考爆款视频（两者产出同一种 VideoScript，后续流程完全共用）
+ScriptMode = Literal["original", "clone"]
+CloneStrategy = Literal["replicate", "adapt"]
+CLONE_STRATEGY_LABELS: dict[str, str] = {
+    "replicate": "1:1 复刻分镜节奏仅换品",
+    "adapt": "借鉴钩子与结构改编",
+}
+
+
+class ReferenceVideoFrame(BaseModel):
+    """参考视频按时间轴均匀抽取的关键帧。"""
+
+    index: int = Field(ge=1)
+    timestamp_seconds: float = Field(ge=0)
+    timestamp: str  # 如 00:01.5
+    file_path: Path
+    # 本地像素统计（演示模式拆解用）：平均亮度 0~255；与上一关键帧的画面变化 0~1（越大越可能是切镜）
+    brightness: float = 0
+    change_score: float = 0
+
+
+class ReferenceVideoSource(BaseModel):
+    """用户上传的参考爆款视频及其关键帧。"""
+
+    video_id: str = Field(default_factory=lambda: new_id("refvid"))
+    file_path: Path
+    file_name: str = ""
+    duration_seconds: float = Field(gt=0)
+    width: int = Field(gt=0)
+    height: int = Field(gt=0)
+    aspect_ratio: AspectRatio
+    frames: list[ReferenceVideoFrame] = Field(default_factory=list)
+
+
+class CloneShotBreakdown(BaseModel):
+    """原片逐段拆解：时间点、A/B-Roll、景别、运镜、台词锚点。"""
+
+    timestamp: str = ""
+    roll: str = ""
+    shot_size: str = ""
+    camera_movement: str = ""
+    content: str = ""
+    dialogue_anchor: str = ""
+
+
+class CloneAnalysis(BaseModel):
+    """《原爆款视频拆解报告》。"""
+
+    hook_analysis: str = ""
+    rhythm_analysis: str = ""
+    a_b_roll_ratio: str = ""
+    dialogue_anchoring: str = ""
+    shot_breakdown: list[CloneShotBreakdown] = Field(default_factory=list)
+    source_note: str = ""
+
+    def to_markdown(self) -> str:
+        def cell(text: str) -> str:
+            return (text or "-").replace("|", "／").replace("\n", " ")
+
+        parts = [
+            "### 🔍 原爆款视频拆解报告",
+            f"**① 前 3 秒钩子手法**：{self.hook_analysis or '-'}",
+            f"**② 切镜节奏**：{self.rhythm_analysis or '-'}",
+            f"**③ A-Roll / B-Roll 比例**：{self.a_b_roll_ratio or '-'}",
+            f"**④ 台词与画面锚定**：{self.dialogue_anchoring or '-'}",
+        ]
+        if self.shot_breakdown:
+            rows = ["| 原片时间点 | A/B-Roll | 景别 | 运镜 | 原片画面 | 台词 / 声音锚点 |", "|---|---|---|---|---|---|"]
+            rows += [f"| {cell(b.timestamp)} | {cell(b.roll)} | {cell(b.shot_size)} | {cell(b.camera_movement)} | "
+                     f"{cell(b.content)} | {cell(b.dialogue_anchor)} |" for b in self.shot_breakdown]
+            parts.append("\n".join(rows))
+        if self.source_note:
+            parts.append(f"> {self.source_note}")
+        return "\n\n".join(parts)
 
 
 class FirstFrameImage(BaseModel):
@@ -74,6 +205,8 @@ class StoryboardShot(BindableItem):
     ambient_sound_description: str = ""
 
     first_frame_generation_mode: GenerationMode = "text_to_image"
+    # 克隆模式：该分镜复刻的原片时间点（如 00:01.5）；原创剧本为空
+    source_timestamp: str = ""
 
     # —— 渲染阶段产物 ——
     first_frame_prompt: str | None = None
@@ -145,6 +278,12 @@ class VideoScript(EditablePlanBase):
     target_duration_seconds: int = Field(default=15, ge=5, le=120)
     script_summary: str = ""
     shots: list[StoryboardShot] = Field(default_factory=list)
+
+    # ---- 剧本来源：原创策划 / 克隆参考爆款视频 ----
+    script_mode: ScriptMode = "original"
+    clone_strategy: CloneStrategy | None = None
+    reference_video: ReferenceVideoSource | None = None
+    clone_analysis: CloneAnalysis | None = None
 
     # ---- 语义化别名 ----
 

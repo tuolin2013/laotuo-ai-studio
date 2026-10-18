@@ -1,11 +1,47 @@
-.venv/
+# Python
 __pycache__/
-*.pyc
-.pytest_cache/
-.ruff_cache/
-.env
-.gradio/
-# 项目运行产物不入库，只保留目录占位
-workspace/*
-!workspace/.gitkeep
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
 *.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Gradio
+gradio_cached_examples/
+flagged/
+
+# Project specific
+workspace/
+modal/
+.claude/docs/
+
+# OS
+.DS_Store
+Thumbs.db

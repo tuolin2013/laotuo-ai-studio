@@ -424,3 +424,367 @@ def demo_h3_prompt(shot: dict[str, Any], aspect_ratio: str) -> dict[str, Any]:
     audio_summary = {"native_dialogue": "人物同期声对白", "ambient_sfx": "原生环境音效",
                      "dialogue_and_ambient": "人物对白 + 环境音", "silent": "静音"}.get(mode, "")
     return {"prompt": prompt, "camera_tags": tags, "audio_summary": audio_summary}
+
+
+# ---------------------------------------------------------------- 创意大纲 (三步式工作流 Step 1)
+
+
+def demo_concept(
+    video_type: str,
+    cat: CategoryConfig,
+    plat: PlatformConfig,
+    aspect_ratio: str,
+    target_duration: int,
+    user_idea: str | None,
+    product_info: dict[str, str],
+) -> dict[str, Any]:
+    """演示模式：创意大纲生成。"""
+    sp = cat.core_selling_points
+    pain = cat.pain_points
+
+    # 根据视频类型设计不同的创意大纲
+    concepts = {
+        "lifestyle_seeding": {
+            "hook_design": (
+                f"痛点共鸣钩子：开场 3 秒展现「{_pick(pain, 0)}」的具体场景,"
+                "让用户瞬间产生「说的就是我」的共鸣"
+            ),
+            "core_message": f"一杯解决你的{_pick(pain, 0).split('、')[0]},真实有效",
+            "emotional_arc": "困扰焦虑 → 尝试产品 → 效果惊喜 → 想要分享",
+            "call_to_action": "办公室/家里常备,不再被XX困扰",
+            "scenes_count": 3,
+            "scenes_outline": [
+                f"场景1:痛点具象化 - {_pick(pain, 0)}的真实时刻",
+                "场景2:尝试产品 - 同事/朋友推荐,抱着试试的心态",
+                "场景3:效果与行动 - 明显改善,决定囤货"
+            ]
+        },
+        "product_showcase": {
+            "hook_design": "强ASMR钩子：撕袋声 + 微距白霜/颗粒特写,视听双重冲击",
+            "core_message": f"亲眼看到的品质:{_pick(sp, 0)}",
+            "emotional_arc": "好奇 → 惊艳 → 想拥有",
+            "call_to_action": "这品质,你看到了",
+            "scenes_count": 4,
+            "scenes_outline": [
+                "场景1:撕袋钩子 - 清脆撕袋声 + 包装正面特写",
+                "场景2:产品细节 - 超微距展现独特之处(白霜/颗粒/质地)",
+                "场景3:冲泡/使用 - 过程展示,色泽/形态变化",
+                "场景4:成品呈现 - 最终效果,满足感"
+            ]
+        },
+        "trust_building": {
+            "hook_design": "证据先行钩子：检测报告/产地标识特写,关键数据醒目",
+            "core_message": f"有证据的安心:{_pick(sp, 1)},第三方检测可查",
+            "emotional_arc": "质疑 → 看到证据 → 验证真实 → 信任",
+            "call_to_action": "报告编号可查,放心选",
+            "scenes_count": 3,
+            "scenes_outline": [
+                "场景1:证据呈现 - 检测报告/认证证书特写,关键数据可见",
+                "场景2:溯源细节 - 产地实拍/工艺流程/品控环节",
+                "场景3:温度背书 - 负责人/工艺师傅真诚陈述,给出可验证信息"
+            ]
+        },
+        "comparison_review": {
+            "hook_design": "对比冲突钩子：两个产品并排,数据差距一目了然",
+            "core_message": f"对比后你就知道:{_pick(sp, 0)},差距3倍",
+            "emotional_arc": "疑惑选择困难 → 逐项对比 → 差异清晰 → 明智选择",
+            "call_to_action": "对比完了,你知道怎么选",
+            "scenes_count": 3,
+            "scenes_outline": [
+                "场景1:对比开场 - 产品A与B并排,宣布对比维度",
+                "场景2:逐项对比 - 价格/成分/含量,数据可视化",
+                "场景3:结论建议 - 客观陈述差异,给出选择建议"
+            ]
+        },
+        "emotional_story": {
+            "hook_design": "人物冲突钩子：主角遇到的困境/坚守的不易,情感张力",
+            "core_message": f"支持这份坚持:{cat.product_attributes.get('产地', '传统工艺')},不让它失传",
+            "emotional_arc": "平静 → 冲突困境 → 坚守转折 → 情感升华",
+            "call_to_action": "支持这份手艺/改变,别让它消失",
+            "scenes_count": 4,
+            "scenes_outline": [
+                "场景1:人物登场 - 创始人/用户/匠人的日常状态",
+                "场景2:遇到冲突 - 面临的困难/问题/挑战",
+                "场景3:坚守时刻 - 为什么没有放弃,内心的信念",
+                "场景4:升华行动 - 现在的使命,呼吁支持"
+            ]
+        }
+    }
+
+    concept = concepts.get(video_type, concepts["product_showcase"])
+
+    # 如果用户填写了创意想法,修改钩子设计
+    if user_idea and user_idea.strip():
+        concept["hook_design"] = f"用户创意钩子：{user_idea[:50]}..."
+        concept["scenes_outline"][0] = f"场景1:用户想法落实 - {user_idea[:30]}..."
+
+    return _clean(concept, cat, plat)
+
+
+# ---------------------------------------------------------------- 完整剧本 (三步式工作流 Step 2)
+
+
+def demo_story(
+    concept: Any,
+    cat: CategoryConfig,
+    plat: PlatformConfig,
+    product_info: dict[str, str],
+) -> dict[str, Any]:
+    """演示模式：基于创意大纲生成完整剧本(Markdown格式)。"""
+    video_type = concept.video_type
+    sp = cat.core_selling_points
+    pain = cat.pain_points
+    _info_line(product_info)
+
+    # 根据视频类型生成不同的剧本
+    if video_type == "lifestyle_seeding":
+        title = "办公室一杯茶,嗓子不干了"
+        logline = f"办公室打工人被{_pick(pain, 0).split('、')[0]}困扰,同事推荐{cat.name},喝了一周明显改善,决定常备。"
+        content = f"""# {title}
+
+**类型**: 场景种草类
+**时长**: 15秒
+**一句话故事**: {logline}
+
+---
+
+## 人物
+
+- **小林**: 互联网运营 - 长期加班,嗓子经常哑
+
+## 场景
+
+- **办公室**: 格子间、电脑屏幕、咖啡杯,下午3点的疲惫氛围
+
+## 道具
+
+- {cat.name}包装、透明杯、水壶
+
+---
+
+## 剧本正文
+
+### 场景一:痛点时刻 (3秒)
+
+**画面**: 办公室格子间,下午光线,小林坐在电脑前,揉着嗓子,眉头紧锁
+
+**动作**: 小林揉嗓子,试图清嗓,表情痛苦
+
+**对白**:
+> 小林:[小声沙哑] 又要开会...嗓子完全哑了
+
+**情感**: 焦虑、疲惫、无助
+
+---
+
+### 场景二:尝试时刻 (5秒)
+
+**画面**: 同事递过来一个透明杯,金黄色茶汤,杯壁有白霜
+
+**动作**: 小林接过杯子,闻香,小口尝试,眼睛逐渐亮起来
+
+**对白**:
+> 同事:[轻松] 试试这个,我喝了一周,真有用
+> 小林:[惊讶] 这是什么?好香
+
+**情感**: 好奇 → 惊喜
+
+---
+
+### 场景三:效果与行动 (7秒)
+
+**画面**: 特写小林满意的表情,桌上放着{cat.name}包装,背景是忙碌的办公室
+
+**动作**: 小林咕咚喝水,满意点头,拿起手机拍照包装
+
+**对白**:
+> 小林:[声音清亮多了,轻快] 润多了!我也囤几罐,办公室常备
+
+**情感**: 满足、想分享
+
+---
+
+## 创作说明
+
+**钩子设计**: 开场3秒用真实痛点场景(嗓子哑到说不出话)建立共鸣,办公室环境让目标用户产生代入感
+
+**产品植入**: 不是硬广,而是同事关心递过来的解决方案,自然真实
+
+**情感共鸣点**: 用户会在"嗓子哑了又要开会"产生强烈共鸣,这是真实发生的困扰
+
+**转化触发点**: 看到明显效果(声音清亮了)+ 真实推荐(我也囤几罐)
+"""
+        characters = ["小林", "同事"]
+        locations = ["办公室"]
+        props = [cat.name, "透明杯", "水壶"]
+
+    elif video_type == "product_showcase":
+        title = f"{cat.name}开箱:这白霜也太厚了"
+        logline = f"ASMR展示{cat.name}从撕袋到冲泡的全过程,微距捕捉白霜与茶汤变化。"
+        content = f"""# {title}
+
+**类型**: 产品展示类
+**时长**: 15秒
+**一句话故事**: {logline}
+
+---
+
+## 声音设计
+
+- **主声音**: 撕袋声、倾倒声、沸水冲击声
+- **环境音**: 厨房/桌面空间感
+
+## 场景
+
+- **桌面**: 木质桌面或白色台面,自然光或柔和顶光,背景简洁
+
+## 道具
+
+- {cat.name}包装、透明玻璃杯、热水壶
+
+---
+
+## 剧本正文
+
+### 场景一:撕袋钩子 (3秒)
+
+**画面**: 特写手指捏住包装封口,包装正面logo清晰
+
+**动作**: 手指用力撕开包装
+
+**声音**:
+- 主声音:清脆的撕袋声(嘶啦~)
+- 环境音:安静的室内空间感
+- 对白:无
+
+**情感**: 好奇、期待
+
+---
+
+### 场景二:白霜特写 (4秒)
+
+**画面**: 超微距俯拍,干茶倾倒入透明杯中,白霜清晰可见
+
+**动作**: 缓慢倾倒,干茶摩擦声,白霜在光线下反光
+
+**声音**:
+- 主声音:干茶摩擦、颗粒落入杯中的声音
+- 对白(可选):[轻声惊叹] 看这个白霜
+
+**情感**: 惊艳
+
+---
+
+### 场景三:冲泡瞬间 (5秒)
+
+**画面**: 侧面中景,沸水注入透明杯,茶汤瞬间变色,白霜溶解
+
+**动作**: 水流冲击茶叶,茶汤从透明变金黄,热气上升
+
+**声音**:
+- 主声音:沸水冲击声、气泡翻腾声
+- 环境音:持续的空间感
+
+**情感**: 满足
+
+---
+
+### 场景四:成品呈现 (3秒)
+
+**画面**: 特写金黄茶汤,杯壁挂霜,包装立于一旁
+
+**动作**: 固定机位,展现最终效果
+
+**声音**:
+- 环境音:安静收尾
+- 对白(可选):[平静真诚] 这品质,你看到了
+
+**情感**: 想拥有
+
+---
+
+## 创作说明
+
+**ASMR 设计**: 撕袋声作为钩子,沸水冲击声为高潮,全程物理声音主导
+
+**视觉分层**: 包装外观 → 撕开 → 白霜微距 → 冲泡过程 → 成品,递进清晰
+
+**微距时刻**: 白霜特写(2秒超微距)+ 冲泡瞬间(捕捉颜色变化),展现产品独特之处
+
+**转化触发点**: 用户亲眼看到白霜、亲耳听到ASMR,产生"这品质我也要"的冲动
+"""
+        characters = []
+        locations = ["桌面"]
+        props = [cat.name, "透明玻璃杯", "热水壶"]
+
+    else:  # 其他类型使用通用模板
+        title = f"{cat.name}的故事"
+        logline = f"展现{cat.name}的独特之处。"
+        content = f"""# {title}
+
+**类型**: {{"trust_building": "信任背书类", "comparison_review": "对比测评类", "emotional_story": "情感故事类"}}.get(video_type, "产品展示类")
+**时长**: 15秒
+**一句话故事**: {logline}
+
+---
+
+## 剧本正文
+
+### 场景一:开场钩子 (3秒)
+
+**画面**: {concept.hook_design[:50]}
+
+**动作**: 关键动作展现
+
+**对白/旁白**:
+> 人物:核心信息传递
+
+**情感**: 好奇、关注
+
+---
+
+### 场景二:核心展开 (8秒)
+
+**画面**: 卖点展示:{_pick(sp, 0)}
+
+**动作**: 分层递进展现
+
+**情感**: 惊喜、信任
+
+---
+
+### 场景三:行动号召 (4秒)
+
+**画面**: 成品/结果呈现
+
+**对白**:
+> {concept.call_to_action}
+
+**情感**: 想要购买/支持
+
+---
+
+## 创作说明
+
+**钩子设计**: {concept.hook_design[:50]}...
+
+**核心信息**: {concept.core_message}
+
+**情感曲线**: {concept.emotional_arc}
+
+**转化触发点**: {concept.call_to_action}
+"""
+        characters = ["主角"]
+        locations = ["场景1"]
+        props = [cat.name]
+
+    result = {
+        "title": title,
+        "logline": logline,
+        "content": content,
+        "characters": characters,
+        "locations": locations,
+        "props": props,
+    }
+
+    return _clean(result, cat, plat)

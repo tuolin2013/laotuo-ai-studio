@@ -17,8 +17,10 @@ from app.schemas.plan import ImagePlan
 from app.settings import IMAGE_QUALITIES, IMAGE_RESOLUTIONS
 from app.ui.header import Header, collect_info, require_project
 from app.ui.state import (
+    AESTHETIC_CHOICES,
+    COMPOSITION_CHOICES,
     MODE_CHOICES,
-    SLOT_HEADERS,
+    SLOT_HEADERS_EXTENDED,
     Workspace,
     apply_slot_rows,
     friendly,
@@ -140,6 +142,17 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
                     count_mode = gr.State("manual")
                     count = gr.Slider(1, 10, value=5, step=1, label="主图数量（随平台默认，可改）")
                 ratio = gr.Dropdown(list(spec.ratios), value=spec.default_ratio, label=f"{spec.label}比例")
+            with gr.Row():
+                gr.Dropdown(
+                    AESTHETIC_CHOICES, value="auto",
+                    label="🎨 全局视觉设计美学流派（影响策划 AI 自动匹配，表格中可单独改）",
+                    scale=3
+                )
+                gr.Dropdown(
+                    COMPOSITION_CHOICES, value="auto",
+                    label="📐 全局默认构图模式（影响策划 AI 自动匹配，表格中可单独改）",
+                    scale=3
+                )
             idea = gr.Textbox(
                 label="💡 我的策划想法（选填）", lines=2,
                 placeholder="不填：按类目与平台自动策划；填写：优先按您的想法定制。例如：中秋主题、暖金色调、重点突出白霜对比",
@@ -149,10 +162,11 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
                 regen_btn = gr.Button("🔄 按新想法重新生成")
             status = gr.Markdown(f"尚未生成{spec.label}策划案")
             table = gr.Dataframe(
-                headers=SLOT_HEADERS, datatype=["number", "str", "str", "str", "str", "str", "str"],
-                interactive=True, wrap=True, static_columns=[0], column_widths=["5%", "12%", "11%", "14%", "30%",
-                                                                                "13%", "15%"],
-                label=f"可编辑策划区（生图模式可填：{' / '.join(MODE_CHOICES)}）",
+                headers=SLOT_HEADERS_EXTENDED,
+                datatype=["number", "str", "str", "str", "str", "str", "str", "str", "str"],
+                interactive=True, wrap=True, static_columns=[0],
+                column_widths=["4%", "10%", "9%", "12%", "25%", "10%", "12%", "10%", "8%"],
+                label="可编辑策划区（生图模式、美学流派、构图模式可直接修改，详见下拉提示）",
             )
             with gr.Row():
                 save_edit = gr.Button("💾 保存表格修改")
@@ -211,7 +225,7 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
         ch = _slot_choices(plan)
         wch, wsel = _winner_choices(plan)
         outs = [
-            _status_md(plan, spec), slots_to_rows(plan),
+            _status_md(plan, spec), slots_to_rows(plan, extended=True),
             gr.update(choices=ch, value=ch[0][1] if ch else None),
             gr.update(choices=ch, value=ch[0][1] if ch else None),
             _checklist_md(plan), *_upload_updates(plan), _gallery(plan),
@@ -270,7 +284,7 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
     def do_save_edit(pid, tbl, prev):
         plan = _plan(ws, pid, spec)
         try:
-            n = apply_slot_rows(plan, tbl, rt.category(plan.category_id).reference_image_roles)
+            n = apply_slot_rows(plan, tbl, rt.category(plan.category_id).reference_image_roles, extended=True)
             ws.save(ws.get(pid))
             msg = f"💾 已保存表格修改（{n} 个槽位有变化）"
         except Exception as e:
@@ -286,7 +300,7 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
         log = _log(prev, "🎲 正在单独重新生成所选槽位…")
         yield [log, *_refresh(pid)]
         try:
-            apply_slot_rows(plan, tbl, rt.category(plan.category_id).reference_image_roles)
+            apply_slot_rows(plan, tbl, rt.category(plan.category_id).reference_image_roles, extended=True)
             new = await planner.regenerate_slot(plan, sid, collect_info(ws, cid, info_vals))
             ws.save(ws.get(pid))
             log = _log(log, f"✅ 已重新生成：「{new.title}」（{new.generation_mode}）")
@@ -302,7 +316,7 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
         def handler(pid, sid, tbl, prev):
             plan = _plan(ws, pid, spec)
             try:
-                apply_slot_rows(plan, tbl, rt.category(plan.category_id).reference_image_roles)
+                apply_slot_rows(plan, tbl, rt.category(plan.category_id).reference_image_roles, extended=True)
                 msg = op(plan, sid)
                 ws.save(ws.get(pid))
             except Exception as e:
@@ -340,7 +354,7 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
         plan = _plan(ws, pid, spec)
         try:
             if plan.plan_status == "draft":
-                apply_slot_rows(plan, tbl, rt.category(plan.category_id).reference_image_roles)
+                apply_slot_rows(plan, tbl, rt.category(plan.category_id).reference_image_roles, extended=True)
             checklist_items = plan.confirm_plan()
             ws.save(ws.get(pid))
             roles = "、".join(c.role for c in checklist_items) or "无（全部文生图）"

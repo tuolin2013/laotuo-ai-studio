@@ -10,6 +10,7 @@ from app.engine.project_service import reuse_references
 from app.engine.prompt_compiler import PromptCompiler, global_continuous_prompt, image_skill_for_model
 from app.engine.render_engine import RenderEngine
 from app.engine.script_engine import ScriptEngine
+from app.engine.video_cloner import extract_keyframes
 from app.providers.image_models import choices as model_choices
 from app.schemas.video import H3_MODE_LABELS, VIDEO_TYPE_LABELS, VideoScript
 from app.settings import IMAGE_RESOLUTIONS

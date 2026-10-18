@@ -61,6 +61,12 @@ class CategoryConfig(BaseModel):
     ambient_sound_library: list[str] = Field(default_factory=list)
     product_form_fields: list[ProductFormField] = Field(default_factory=list)
     product_lines: list[ProductLine] = Field(default_factory=list)
+    # 检测标准清单（如 T/ZMX 001-2025、GB 2762 等）
+    test_standards: list[str] = Field(default_factory=list)
+    # 检测报告引用（报告编号、检测项目、结果等结构化数据）
+    test_report_references: list[dict[str, str | list[str]]] = Field(default_factory=list)
+    # 文化背景与品牌故事（供策划 Skill 使用）
+    cultural_context: dict[str, str | list[str]] = Field(default_factory=dict)
 
 
 class _RatioSpec(BaseModel):

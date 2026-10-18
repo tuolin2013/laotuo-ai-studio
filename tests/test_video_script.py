@@ -38,7 +38,7 @@ def make_script(**kw) -> VideoScript:
         platform_id="wechat_shop",
         category_id="zhangjiajie_berry_tea",
         scriptwriter_skill_id="default_scriptwriter",
-        video_type="immersive_demo",
+        video_type="product_showcase",
         aspect_ratio=kw.pop("aspect_ratio", "9:16"),
         user_creative_idea="办公室冲泡，女生惊喜",
         **kw,

@@ -21,7 +21,31 @@ from app.schemas.video import StoryboardShot, VideoScript
 MODE_CHOICES = ["text_to_image", "single_image_edit", "multi_image_fusion"]
 AUDIO_CHOICES = ["native_dialogue", "ambient_sfx", "dialogue_and_ambient", "silent"]
 
+# 电商图片三维设计体系选项
+AESTHETIC_CHOICES = [
+    ("自动匹配（推荐）", "auto"),
+    ("🍵 新中式茶席禅意", "new_chinese_zen"),
+    ("🌿 原生态山野呼吸", "organic_nature_sunlight"),
+    ("🔬 科学实证极简", "clinical_lab_minimal"),
+    ("🏡 北欧暖阳治愈", "nordic_warm_lifestyle"),
+    ("💥 高对比零售视觉锤", "high_impact_retail"),
+]
+
+COMPOSITION_CHOICES = [
+    ("自动匹配（推荐）", "auto"),
+    ("三分留白构图", "rule_of_thirds_negative_space"),
+    ("光学微距满画幅", "extreme_macro_texture"),
+    ("前中远三层景深", "depth_layering"),
+    ("对角线动态流", "diagonal_dynamic_flow"),
+    ("分屏对比构图", "split_screen_comparison"),
+    ("90°俯拍秩序", "knolling_flat_lay"),
+]
+
 SLOT_HEADERS = ["序号", "主标题", "副标题", "上图文案", "画面构图描述", "生图模式", "参考图角色（逗号分隔）"]
+SLOT_HEADERS_EXTENDED = [
+    "序号", "主标题", "副标题", "上图文案", "画面构图描述",
+    "生图模式", "美学流派", "构图模式", "参考图角色"
+]
 SHOT_HEADERS = [
     "镜头", "时长(秒)", "景别", "运镜", "画面描述", "主体动作", "首帧画面", "声音模式",
     "人物同期声对白", "原生环境音/音效", "首帧生图模式", "参考图角色（逗号分隔）",
@@ -99,9 +123,16 @@ def _rows(table: Any) -> list[list[Any]]:
     return [list(r) for r in table]
 
 
-def slots_to_rows(plan: ImagePlan | None) -> list[list[Any]]:
+def slots_to_rows(plan: ImagePlan | None, extended: bool = False) -> list[list[Any]]:
+    """转换槽位为表格行。extended=True 时包含美学与构图列。"""
     if plan is None:
         return []
+    if extended:
+        return [
+            [i, s.title, s.subtitle, s.copy_text, s.visual_description, s.generation_mode,
+             s.aesthetic_style, s.composition_mode, _roles_text(s.required_references)]
+            for i, s in enumerate(plan.slots, start=1)
+        ]
     return [
         [i, s.title, s.subtitle, s.copy_text, s.visual_description, s.generation_mode,
          _roles_text(s.required_references)]
@@ -109,25 +140,40 @@ def slots_to_rows(plan: ImagePlan | None) -> list[list[Any]]:
     ]
 
 
-def apply_slot_rows(plan: ImagePlan, table: Any, role_desc: dict[str, str]) -> int:
-    """把界面表格的修改写回策划案（只更新有变化的槽位）。返回修改的槽位数。"""
+def apply_slot_rows(plan: ImagePlan, table: Any, role_desc: dict[str, str], extended: bool = False) -> int:
+    """把界面表格的修改写回策划案（只更新有变化的槽位）。返回修改的槽位数。
+
+    extended=True 时表格包含美学与构图列。
+    """
     rows = _rows(table)
     if len(rows) != len(plan.slots):
         raise UIError("表格行数与槽位数不一致：增删槽位请使用下方「新增 / 删除」按钮")
+
+    headers = SLOT_HEADERS_EXTENDED if extended else SLOT_HEADERS
     changed = 0
+
     for row, slot in zip(rows, plan.slots, strict=True):
-        row = [*row, *[""] * (len(SLOT_HEADERS) - len(row))]
+        row = [*row, *[""] * (len(headers) - len(row))]
         mode = str(row[5] or "").strip()
         if mode not in MODE_CHOICES:
             raise UIError(f"第 {row[0]} 行生图模式「{mode}」无效，可选：{' / '.join(MODE_CHOICES)}")
+
         new = {
             "title": str(row[1] or "").strip(),
             "subtitle": str(row[2] or "").strip(),
             "copy_text": str(row[3] or "").strip(),
             "visual_description": str(row[4] or "").strip(),
             "generation_mode": mode,
-            "required_references": _parse_roles(row[6], slot.required_references, role_desc),
         }
+
+        if extended:
+            aesthetic = str(row[6] or "auto").strip()
+            composition = str(row[7] or "auto").strip()
+            new["aesthetic_style"] = aesthetic
+            new["composition_mode"] = composition
+            new["required_references"] = _parse_roles(row[8], slot.required_references, role_desc)
+        else:
+            new["required_references"] = _parse_roles(row[6], slot.required_references, role_desc)
         old = {
             "title": slot.title, "subtitle": slot.subtitle, "copy_text": slot.copy_text,
             "visual_description": slot.visual_description, "generation_mode": slot.generation_mode,

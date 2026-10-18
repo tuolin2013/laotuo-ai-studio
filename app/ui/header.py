@@ -15,8 +15,10 @@ from app.ui.state import UIError, Workspace, friendly
 
 MAX_FORM_FIELDS = 8
 SLOT_LABELS = {
+    "concept_writer": "创意大纲生成",
+    "story_scriptwriter": "剧本创作",
     "ecommerce_planner": "电商策划",
-    "video_scriptwriter": "视频编剧",
+    "video_scriptwriter": "分镜脚本编译",
     "image_prompt": "生图提示词",
     "video_prompt": "视频提示词（H3）",
 }
@@ -41,7 +43,9 @@ def _field_updates(ws: Workspace, category_id: str, values: dict[str, str] | Non
     for i in range(MAX_FORM_FIELDS):
         if i < len(fields):
             f = fields[i]
-            ups.append(gr.update(visible=True, label=f.label, placeholder=f.placeholder, value=values.get(f.key, "")))
+            # 如果 values 中有值就用，否则用 placeholder 作为初始值（可编辑利用）
+            initial_value = values.get(f.key) or f.placeholder
+            ups.append(gr.update(visible=True, label=f.label, value=initial_value))
         else:
             ups.append(gr.update(visible=False, value=""))
     return ups

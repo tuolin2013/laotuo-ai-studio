@@ -8,10 +8,13 @@ from app.engine.skill_loader import SKILLS_DIR, SkillRegistry
 from app.schemas.skill import SKILL_SLOTS, SkillRenderError
 
 EXPECTED = {
+    "concept_writer": {"default_concept_writer"},
+    "story_scriptwriter": {"comparison_review_story", "emotional_story_story", "lifestyle_seeding_story",
+                           "product_showcase_story", "trust_building_story"},
     "ecommerce_planner": {
         "default_planner", "laotuo_zhangjiajie_meicha_planner", "laotuo_pet_supplement_chenrong_beikang_planner",
     },
-    "video_scriptwriter": {"default_scriptwriter"},
+    "video_scriptwriter": {"default_scriptwriter", "hypit_viral_clone"},
     "image_prompt": {"gpt_image_2", "gemini_nano_banana"},
     "video_prompt": {"official_h3_prompt_writing", "minimax_h3_prompt"},
 }

@@ -13,7 +13,7 @@ variables: [deliverable_type, category_json, platform_json, product_info_json, r
 # 本次任务
 
 - 产出类型：`{{ deliverable_type }}`（`main_image` = 主图组；`detail_page` = 详情页按屏规划）
-- 数量：`{{ requested_count }}`（若为 `auto`，主图按平台默认张数；详情页按卖点数量自动规划屏数，并控制在平台允许范围内）
+- **必须产出数量：`{{ requested_count }}`**（若为 `auto`，主图按平台默认张数；详情页按卖点数量自动规划屏数，并控制在平台允许范围内；**若为具体数字，`slots` 数组必须包含该数量的元素**）
 - 画面比例：`{{ aspect_ratio }}`
 
 ## 类目配置
@@ -102,6 +102,8 @@ variables: [deliverable_type, category_json, platform_json, product_info_json, r
       "selling_point": "本槽位承载的卖点",
       "visual_description": "画面描述：主体、构图、景别、光线、背景、道具、色调",
       "differentiator": "防雷同：这张图的独特之处",
+  "aesthetic_style": "auto",
+  "composition_mode": "auto",
       "generation_mode": "text_to_image | single_image_edit | multi_image_fusion",
       "required_references": [
         {"role": "product_package", "description": "需要用户提供什么样的参考图"}
@@ -114,7 +116,7 @@ variables: [deliverable_type, category_json, platform_json, product_info_json, r
 
 自检清单（输出前逐条确认）：
 
-1. `slots` 数量符合要求；
+1. **`slots` 数组元素数量精确等于 `requested_count` 指定的数量（或平台默认值）**；
 2. 每个槽位 `generation_mode` 与 `required_references` 数量一致（0 / 1 / 2~3）；
 3. 无禁用词、无功效承诺；
 4. 用户想法已被落实到具体槽位中（若填写了）。

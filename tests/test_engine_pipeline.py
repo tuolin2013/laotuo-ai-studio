@@ -130,7 +130,7 @@ async def test_manual_detail_screens_count(rt):
 async def test_video_full_pipeline(rt, png):
     project = create_project(rt, "宠物视频", "pet_supplement", "wechat_shop")
     script, mode = await ScriptEngine(rt).generate(
-        category_id="pet_supplement", platform_id="wechat_shop", video_type="immersive_demo",
+        category_id="pet_supplement", platform_id="wechat_shop", video_type="lifestyle_seeding",
         aspect_ratio="9:16", shot_count=5, user_creative_idea="猫咪听到撕袋声跑过来")
     project.video_script = script
     assert mode == "演示模式" and len(script.shots) == 5 and script.plan_status == "draft"

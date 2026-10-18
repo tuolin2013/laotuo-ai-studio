@@ -25,7 +25,7 @@ THEME = gr.themes.Soft(primary_hue="emerald", secondary_hue="amber")
 def build_app(settings: Settings, runtime: EngineRuntime | None = None) -> gr.Blocks:
     rt = runtime or EngineRuntime(settings=settings, force_demo=settings.demo_mode)
     ws = Workspace(rt)
-    with gr.Blocks(title="电商 AIGC 内容工厂") as demo:
+    with gr.Blocks(title="Laotuo(老庹)电商 AIGC 内容工厂") as demo:
         header = build_header(ws, demo)
         with gr.Tabs():
             with gr.Tab("🖼️ 主图生成"):

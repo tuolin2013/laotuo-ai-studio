@@ -54,6 +54,28 @@ def test_too_many_references_rejected(ref_png):
 
 def test_extract_json():
     assert extract_json('说明\n```json\n{"a": 1}\n```') == {"a": 1}
+
+    # 测试缺少逗号的修复
+    missing_comma = """{
+  "plan_summary": "测试",
+  "slots": [
+    {
+      "title": "第一张"
+    }
+    {
+      "title": "第二张"
+    }
+  ]
+}"""
+    result = extract_json(missing_comma)
+    assert len(result["slots"]) == 2
+    assert result["slots"][1]["title"] == "第二张"
+
+    # 测试多余尾随逗号的修复
+    trailing_comma = '{"items": [1, 2, 3,], "name": "test",}'
+    result = extract_json(trailing_comma)
+    assert result == {"items": [1, 2, 3], "name": "test"}
+
     with pytest.raises(LLMError):
         extract_json("no json")
 
