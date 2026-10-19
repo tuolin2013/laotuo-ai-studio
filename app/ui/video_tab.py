@@ -14,7 +14,7 @@ import gradio as gr
 
 from app.engine.concept_engine import ConceptEngine
 from app.engine.project_service import reuse_references
-from app.engine.prompt_compiler import PromptCompiler, global_continuous_prompt, image_skill_for_model
+from app.engine.prompt_compiler import auto_h3_mode, h3_mode_label, image_skill_for_model
 from app.engine.render_engine import RenderEngine
 from app.engine.script_engine import CLONE_VIDEO_TYPE, ScriptEngine
 from app.engine.story_engine import StoryEngine
@@ -33,6 +33,7 @@ from app.schemas.video import (
     H3_MODE_LABELS,
     VIDEO_TYPE_LABELS,
     ReferenceVideoSource,
+    StoryboardShot,
     VideoScript,
 )
 from app.settings import IMAGE_RESOLUTIONS
@@ -52,11 +53,10 @@ from app.ui.state import (
 VIDEO_RATIOS = ["9:16", "16:9", "1:1"]
 SCRIPT_MODES = [("📝 自己策划原创剧本", "original"), ("📹 克隆参考爆款视频 (Hypit Clone)", "clone")]
 CLONE_STRATEGIES = [(label, key) for key, label in CLONE_STRATEGY_LABELS.items()]
-H3_MODE_CHOICES = [("模式 A：I2VA / FL2VA 首帧模式（默认 · base-en.txt 三段式）", "i2va"),
-                   ("模式 B：Ref2VA 全参考模式（ref-en.txt 六段式 · <Picture N> 标签）", "ref2va"),
-                   ("A + B 同时生成（视频生成使用模式 A）", "both")]
-PROVIDERS = [("Modal MiniMax H3", "modal_minimax_h3"), ("fal.ai（预留）", "fal_ai"),
-             ("ComfyUI 手动桥接", "manual_comfyui")]
+VIDEO_PROVIDER = "modal_minimax_h3"  # 唯一的视频后端；未登录 Modal 或演示模式时自动换成本地演示后端
+# 每个分镜一个独立播放器（超出部分在「全部视频版本」里查看）
+MAX_VIDEO_SLOTS = 12
+SLOTS_PER_ROW = 4
 
 
 def _script(ws: Workspace, pid) -> VideoScript:
@@ -114,10 +114,72 @@ def _status_md(s: VideoScript | None) -> str:
         return (f"📝 **分镜剧本草稿（可编辑）**　{head}\n\n声音模式可填：{' / '.join(AUDIO_CHOICES)}。"
                 "MiniMax H3 原生带声音：说话请写进「人物同期声对白」，**不要写画外音**。")
     locked = sum(1 for x in s.shots if x.confirmed_first_frame_id)
-    prompts = sum(1 for x in s.shots if x.h3_prompt)
-    modes = sorted({H3_MODE_LABELS[x.h3_prompt_mode] for x in s.shots if x.h3_prompt and x.h3_prompt_variants})
+    videos = sum(1 for x in s.shots if x.playable_videos)
     return (f"🔒 **分镜剧本已确认**　{head}\n\n首帧已锁定 {locked}/{len(s.shots)}　｜　"
-            f"H3 提示词已生成 {prompts}/{len(s.shots)}" + (f"（视频生成使用：{'、'.join(modes)}）" if modes else ""))
+            f"已生成视频 {videos}/{len(s.shots)}")
+
+
+def _video_shot_choices(s: VideoScript | None) -> list[tuple[str, str]]:
+    """Step 3 可生成的分镜：只列出已锁定首帧的分镜。"""
+    if s is None or s.plan_status != "confirmed":
+        return []
+    out = []
+    for i, x in enumerate(s.shots, start=1):
+        if x.confirmed_first_frame_id:
+            n = len(x.playable_videos)
+            out.append((f"镜头 {i}（{x.duration_seconds:g}s）" + (f" · 已有 {n} 版" if n else " · 未生成"), x.shot_id))
+    return out
+
+
+def _video_progress_md(s: VideoScript | None) -> str:
+    if s is None or s.plan_status != "confirmed":
+        return "确认分镜剧本并锁定首帧后，生成的视频会按分镜显示在这里"
+    parts = []
+    for i, x in enumerate(s.shots, start=1):
+        n = len(x.playable_videos)
+        if n:
+            parts.append(f"镜头 {i} ✅ {n} 版")
+        elif x.confirmed_first_frame_id:
+            parts.append(f"镜头 {i} ⏳ 待生成")
+        else:
+            parts.append(f"镜头 {i} ⬜ 未锁首帧")
+    return "　｜　".join(parts)
+
+
+def _player_updates(s: VideoScript | None) -> list:
+    """每个分镜一个播放器，显示该分镜最新版本；没有视频的分镜隐藏。"""
+    out = []
+    for i in range(MAX_VIDEO_SLOTS):
+        shot = s.shots[i] if s is not None and i < len(s.shots) else None
+        vids = shot.playable_videos if shot is not None else []
+        if not vids:
+            out.append(gr.update(visible=False, value=None))
+            continue
+        label = f"镜头 {i + 1}（{shot.duration_seconds:g}s）· 第 {len(vids)} 版"
+        if len(vids) > 1:
+            label += f"（共 {len(vids)} 版，旧版本见下方「全部视频版本」）"
+        out.append(gr.update(visible=True, value=str(vids[-1].file_path), label=label))
+    return out
+
+
+def _versions_gallery(s: VideoScript | None) -> list[tuple[str, str]]:
+    if s is None:
+        return []
+    return [(str(v.file_path), f"镜头 {i} · 第 {k} 版")
+            for i, x in enumerate(s.shots, start=1) for k, v in enumerate(x.playable_videos, start=1)]
+
+
+def _h3_info(s: VideoScript | None, shot: StoryboardShot | None) -> str:
+    if s is None or shot is None:
+        return ""
+    refs = [a for a in s.references_for(shot.shot_id) if a.file_path.exists()]
+    if shot.h3_prompt:
+        mode = shot.h3_official_mode
+        sent = "锁定首帧" + (f" + {len(refs)} 张商品参考图" if mode != "i2va" and refs else "")
+        return f"写法：**{h3_mode_label(shot)}**　｜　生成视频时送入：{sent}"
+    mode = auto_h3_mode(s, shot)
+    return (f"尚未编写，生成视频时会自动编写。将使用：**{H3_MODE_LABELS[mode]}**"
+            f"（{'该分镜绑定了商品参考图' if mode == 'ref2va' else '该分镜没有商品参考图'}，系统自动选择）")
 
 
 def _checklist_md(s: VideoScript | None) -> str:
@@ -196,7 +258,7 @@ def _clone_md(s: VideoScript | None, source: ReferenceVideoSource | None) -> str
 def build_video_tab(ws: Workspace, header: Header) -> None:
     rt = ws.rt
     concept_engine, story_engine = ConceptEngine(rt), StoryEngine(rt)
-    writer, compiler, renderer = ScriptEngine(rt), PromptCompiler(rt), RenderEngine(rt)
+    writer, renderer = ScriptEngine(rt), RenderEngine(rt)
 
     with gr.Row():
         with gr.Column(scale=7):
@@ -289,52 +351,46 @@ def build_video_tab(ws: Workspace, header: Header) -> None:
                     save_locked = gr.Button("🔒 保存首帧锁定勾选", variant="primary")
                     lock_all_btn = gr.Button("🔒 全部分镜自动锁定最新首帧（快捷操作）", variant="secondary")
 
-            # ========================================================== Step 3: H3 提示词 + 视频生成
-            gr.Markdown("## Step 3　MiniMax H3 音画提示词 · ComfyUI 协同 · 视频生成")
-            h3_mode = gr.Radio(H3_MODE_CHOICES, value="i2va", label="官方 h3-prompt-writing 输入模式",
-                               info="I2VA：以 Step 2 锁定首帧为 <Picture 1> 起始帧；Ref2VA：首帧 + 商品参考图"
-                                    "按 <Picture 1>、<Picture 2>… 全参考输入。"
-                                    "画面/声音描述为英文，中文台词与包装文字保留原文")
-            h3_btn = gr.Button("🪄 运行 H3 Skill 生成专用音画提示词（全部已锁定首帧的分镜）", variant="primary")
+            # ========================================================== Step 3: Modal MiniMax H3 生成视频
+            gr.Markdown("## Step 3　MiniMax H3 生成带声视频（Modal）")
+            gr.Markdown("点「开始生成」后，系统先为每个分镜**自动编写 H3 音画提示词**，再交给 Modal 上的 MiniMax H3 "
+                        "生成带原生声音的视频，**不需要选择提示词模式**：分镜绑定了商品参考图时，首帧和参考图一起送入"
+                        "（包装更稳）；没有参考图时只用锁定首帧。每个分镜约 5~8 分钟，多个分镜排队逐个生成。")
+            video_way = gr.Radio([("① 逐个分镜依次生成（全部已锁定首帧的分镜）", "all"),
+                                  ("② 选分镜生成（只生成勾选的分镜）", "pick")], value="all", label="生成方式")
+            skip_done = gr.Checkbox(value=True, label="跳过已有视频的分镜（只补齐还没生成的）")
+            video_pick = gr.CheckboxGroup(choices=[], visible=False,
+                                          label="勾选要生成的分镜（已有视频的分镜再次生成会保存为新版本，不覆盖旧视频）")
             with gr.Row():
-                edit_shot = gr.Dropdown(label="微调哪个分镜的 H3 提示词", choices=[])
-                edit_mode = gr.Radio(H3_MODE_CHOICES[:2], value="i2va", label="查看 / 微调哪个模式的版本")
-                save_h3 = gr.Button("💾 保存微调并设为视频生成使用的版本")
-            h3_edit = gr.Textbox(label="H3 提示词（可手动微调）", lines=5, buttons=["copy"])
-
-            with gr.Group(elem_classes=["comfy-zone"]):
-                gr.Markdown("#### 🌟 Modal ComfyUI MiniMax All-in-One 协同专区")
-                comfy_link = gr.Markdown()
-                shot1_prompt = gr.Textbox(label="① 第 1 分镜 H3 专用提示词（点右上角一键复制）", lines=5,
-                                          buttons=["copy"], interactive=False)
-                global_prompt = gr.Textbox(label="② All-in-One 全局连续 H3 提示词（基于第 1 分镜首帧，一键复制）",
-                                           lines=8, buttons=["copy"], interactive=False)
+                video_btn = gr.Button("🎬 开始生成视频", variant="primary", size="lg", scale=3)
+                warm_btn = gr.Button("🔎 检查 Modal H3 服务（不启动 GPU、不扣费）", scale=2)
+            video_progress = gr.Markdown()
+            gr.Markdown("#### 🎞️ 各分镜视频（每个分镜单独显示最新版本，带原生声音）")
+            players = []
+            for start in range(0, MAX_VIDEO_SLOTS, SLOTS_PER_ROW):
                 with gr.Row():
-                    frame1_dl = gr.DownloadButton("⬇️ 下载第 1 分镜锁定首帧原图", value=None)
-                    all_prompts_dl = gr.DownloadButton("⬇️ 下载全部分镜 H3 提示词（txt）", value=None)
+                    for i in range(start, start + SLOTS_PER_ROW):
+                        players.append(gr.Video(visible=False, height=360, interactive=False, autoplay=False,
+                                                min_width=160, key=f"video_player_{i}"))
+            with gr.Accordion("🗂️ 全部视频版本（含重新生成前的旧版本）", open=False):
+                versions = gr.Gallery(show_label=False, columns=4, height=320, object_fit="contain")
+            with gr.Accordion("📝 H3 音画提示词（系统自动编写，可选查看 / 微调）", open=False):
                 with gr.Row():
-                    back_shot = gr.Dropdown(label="回传绑定到分镜", choices=[])
-                    back_video = gr.File(label="📤 上传从 ComfyUI 生成的视频", file_types=["video"])
-                back_btn = gr.Button("📤 回传绑定视频")
-
-            gr.Markdown("#### 🎬 直接生成视频")
-            with gr.Row():
-                provider = gr.Dropdown(PROVIDERS, value="modal_minimax_h3", label="视频后端")
-                video_shot = gr.Dropdown(label="生成哪个分镜", choices=[])
-            with gr.Row():
-                warm_btn = gr.Button("🔎 检查 Modal H3 服务（不启动 GPU）")
-                video_btn = gr.Button("🎬 开始生成带声视频", variant="primary")
-                video_all_btn = gr.Button("🎬 全部分镜依次生成")
+                    h3_shot = gr.Dropdown(label="查看哪个分镜", choices=[], scale=2)
+                    h3_rewrite = gr.Button("🪄 重新编写该分镜")
+                    h3_all_btn = gr.Button("🪄 为全部已锁定首帧的分镜重新编写")
+                h3_info = gr.Markdown()
+                h3_edit = gr.Textbox(label="H3 提示词（可手动微调，保存后生成视频时使用）", lines=8, buttons=["copy"])
+                save_h3 = gr.Button("💾 保存微调")
 
         with gr.Column(scale=5):
-            logs = gr.Textbox(label="📜 运行日志 Running Logs", lines=16, max_lines=16, autoscroll=True,
+            logs = gr.Textbox(label="📜 运行日志 Running Logs", lines=24, max_lines=24, autoscroll=True,
                               interactive=False)
-            player = gr.Video(label="🎞️ 视频预览（带原生声音）", height=420, autoplay=False)
-            video_list = gr.Markdown()
 
     # ================================================================ 刷新
-    def _refresh(pid, sel_shot=None, preview: ReferenceVideoSource | None = None):
-        """preview：克隆过程中刚抽完帧、剧本还没生成时，先展示这段参考视频的关键帧。"""
+    def _refresh(pid, sel_shot=None, preview: ReferenceVideoSource | None = None, picked=None):
+        """preview：克隆过程中刚抽完帧、剧本还没生成时，先展示这段参考视频的关键帧。
+        picked：Step 3「选分镜生成」中用户已勾选的分镜，刷新时保留。"""
         p = ws.get(pid) if pid else None
         s = p.video_script if p else None
         ch = _shot_choices(s)
@@ -350,48 +406,35 @@ def build_video_tab(ws: Workspace, header: Header) -> None:
                                     value=str(a.file_path) if a else None))
             else:
                 up.append(gr.update(visible=False, value=None))
-        first = s.shots[0] if s and s.shots else None
-        frame1 = first.confirmed_first_frame if first else None
-        prompts_file = None
-        if s and any(x.h3_prompt for x in s.shots):
-            prompts_file = rt.store.asset_dir(p.project_id, "prompts") / "h3_prompts_all.txt"
-            prompts_file.write_text(s.combined_h3_prompts() + "\n\n【All-in-One 全局连续提示词】\n" +
-                                    global_continuous_prompt(s), encoding="utf-8")
-        latest_video = None
-        vids = []
-        for i, x in enumerate(s.shots if s else [], start=1):
-            for v in x.videos:
-                vids.append(f"- 镜头 {i}：`{v.file_path.name}`（{v.provider} · "
-                            f"{'外部回传' if v.source == 'external_upload' else '生成'}）")
-                latest_video = v.file_path
-        url = rt.settings.comfyui_url
-        link = (f"🔗 [打开 ComfyUI MiniMax All-in-One]({url})" if url else
-                "未配置 COMFYUI_URL（可在「⚙️ API 配置」填写）。操作：下载首帧 → 粘贴提示词 → 生成 → 回传视频")
-        shot_up = gr.update(choices=ch, value=default)
+        vch = _video_shot_choices(s)
+        vids = [c[1] for c in vch]
+        h3_sel = sel_shot if sel_shot in vids else (vids[0] if vids else None)
+        h3_target = s.get_shot(h3_sel) if s is not None and h3_sel else None
         source = preview or (s.reference_video if s is not None and s.script_mode == "clone" else None)
         story_text = p.video_story.content if p and p.video_story else ""
         return [
-            _status_md(s), shots_to_rows(s), shot_up, _checklist_md(s), *up, _frames_gallery(s),
-            gr.update(choices=locked_ch, value=locked_sel),
-            shot_up,
-            (s.get_shot(default).h3_prompt or "") if s and default else "",
-            link, (first.h3_prompt or "（请先锁定第 1 分镜首帧并运行 H3 Skill）") if first else "",
-            global_continuous_prompt(s) if s and s.plan_status == "confirmed" else "",
-            gr.update(value=str(frame1.file_path) if frame1 else None),
-            gr.update(value=str(prompts_file) if prompts_file else None),
-            shot_up, shot_up,
-            str(latest_video) if latest_video and latest_video.exists() else None,
-            "\n".join(vids) or "尚无视频",
+            _status_md(s), shots_to_rows(s), gr.update(choices=ch, value=default), _checklist_md(s), *up,
+            _frames_gallery(s), gr.update(choices=locked_ch, value=locked_sel),
+            # Step 3：勾选框只保留仍然有效的已选分镜
+            gr.update(choices=vch, value=[v for v in (picked or []) if v in vids]),
+            _video_progress_md(s), *_player_updates(s), _versions_gallery(s),
+            gr.update(choices=vch, value=h3_sel), _h3_info(s, h3_target),
+            (h3_target.h3_prompt or "") if h3_target else "",
             _concept_md(ws, pid), _story_md(ws, pid), story_text,
             gr.update(visible=source is not None), _clone_gallery(source),
             _clone_md(None if preview else s, source),
         ]
 
     # 新增输出统一追加在末尾，保持前面各输出的位置不变（端到端测试按位置读取）
-    refresh_outputs = [status, table, shot_pick, checklist, *uploads, frames, locked_frames, edit_shot, h3_edit,
-                       comfy_link, shot1_prompt, global_prompt, frame1_dl, all_prompts_dl, back_shot, video_shot,
-                       player, video_list, concept_display, story_status, story_content, clone_result,
-                       clone_gallery, clone_md]
+    refresh_outputs = [status, table, shot_pick, checklist, *uploads, frames, locked_frames,
+                       video_pick, video_progress, *players, versions, h3_shot, h3_info, h3_edit,
+                       concept_display, story_status, story_content, clone_result, clone_gallery, clone_md]
+    video_outputs = {video_pick, video_progress, *players, versions, h3_shot, h3_info, h3_edit, status}
+
+    def _video_refresh(pid, sel_shot=None, picked=None):
+        """生成视频过程中只刷新 Step 3 相关组件，避免分镜表、首帧画廊等跟着重绘。"""
+        full = _refresh(pid, sel_shot, picked=picked)
+        return [v if c in video_outputs else gr.skip() for c, v in zip(refresh_outputs, full, strict=True)]
 
     def _log(prev, msg):
         return (prev + "\n" if prev else "") + log_line(msg)
@@ -804,127 +847,134 @@ def build_video_tab(ws: Workspace, header: Header) -> None:
 
     lock_all_btn.click(do_lock_all, [header.project_id, logs], [logs, *refresh_outputs], api_name="video_lock_all")
 
-    # ================================================================ Step 3: H3 提示词 + 视频生成
-    async def do_h3(pid, skill_id, mode, prev):
+    # ================================================================ Step 3: Modal MiniMax H3 生成视频
+    def on_way(way):
+        pick = way == "pick"
+        return gr.update(visible=pick), gr.update(visible=not pick)
+
+    video_way.change(on_way, video_way, [video_pick, skip_done])
+
+    def _targets(s: VideoScript, way, picked, skip) -> list[str]:
+        """本次要生成的分镜（按分镜顺序）。"""
+        locked = [x for x in s.shots if x.confirmed_first_frame_id]
+        if way == "pick":
+            chosen = set(picked or [])
+            if not chosen:
+                raise gr.Error("请先勾选要生成的分镜")
+            return [x.shot_id for x in locked if x.shot_id in chosen]
+        return [x.shot_id for x in locked if not (skip and x.playable_videos)]
+
+    async def do_video(pid, way, picked, skip, skill_id, prev):
         p = require_project(ws, pid)
         s = p.video_script
         if s is None or s.plan_status != "confirmed":
-            raise gr.Error("请先确认分镜剧本并锁定首帧")
-        ready = [x for x in s.shots if x.confirmed_first_frame_id]
-        if not ready:
+            raise gr.Error("请先确认分镜剧本，并在 Step 2 锁定首帧")
+        if not any(x.confirmed_first_frame_id for x in s.shots):
             raise gr.Error("还没有锁定任何首帧：请先在 Step 2 勾选并锁定首帧图")
-        modes = ["i2va", "ref2va"] if mode == "both" else [mode or "i2va"]
-        names = "、".join(H3_MODE_LABELS[m] for m in modes)
-        log = _log(prev, f"🪄 运行 H3 Skill（{skill_id}｜{names}）：{len(ready)} 个已锁定首帧的分镜")
-        yield [log, *_refresh(pid)]
-        for x in ready:
-            i = s._index_of(x.shot_id) + 1
-            for k, m in enumerate(modes):
-                try:
-                    prompt = await compiler.h3_prompt(s, x, skill_id, mode=m, activate=k == 0)
-                    suffix = f"_{m}" if x.h3_prompt_variants else ""
-                    (rt.store.asset_dir(p.project_id, "prompts") / f"h3_{x.shot_id}{suffix}.txt").write_text(
-                        prompt, "utf-8")
-                    label = H3_MODE_LABELS[m] if x.h3_prompt_variants else "H3"
-                    log = _log(log, f"✅ 镜头 {i} {label} 提示词完成：{prompt[:48]}…")
-                except Exception as e:
-                    log = _log(log, f"镜头 {i}：{friendly(e)}")
-                ws.save(p)
-                yield [log, *_refresh(pid)]
-        skipped = len(s.shots) - len(ready)
-        if skipped:
-            log = _log(log, f"⚠️ 另有 {skipped} 个分镜未锁定首帧，已跳过")
-        yield [log, *_refresh(pid)]
+        ids = _targets(s, way, picked, skip)
+        if not ids:
+            yield [_log(prev, "✅ 所有已锁定首帧的分镜都已有视频；如需重新生成，请改用「② 选分镜生成」"),
+                   *_video_refresh(pid, picked=picked)]
+            return
+        names = "、".join(f"镜头 {s._index_of(i) + 1}" for i in ids)
+        log = _log(prev, f"🎬 开始生成 {len(ids)} 个分镜的视频（逐个排队）：{names}")
+        unlocked = len(s.shots) - sum(1 for x in s.shots if x.confirmed_first_frame_id)
+        if unlocked and way != "pick":
+            log = _log(log, f"⚠️ 另有 {unlocked} 个分镜还没锁定首帧，本次跳过")
+        yield [log, *_video_refresh(pid, picked=picked)]
+        ok = 0
+        for k, sid in enumerate(ids, start=1):
+            i = s._index_of(sid) + 1
+            log = _log(log, f"—— 第 {k}/{len(ids)} 个：镜头 {i} ——")
+            try:
+                async for ev in renderer.render_video(p, s, sid, VIDEO_PROVIDER, skill_id):
+                    log = _log(log, f"镜头 {i}｜{ev.message}")
+                    if ev.video_path:
+                        ok += 1
+                        yield [log, *_video_refresh(pid, sid, picked)]
+                    else:
+                        yield [log, *[gr.skip()] * len(refresh_outputs)]
+            except Exception as e:  # 单个分镜失败不影响后面的分镜
+                log = _log(log, f"镜头 {i}：{friendly(e)}")
+                yield [log, *_video_refresh(pid, sid, picked)]
+        yield [_log(log, f"🎉 本轮完成：成功 {ok}/{len(ids)} 个分镜"), *_video_refresh(pid, picked=picked)]
 
-    h3_btn.click(do_h3, [header.project_id, header.skill_dropdowns["video_prompt"], h3_mode, logs],
-                 [logs, *refresh_outputs], concurrency_id="video_tab", api_name="video_h3")
+    video_btn.click(do_video, [header.project_id, video_way, video_pick, skip_done,
+                               header.skill_dropdowns["video_prompt"], logs],
+                    [logs, *refresh_outputs], concurrency_id="video_gen", concurrency_limit=1,
+                    api_name="video_render")
 
-    def on_edit_shot(pid, sid, m):
-        s = ws.get(pid).video_script if pid else None
-        if not (s and sid):
-            return ""
-        shot = s.get_shot(sid)
-        return shot.h3_prompt_variants.get(m) or ("" if shot.h3_prompt_variants else shot.h3_prompt or "")
-
-    edit_shot.change(on_edit_shot, [header.project_id, edit_shot, edit_mode], h3_edit)
-    edit_mode.change(on_edit_shot, [header.project_id, edit_shot, edit_mode], h3_edit)
-
-    def do_save_h3(pid, sid, m, text, prev):
-        s = _script(ws, pid)
-        try:
-            if not sid:
-                raise ValueError("请选择分镜")
-            shot = s.get_shot(sid)
-            s.set_h3_prompt(sid, text.strip(), mode=m if shot.h3_prompt_variants else None)
-            ws.save(ws.get(pid))
-            msg = f"💾 已保存 H3 提示词微调（视频生成使用：{H3_MODE_LABELS[s.get_shot(sid).h3_prompt_mode]}）"
-        except Exception as e:
-            msg = friendly(e)
-        return [_log(prev, msg), *_refresh(pid, sid)]
-
-    save_h3.click(do_save_h3, [header.project_id, edit_shot, edit_mode, h3_edit, logs], [logs, *refresh_outputs])
-
-    def do_back(pid, sid, file, prev):
-        s = _script(ws, pid)
-        try:
-            if not sid or not file:
-                raise ValueError("请选择分镜并上传视频文件")
-            src = Path(file if isinstance(file, str) else file.name)
-            saved = rt.store.import_file(pid, src, "videos", sub_id=sid)
-            s.bind_video(sid, saved, provider="comfyui_external", source="external_upload")
-            ws.save(ws.get(pid))
-            msg = f"📤 已把 ComfyUI 视频回传绑定到镜头 {s._index_of(sid) + 1}"
-        except Exception as e:
-            msg = friendly(e)
-        return [_log(prev, msg), *_refresh(pid, sid)]
-
-    back_btn.click(do_back, [header.project_id, back_shot, back_video, logs], [logs, *refresh_outputs])
-
-    async def do_warm(provider_id, prev):
-        prov = rt.video_provider(provider_id)
+    async def do_warm(prev):
+        prov = rt.video_provider(VIDEO_PROVIDER)
         log = _log(prev, f"🔎 正在检查：{prov.display_name}…")
         yield log
         res = await prov.warmup()
         yield _log(log, f"{'✅' if res.ready else '❌'} {res.message}（耗时 {res.elapsed_seconds:.1f}s）")
 
-    warm_btn.click(do_warm, [provider, logs], logs, concurrency_id="video_warm")
+    warm_btn.click(do_warm, logs, logs, concurrency_id="video_warm")
 
-    async def _video_stream(pid, prov_id, shot_ids, prev):
+    # ---------------------------------------------------------------- H3 提示词：自动编写，可选查看 / 微调
+    def on_h3_shot(pid, sid):
+        s = ws.get(pid).video_script if pid else None
+        shot = s.get_shot(sid) if s is not None and sid else None
+        return _h3_info(s, shot), (shot.h3_prompt or "") if shot else ""
+
+    h3_shot.change(on_h3_shot, [header.project_id, h3_shot], [h3_info, h3_edit])
+
+    async def _rewrite(pid, shot_ids, skill_id, prev, sel=None):
         p = require_project(ws, pid)
         s = p.video_script
         log = prev
         for sid in shot_ids:
             i = s._index_of(sid) + 1
             try:
-                async for ev in renderer.render_video(p, s, sid, prov_id):
-                    log = _log(log, f"镜头 {i}｜{ev.message}")
-                    if ev.video_path:
-                        yield [log, *_refresh(pid, sid)]
-                    else:
-                        yield [log, *[gr.skip()] * len(refresh_outputs)]
+                async with ws.lock(pid):
+                    shot = s.get_shot(sid)
+                    prompt = await renderer.compile_h3(p, s, shot, skill_id)
+                log = _log(log, f"✅ 镜头 {i} H3 提示词完成（{h3_mode_label(shot)}）：{prompt[:48]}…")
             except Exception as e:
                 log = _log(log, f"镜头 {i}：{friendly(e)}")
-                yield [log, *[gr.skip()] * len(refresh_outputs)]
-        yield [log, *_refresh(pid, shot_ids[-1] if shot_ids else None)]
+            yield [log, *_video_refresh(pid, sel or sid)]
 
-    async def do_video(pid, prov_id, sid, prev):
+    async def do_h3_one(pid, sid, skill_id, prev):
+        _script(ws, pid)
         if not sid:
-            raise gr.Error("请选择要生成的分镜")
-        async for out in _video_stream(pid, prov_id, [sid], prev):
+            raise gr.Error("请先选择分镜（只能选已锁定首帧的分镜）")
+        async for out in _rewrite(pid, [sid], skill_id, _log(prev, "🪄 重新编写 H3 提示词…"), sid):
             yield out
 
-    async def do_video_all(pid, prov_id, prev):
+    async def do_h3_all(pid, skill_id, prev):
         s = _script(ws, pid)
-        ids = [x.shot_id for x in s.shots if x.h3_prompt and x.confirmed_first_frame_id]
+        ids = [x.shot_id for x in s.shots if x.confirmed_first_frame_id]
         if not ids:
-            raise gr.Error("没有可生成的分镜：需要先锁定首帧并生成 H3 提示词")
-        async for out in _video_stream(pid, prov_id, ids, prev):
+            raise gr.Error("还没有锁定任何首帧：请先在 Step 2 勾选并锁定首帧图")
+        log = _log(prev, f"🪄 为 {len(ids)} 个已锁定首帧的分镜重新编写 H3 提示词（自动选择写法）")
+        async for out in _rewrite(pid, ids, skill_id, log, ids[0]):
             yield out
 
-    video_btn.click(do_video, [header.project_id, provider, video_shot, logs], [logs, *refresh_outputs],
-                    concurrency_id="video_gen", concurrency_limit=2)
-    video_all_btn.click(do_video_all, [header.project_id, provider, logs], [logs, *refresh_outputs],
-                        concurrency_id="video_gen", concurrency_limit=2, api_name="video_generate_all")
+    h3_rewrite.click(do_h3_one, [header.project_id, h3_shot, header.skill_dropdowns["video_prompt"], logs],
+                     [logs, *refresh_outputs], concurrency_id="video_tab")
+    h3_all_btn.click(do_h3_all, [header.project_id, header.skill_dropdowns["video_prompt"], logs],
+                     [logs, *refresh_outputs], concurrency_id="video_tab", api_name="video_h3")
+
+    def do_save_h3(pid, sid, text, prev):
+        s = _script(ws, pid)
+        try:
+            if not sid:
+                raise ValueError("请先选择分镜")
+            if not (text or "").strip():
+                raise ValueError("H3 提示词不能为空")
+            shot = s.get_shot(sid)
+            # 已有提示词沿用原写法；从未编写过的按自动规则判定写法
+            mode = shot.h3_official_mode if shot.h3_prompt else auto_h3_mode(s, shot)
+            s.set_h3_prompt(sid, text.strip(), mode=mode)
+            ws.save(ws.get(pid))
+            msg = f"💾 已保存镜头 {s._index_of(sid) + 1} 的 H3 提示词微调，下次生成视频时使用"
+        except Exception as e:
+            msg = friendly(e)
+        return [_log(prev, msg), *_video_refresh(pid, sid)]
+
+    save_h3.click(do_save_h3, [header.project_id, h3_shot, h3_edit, logs], [logs, *refresh_outputs])
 
     header.load_event.then(_refresh, header.project_id, refresh_outputs)
     header.project_id.change(_refresh, header.project_id, refresh_outputs)

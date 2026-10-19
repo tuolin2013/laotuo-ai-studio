@@ -73,6 +73,23 @@ async def test_generate_calls_ref2va_with_first_frame_then_refs(tmp_path):
     assert done.stage == "done" and done.video_path.read_bytes() == b"MP4DATA"
 
 
+@pytest.mark.parametrize(("mode", "n_images"), [("i2va", 1), ("ref2va", 2)])
+async def test_official_prompt_sent_verbatim_with_mode_images(tmp_path, mode, n_images):
+    """官方卡带提示词自带 <Picture N> 定义：原样发送；i2va 只传首帧，ref2va 传首帧 + 商品参考图。"""
+    calls = []
+    prov = ModalMiniMaxH3Provider(runner_factory=lambda wf: FakeRunner(wf, calls))
+    frame = _img(tmp_path / "frame.png", (200, 0, 0))
+    pkg = _img(tmp_path / "pkg.png", (0, 200, 0))
+    req = VideoRequest(shot_id="s", prompt="official prompt", first_frame_path=frame, aspect_ratio="9:16",
+                       duration_seconds=6, output_dir=tmp_path / "out",
+                       extra={"reference_paths": [pkg], "reference_roles": ["product_package"],
+                              "h3_prompt_mode": mode})
+    _ = [ev async for ev in prov.generate(req)]
+    prompt, images = calls[1][0], calls[1][1]
+    assert calls[0] == ("workflow", "ref2va") and prompt == "official prompt"
+    assert len(images) == n_images and images[0] == frame.read_bytes()
+
+
 async def test_generate_caps_reference_count_and_wraps_errors(tmp_path):
     calls = []
     frame = _img(tmp_path / "f.png", (1, 2, 3))

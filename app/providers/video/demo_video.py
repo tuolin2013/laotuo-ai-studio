@@ -50,7 +50,8 @@ class DemoVideoProvider(VideoProvider):
 
         ffmpeg = self.ffmpeg_path()
         if not ffmpeg:
-            raise VideoProviderError("演示视频需要 ffmpeg，当前系统未找到；可改用 ComfyUI 手动桥接回传视频")
+            raise VideoProviderError("演示视频需要 ffmpeg，当前系统未找到；"
+                                     "请安装依赖 imageio-ffmpeg 或登录 Modal 使用真实 H3")
         w, h = _SIZES.get(request.aspect_ratio, (768, 768))
         dur = max(1.0, min(float(request.duration_seconds), 15.0))
         fps = 24

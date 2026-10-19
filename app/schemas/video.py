@@ -30,10 +30,11 @@ VIDEO_TYPE_LABELS: dict[str, str] = {
     "emotional_story": "情感故事类（品牌故事 / 用户故事 / 匠人精神）",
 }
 
-# 官方 h3-prompt-writing 的两种输入模式：I2VA 首帧模式（base-en.txt）/ Ref2VA 全参考模式（ref-en.txt）
+# 官方 h3-prompt-writing 的两种输入模式：I2VA 首帧模式（base-en.txt）/ Ref2VA 全参考模式（ref-en.txt）。
+# 由系统按分镜是否绑定商品参考图自动选择（见 prompt_compiler.auto_h3_mode），界面不让用户选。
 H3PromptMode = Literal["i2va", "ref2va"]
 H3_PROMPT_MODES: tuple[H3PromptMode, ...] = ("i2va", "ref2va")
-H3_MODE_LABELS: dict[str, str] = {"i2va": "I2VA 首帧模式", "ref2va": "Ref2VA 全参考模式"}
+H3_MODE_LABELS: dict[str, str] = {"i2va": "I2VA · 只用首帧", "ref2va": "Ref2VA · 首帧 + 商品参考图"}
 
 _DIALOGUE_MODES = {"native_dialogue", "dialogue_and_ambient"}
 _AMBIENT_MODES = {"ambient_sfx", "dialogue_and_ambient"}
@@ -180,7 +181,7 @@ class FirstFrameImage(BaseModel):
 
 
 class VideoAsset(BaseModel):
-    """分镜视频：由 Provider 生成，或从 ComfyUI 等外部工具回传绑定。"""
+    """分镜视频：由视频后端生成；external_upload 仅为兼容旧项目中外部回传的视频。"""
 
     video_id: str = Field(default_factory=lambda: new_id("vid"))
     file_path: Path
@@ -258,6 +259,16 @@ class StoryboardShot(BindableItem):
             if f.frame_id == self.confirmed_first_frame_id:
                 return f
         return None
+
+    @property
+    def h3_official_mode(self) -> H3PromptMode | None:
+        """当前提示词的官方模式；旧版自定义卡带编译的提示词返回 None。"""
+        return self.h3_prompt_mode if self.h3_prompt and self.h3_prompt_variants else None
+
+    @property
+    def playable_videos(self) -> list[VideoAsset]:
+        """文件仍在磁盘上的视频版本（按生成先后排列）。"""
+        return [v for v in self.videos if v.file_path.exists()]
 
 
 class VideoScript(EditablePlanBase):
@@ -365,33 +376,29 @@ class VideoScript(EditablePlanBase):
     def set_h3_prompt(
         self, shot_id: str, prompt: str, mode: H3PromptMode | None = None, activate: bool = True
     ) -> None:
-        """保存某个模式的 H3 提示词；activate=True 时设为视频生成使用的版本。"""
+        """保存 H3 提示词。mode 为官方模式（i2va / ref2va）；mode=None 表示旧版自定义卡带格式。
+
+        activate=True 时设为视频生成使用的版本。
+        """
         self.require_first_frame_confirmed(shot_id)
         shot = self.get_shot(shot_id)
-        mode = mode or shot.h3_prompt_mode
-        shot.h3_prompt_variants[mode] = prompt
-        if activate or shot.h3_prompt is None:
-            shot.h3_prompt_mode = mode
+        if mode is None:
             shot.h3_prompt = prompt
+            shot.h3_prompt_variants = {}
+        else:
+            shot.h3_prompt_variants[mode] = prompt
+            if activate or shot.h3_prompt is None:
+                shot.h3_prompt_mode = mode
+                shot.h3_prompt = prompt
         self._log("set_h3_prompt", shot_id, mode=mode)
 
-    def bind_video(
-        self, shot_id: str, file_path: Path | str, provider: str, source: str = "generated"
-    ) -> VideoAsset:
-        """绑定生成的视频，或从 ComfyUI 等外部工具回传的视频。"""
+    def bind_video(self, shot_id: str, file_path: Path | str, provider: str) -> VideoAsset:
+        """绑定生成的视频。同一分镜多次生成时追加为新版本，不覆盖旧版本。"""
         self.require_first_frame_confirmed(shot_id)
-        asset = VideoAsset(file_path=Path(file_path), provider=provider, source=source)
+        asset = VideoAsset(file_path=Path(file_path), provider=provider)
         self.get_shot(shot_id).videos.append(asset)
-        self._log("bind_video", shot_id, video_id=asset.video_id, source=source)
+        self._log("bind_video", shot_id, video_id=asset.video_id, provider=provider)
         return asset
-
-    def combined_h3_prompts(self) -> str:
-        """全局汇总：按分镜顺序拼接所有已编译的 H3 提示词，便于一次性复制。"""
-        parts = []
-        for i, shot in enumerate(self.shots, start=1):
-            prompt = shot.h3_prompt or "（尚未编译）"
-            parts.append(f"【分镜 {i}｜{shot.duration_seconds:g} 秒】\n{prompt}")
-        return "\n\n".join(parts)
 
 
 def shot_from_llm(data: dict[str, Any]) -> StoryboardShot:

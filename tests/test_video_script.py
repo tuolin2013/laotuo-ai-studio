@@ -135,15 +135,23 @@ def test_unconfirmed_first_frame_blocks_h3_and_video(tmp_path):
     with pytest.raises(PlanStateError, match="首帧"):
         script.set_h3_prompt(sid, "[推进] ...")
     with pytest.raises(PlanStateError):
-        script.bind_video(sid, tmp_path / "v.mp4", provider="manual_comfyui")
+        script.bind_video(sid, tmp_path / "v.mp4", provider="modal_minimax_h3")
 
     frame = script.add_first_frame(sid, tmp_path / "f.png", model="gpt-image-2")
     script.confirm_first_frame(sid, frame.frame_id)
     script.set_h3_prompt(sid, "[推进] 沸水注入")
-    video = script.bind_video(sid, tmp_path / "v.mp4", provider="manual_comfyui", source="external_upload")
-    assert video.source == "external_upload"
-    summary = script.combined_h3_prompts()
-    assert "【分镜 1｜3 秒】\n[推进] 沸水注入" in summary and "（尚未编译）" in summary
+    shot = script.get_shot(sid)
+    assert shot.h3_prompt == "[推进] 沸水注入" and shot.h3_official_mode is None  # 旧版卡带格式
+
+    # 重复生成：追加新版本，旧视频保留
+    (tmp_path / "v1.mp4").write_bytes(b"1")
+    (tmp_path / "v2.mp4").write_bytes(b"2")
+    first = script.bind_video(sid, tmp_path / "v1.mp4", provider="modal_minimax_h3")
+    second = script.bind_video(sid, tmp_path / "v2.mp4", provider="modal_minimax_h3")
+    assert first.source == "generated" and [v.video_id for v in shot.playable_videos] == [first.video_id,
+                                                                                         second.video_id]
+    (tmp_path / "v1.mp4").unlink()
+    assert shot.playable_videos == [second]  # 文件已被删除的版本不再显示
 
 
 def test_unlock_and_edit_clears_stale_frames(tmp_path):

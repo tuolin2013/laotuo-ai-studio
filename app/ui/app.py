@@ -14,10 +14,7 @@ from app.ui.image_tab import DETAIL_SPEC, MAIN_SPEC, build_image_tab
 from app.ui.state import Workspace
 from app.ui.video_tab import build_video_tab
 
-CSS = """
-.comfy-zone { border: 2px solid #f59e0b !important; border-radius: 12px !important; padding: 12px !important;
-              background: rgba(245, 158, 11, 0.06) !important; }
-"""
+CSS = ""
 
 THEME = gr.themes.Soft(primary_hue="emerald", secondary_hue="amber")
 

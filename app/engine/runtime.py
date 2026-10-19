@@ -12,7 +12,6 @@ from app.providers.llm import RightAPILLM
 from app.providers.video import (
     DemoVideoProvider,
     FalAIVideoProvider,
-    ManualComfyUIBridgeProvider,
     ModalMiniMaxH3Provider,
     VideoProvider,
 )
@@ -72,11 +71,9 @@ class EngineRuntime:
         return RightAPIImageClient(base_url=s.rightapi_base_url, timeout=s.image_timeout,
                                    poll_interval=s.image_poll_interval)
 
-    def video_provider(self, provider_id: str) -> VideoProvider:
-        """按界面选择返回视频后端；Modal 未配置（或演示模式）时自动换成本地演示后端。"""
+    def video_provider(self, provider_id: str = "modal_minimax_h3") -> VideoProvider:
+        """返回视频后端（界面固定使用 Modal MiniMax H3）；未登录 Modal 或演示模式时自动换成本地演示后端。"""
         s = self.settings
-        if provider_id == "manual_comfyui":
-            return ManualComfyUIBridgeProvider(s.comfyui_url, s.video_timeout)
         if provider_id == "fal_ai":
             if self.is_live("fal_ai"):
                 return FalAIVideoProvider(s.fal_key, s.fal_video_model, s.video_timeout)

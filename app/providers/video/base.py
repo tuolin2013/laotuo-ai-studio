@@ -21,10 +21,6 @@ class VideoProviderNotConfigured(VideoProviderError):
     """缺少地址或 Key。"""
 
 
-class ManualActionRequired(VideoProviderError):
-    """该 Provider 需要人工在外部工具（如 ComfyUI）中完成生成。"""
-
-
 @dataclass(frozen=True)
 class VideoRequest:
     shot_id: str
@@ -57,7 +53,6 @@ class WarmupResult:
 class VideoProvider(ABC):
     provider_id: str
     display_name: str
-    supports_auto_generation: bool = True
 
     def __init__(self, timeout_seconds: float = DEFAULT_VIDEO_TIMEOUT_SECONDS):
         self.timeout_seconds = timeout_seconds

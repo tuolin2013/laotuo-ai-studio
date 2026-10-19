@@ -9,15 +9,19 @@ import pytest
 from gradio_client import Client, handle_file
 from PIL import Image
 
+from app.engine.compiler import h3_structure_issues
+from app.engine.prompt_compiler import auto_h3_mode
 from app.engine.runtime import EngineRuntime
 from app.settings import Settings
 from app.ui.app import build_app
 
 INFO = ["特级芽尖", "霜厚", "", "张家界永定区", "50g×2罐", "到手2罐", "", ""]
 TEA = "zhangjiajie_berry_tea"
-# 视频选项卡输出位置：[logs, status, table, shot_pick, checklist, 8×上传框, frames, locked_frames, edit_shot,
-#                      h3_edit, comfy_link, shot1_prompt, global_prompt, …, clone_gallery, clone_md]
-V_TABLE, V_SHOT1, V_GLOBAL = 2, 18, 19
+# 视频选项卡输出位置：[logs, status, table, shot_pick, checklist, 8×上传框, frames, locked_frames, video_pick,
+#                      video_progress, 12×分镜播放器, versions, h3_shot, h3_info, h3_edit, …, clone_gallery, clone_md]
+V_STATUS, V_TABLE, V_PICK, V_PROGRESS = 1, 2, 15, 16
+V_PLAYERS = slice(17, 29)
+V_VERSIONS, V_H3_EDIT = 29, 32
 
 
 def video_generate_args(mode: str, video=None, frames: int = 6, idea: str = "办公室女生冲一杯") -> tuple:
@@ -61,7 +65,7 @@ def test_app_builds_with_all_tabs(server):
     names = set(client.view_api(return_format="dict", print_info=False)["named_endpoints"])
     expected = {"/new_project", "/main_image_generate", "/main_image_confirm", "/main_image_render",
                 "/detail_page_generate", "/detail_page_reuse", "/detail_page_render", "/video_generate",
-                "/video_confirm", "/video_first_frames", "/video_lock_all", "/video_h3", "/video_generate_all"}
+                "/video_confirm", "/video_first_frames", "/video_lock_all", "/video_h3", "/video_render"}
     assert expected <= names
 
 
@@ -113,27 +117,52 @@ def test_full_workflow_through_ui(server, tmp_path):
     out = client.predict("gpt-image-2", 1, "2K", out[0], api_name="/video_first_frames")
     assert "首帧生成完成" in _last(out[0])
     out = client.predict(out[0], api_name="/video_lock_all")
-    out = client.predict("minimax_h3_prompt", "i2va", out[0], api_name="/video_h3")
-    assert out[V_SHOT1].startswith("[") and "9:16" in out[V_SHOT1]  # 旧版卡带仍可用
-    # 默认官方卡带：A + B 同时生成，视频生成使用 I2VA 版本
-    out = client.predict("official_h3_prompt_writing", "both", out[0], api_name="/video_h3")
-    shot1_prompt, global_prompt = out[V_SHOT1], out[V_GLOBAL]
-    assert shot1_prompt.startswith("For the target video, at 0.00 seconds") and "non_diegetic_music:" in shot1_prompt
-    assert "第 1 分镜锁定首帧" in global_prompt and "镜头 4" in global_prompt
-
+    out = client.predict("minimax_h3_prompt", out[0], api_name="/video_h3")
+    assert out[V_H3_EDIT].startswith("[") and "9:16" in out[V_H3_EDIT]  # 旧版卡带仍可用
+    # 默认官方卡带：不用选模式，按分镜是否绑定商品参考图自动选择 I2VA / Ref2VA
+    out = client.predict("official_h3_prompt_writing", out[0], api_name="/video_h3")
     script = rt.store.load(project.project_id).video_script
-    assert all(s.confirmed_first_frame_id and s.h3_prompt for s in script.shots)
-    assert all(s.h3_prompt_mode == "i2va" and set(s.h3_prompt_variants) == {"i2va", "ref2va"} for s in script.shots)
-    assert all("<Picture 1>" in s.h3_prompt_variants["ref2va"] for s in script.shots)
+    modes = [auto_h3_mode(script, s) for s in script.shots]
+    assert all(s.h3_official_mode == m and h3_structure_issues(s.h3_prompt, m) == []
+               for s, m in zip(script.shots, modes, strict=True))
+    assert out[V_H3_EDIT] == script.shots[0].h3_prompt
     for s in script.shots:
         with Image.open(s.confirmed_first_frame.file_path) as im:
             assert abs(im.width / im.height - 9 / 16) < 0.01
 
     from app.providers.video import DemoVideoProvider
     if DemoVideoProvider.ffmpeg_path():
-        out = client.predict("modal_minimax_h3", out[0], api_name="/video_generate_all")
-        assert "视频已绑定" in out[0]
-        assert all(s.videos for s in rt.store.load(project.project_id).video_script.shots)
+        _check_video_render(client, rt, project.project_id, out[0])
+
+
+def _video_path(value) -> str | None:
+    """gradio_client 返回的播放器值：gr.update 字典（value 字段）或 {"video": 路径}。"""
+    while isinstance(value, dict):
+        value = value.get("value", value.get("video"))
+    return value or None
+
+
+def _check_video_render(client, rt, pid: str, log: str) -> None:
+    """Step 3：① 逐个分镜依次生成 → 每个分镜单独回显；② 选分镜重新生成 → 追加新版本，不覆盖其他分镜。"""
+    out = client.predict("all", [], True, "official_h3_prompt_writing", log, api_name="/video_render")
+    script = rt.store.load(pid).video_script
+    n = len(script.shots)
+    assert f"成功 {n}/{n}" in _last(out[0])
+    shown = [_video_path(v) for v in out[V_PLAYERS]][:n]
+    assert all(shown) and len(set(shown)) == n  # 每个分镜一个播放器，各自显示自己的视频
+    assert all(len(s.videos) == 1 for s in script.shots)
+
+    first = script.shots[0].shot_id
+    out = client.predict("pick", [first], True, "official_h3_prompt_writing", out[0], api_name="/video_render")
+    script = rt.store.load(pid).video_script
+    assert [len(s.videos) for s in script.shots] == [2, *[1] * (n - 1)]
+    again = [_video_path(v) for v in out[V_PLAYERS]][:n]
+    assert again[0] != shown[0] and again[1:] == shown[1:]  # 只有被选中的分镜换成新版本
+    assert len(out[V_VERSIONS]) == n + 1 and "镜头 1 ✅ 2 版" in out[V_PROGRESS]
+    assert all(v.file_path.exists() for s in script.shots for v in s.videos)  # 旧版本文件仍在
+
+    out = client.predict("all", [], True, "official_h3_prompt_writing", out[0], api_name="/video_render")
+    assert "都已有视频" in _last(out[0])
 
 
 def _viral_video(path: Path) -> str:
@@ -191,15 +220,14 @@ def test_clone_workflow_through_ui(server, tmp_path):
     out = client.predict("gpt-image-2", 1, "1K", out[0], api_name="/video_first_frames")
     assert "首帧生成完成" in _last(out[0])
     out = client.predict(out[0], api_name="/video_lock_all")
-    out = client.predict("official_h3_prompt_writing", "both", out[0], api_name="/video_h3")
-    assert out[V_SHOT1].startswith("For the target video, at 0.00 seconds")
-    script = rt.store.load(pid).video_script
-    assert all(set(s.h3_prompt_variants) == {"i2va", "ref2va"} for s in script.shots)
-
     from app.providers.video import DemoVideoProvider
     if DemoVideoProvider.ffmpeg_path():
-        out = client.predict("modal_minimax_h3", out[0], api_name="/video_generate_all")
-        assert all(s.videos for s in rt.store.load(pid).video_script.shots)
+        # 不手动编写 H3 提示词，直接生成：系统自动编写后再生成视频
+        out = client.predict("all", [], True, "official_h3_prompt_writing", out[0], api_name="/video_render")
+        assert "自动编写 H3" in out[0]
+        script = rt.store.load(pid).video_script
+        assert all(s.videos and s.h3_prompt for s in script.shots)
+        assert all(h3_structure_issues(s.h3_prompt, s.h3_official_mode) == [] for s in script.shots)
 
 
 def test_clone_without_video_is_rejected(server):

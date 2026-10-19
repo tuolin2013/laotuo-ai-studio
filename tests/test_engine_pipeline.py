@@ -8,7 +8,7 @@ from PIL import Image
 from app.engine.compiler import I2VA_INSTRUCTION, h3_structure_issues
 from app.engine.planner_engine import PlannerEngine
 from app.engine.project_service import create_project, export_winners, reuse_references, winners_in_order
-from app.engine.prompt_compiler import PromptCompiler, global_continuous_prompt
+from app.engine.prompt_compiler import PromptCompiler, auto_h3_mode
 from app.engine.render_engine import RenderEngine
 from app.engine.runtime import EngineRuntime
 from app.engine.script_engine import ScriptEngine
@@ -166,28 +166,66 @@ async def test_video_full_pipeline(rt, png):
     # 首帧未锁定：拦截 H3
     with pytest.raises(PlanStateError):
         await compiler.h3_prompt(script, first)
+    # 最后一个分镜移除全部参考图，覆盖「只用首帧」的 I2VA 写法
+    last = script.shots[-1]
+    for a in script.references_for(last.shot_id):
+        script.remove_slot_reference(last.shot_id, a.asset_id)
     for shot in script.shots:
         script.confirm_first_frame(shot.shot_id, shot.first_frame_candidates[0].frame_id)
         # 旧版自定义卡带仍按原格式编译
         legacy = await compiler.h3_prompt(script, shot, "minimax_h3_prompt")
         assert legacy.startswith("[") and "9:16" in legacy and "画外音" not in legacy
-        # 默认官方卡带：I2VA 三段式（并设为视频生成使用的版本）
+        assert script.get_shot(shot.shot_id).h3_official_mode is None
+        # 默认官方卡带：自动选择写法（绑定了商品参考图 → Ref2VA，否则 → I2VA）
         prompt = await compiler.h3_prompt(script, shot)
-        assert prompt.startswith(I2VA_INSTRUCTION) and h3_structure_issues(prompt, "i2va") == []
-        assert script.get_shot(shot.shot_id).h3_prompt_mode == "i2va"
+        mode = auto_h3_mode(script, shot)
+        assert mode == ("ref2va" if script.references_for(shot.shot_id) else "i2va")
+        assert h3_structure_issues(prompt, mode) == []
+        assert prompt.startswith(I2VA_INSTRUCTION) == (mode == "i2va")
+        assert script.get_shot(shot.shot_id).h3_official_mode == mode
+    assert {auto_h3_mode(script, s) for s in script.shots} == {"i2va", "ref2va"}  # 两种写法都覆盖到
     talk_prompt = script.get_shot(talk.shot_id).h3_prompt
     assert "<d>[Chinese] 它自己就跑过来了！</d>" in talk_prompt
 
-    total = global_continuous_prompt(script)
-    assert "第 1 分镜锁定首帧" in total and "镜头 5" in total and "不使用画外音" in total
-
     if DemoVideoProvider.ffmpeg_path():
-        evs = await collect(RenderEngine(rt).render_video(project, script, first.shot_id, "modal_minimax_h3"))
+        evs = await collect(RenderEngine(rt).render_video(project, script, first.shot_id))
         video = next(e.video_path for e in evs if e.video_path)
         assert video.exists() and script.get_shot(first.shot_id).videos
-    # ComfyUI 手动桥接：给出操作说明
-    evs = await collect(RenderEngine(rt).render_video(project, script, first.shot_id, "manual_comfyui"))
-    assert any("ComfyUI" in e.message for e in evs)
+
+
+async def test_video_auto_prompt_and_versions_never_overwrite(rt, png):
+    """生成视频时自动编写 H3 提示词；同一分镜重复生成追加新版本，不同分镜的视频互不覆盖。"""
+    if not DemoVideoProvider.ffmpeg_path():
+        pytest.skip("没有可用的 ffmpeg")
+    project = create_project(rt, "多版本视频", TEA, "taobao")
+    script, _ = await ScriptEngine(rt).generate(
+        category_id=TEA, platform_id="taobao", video_type="product_showcase", aspect_ratio="9:16", shot_count=3,
+        user_creative_idea="冲泡特写")
+    project.video_script = script
+    script.confirm_plan()
+    await collect(RenderEngine(rt).render_first_frames(project, script, "gpt-image-2", "gpt_image_2"))
+    for shot in script.shots:
+        script.confirm_first_frame(shot.shot_id, shot.first_frame_candidates[0].frame_id)
+        assert shot.h3_prompt is None
+
+    a, b = script.shots[0].shot_id, script.shots[1].shot_id
+    evs = await collect(RenderEngine(rt).render_video(project, script, a))
+    assert any("自动编写 H3" in e.message for e in evs)
+    prompt_file = rt.store.asset_dir(project.project_id, "prompts") / f"h3_{a}.txt"
+    assert script.get_shot(a).h3_prompt
+    assert prompt_file.read_text(encoding="utf-8") == script.get_shot(a).h3_prompt
+    await collect(RenderEngine(rt).render_video(project, script, b))
+    evs = await collect(RenderEngine(rt).render_video(project, script, a))
+    assert any("第 2 版" in e.message for e in evs)
+
+    va, vb = script.get_shot(a).playable_videos, script.get_shot(b).playable_videos
+    assert len(va) == 2 and len(vb) == 1
+    paths = {v.file_path for v in [*va, *vb]}
+    assert len(paths) == 3 and all(p.exists() for p in paths)  # 三个文件各自独立，没有被覆盖
+    assert va[0].file_path.parent != vb[0].file_path.parent  # 每个分镜单独一个目录
+    # 重新加载项目后版本仍在
+    loaded = rt.store.load(project.project_id).video_script
+    assert [len(s.videos) for s in loaded.shots] == [2, 1, 0]
 
 
 async def test_force_demo_overrides_keys(tmp_path, monkeypatch):

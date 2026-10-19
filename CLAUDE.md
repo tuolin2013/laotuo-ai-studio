@@ -110,11 +110,11 @@ variables: [product_name]        # 选填，声明正文使用的变量
 - 界面支持预览卡带正文，并可临时覆盖（override）当前会话使用的指令，覆盖内容不写回 `.md` 文件。
 - 附属指南：front matter 的 `references: [references/x.txt]` 或正文中出现的 `references/*.txt` 会在加载时自动读入（只允许卡带同目录 `references/` 下，单文件 ≤200KB）；附属文件修改同样触发热重载。`default: true` 的卡带在下拉框中默认选中。
 - 类目专属卡带：front matter 写 `categories: [category_id]`，只在对应类目下出现，并在切换到该类目时自动选中（优先于 `default: true`）；不写 `categories` 的为通用卡带，所有类目可见。每个类目一张专属卡带，命名 `laotuo_{类目}_{卡槽}_skill.md`，如 `ecommerce_planner/laotuo_zhangjiajie_meicha_planner_skill.md`。
-- 官方 H3 技能：`config/skills/video_prompt/official_h3_prompt_writing.md` 收录 MiniMax-AI/MiniMax-H3 `skills/h3-prompt-writing/SKILL.md` 原文（附 `references/base-en.txt`、`references/ref-en.txt` 原版），同一份原版也放在 `.claude/skills/h3-prompt-writing/` 供 Claude Code 使用。正文使用 `{{ h3_mode }}` 的卡带即支持双模式：
-  - `i2va`（默认）：按 base-en.txt 输出 I2VA 指令行 + `integrated_multimodal_description` / `overall_soundscape` / `non_diegetic_music`；视频后端只传锁定首帧。
+- 官方 H3 技能：`config/skills/video_prompt/official_h3_prompt_writing.md` 收录 MiniMax-AI/MiniMax-H3 `skills/h3-prompt-writing/SKILL.md` 原文（附 `references/base-en.txt`、`references/ref-en.txt` 原版），同一份原版也放在 `.claude/skills/h3-prompt-writing/` 供 Claude Code 使用。正文使用 `{{ h3_mode }}` 的卡带即支持双模式，**模式由系统自动选择，界面不让用户选**（`prompt_compiler.auto_h3_mode`）：分镜绑定了文件存在的商品参考图 → `ref2va`，否则 → `i2va`：
+  - `i2va`：按 base-en.txt 输出 I2VA 指令行 + `integrated_multimodal_description` / `overall_soundscape` / `non_diegetic_music`；视频后端只传锁定首帧。
   - `ref2va`：按 ref-en.txt 输出六段式 `subject_definitions` / `summary` / `retention_analysis` / `detailed_description` / `overall_soundscape` / `non_diegetic_music`；`<Picture 1>` = 锁定首帧，`<Picture 2>`… = 该分镜绑定的商品参考图（与后端传图顺序一致）。
   - 画面与声音用英文，台词与包装可见文字保留中文原文；时长取分镜时长并限制在 4–15 秒；输出经 `h3_structure_issues()` 校验字段与顺序。
-  - 分镜可同时保存两种版本（`h3_prompt_variants`），`h3_prompt` 为视频生成实际使用的版本。
+  - `h3_prompt` 为视频生成实际使用的版本，`h3_prompt_mode` 记录其写法；旧版自定义卡带（无 `{{ h3_mode }}`）编译的提示词 `h3_official_mode` 为 None。
 
 ## 5. 核心业务流程
 
@@ -182,18 +182,19 @@ variables: [product_name]        # 选填，声明正文使用的变量
   - `character_dialogue`: 镜头内人物同期声对白 + 语气描述（含对白的模式必填）
   - `ambient_sound_description`: 原生环境音与物理动作音效（含环境音的模式必填）
 - 防变形链路：
-  `选类型/比例 + 选填想法 → 编剧 Skill 生成分镜剧本 → 用户编辑并确认剧本 → 生成首帧图（比例强制与视频比例一致）→ 用户勾选确认首帧 → H3 Prompt Skill 编译音画提示词 → 生成视频或复制到 ComfyUI`
+  `选类型/比例 + 选填想法 → 编剧 Skill 生成分镜剧本 → 用户编辑并确认剧本 → 生成首帧图（比例强制与视频比例一致）→ 用户勾选确认首帧 → 生成视频（未编写 H3 提示词时自动先编写）`
 - 未确认剧本不能生成首帧；未确认首帧不能编译 H3 提示词或生成视频。
-- ComfyUI 协同：第 1 分镜（以及每个分镜和全局汇总）提供醒目的「一键复制 H3 提示词」与「下载锁定首帧原图」，并支持把外部生成的视频回传绑定到分镜。
+- 视频统一由 Modal MiniMax H3 直接生成（已移除 ComfyUI 人工协同）。Step 3 两种方式：① 逐个分镜依次生成（全部已锁定首帧的分镜，可跳过已有视频的分镜）；② 选分镜生成（勾选若干分镜）。多个分镜在同一事件里串行排队（`concurrency_limit=1`，与服务端单容器一致），单个分镜失败不影响后续分镜。
+- 视频版本：同一分镜重复生成时追加到 `videos`（文件名带时间戳、每个分镜单独目录），绝不覆盖；界面每个分镜一个独立播放器显示最新版本，旧版本在「全部视频版本」画廊中。
 
 ### 5.5 可扩展 VideoProvider
 
 - 统一接口位于 `app/providers/video/base.py`：`warmup()`（Serverless 冷启动预热）、`generate()`、默认 600 秒超时。
-- 实现：`ModalMiniMaxH3Provider`（通过 Modal SDK 调用已部署的 `minimax-h3-diffusers-service.H3BatchRunner`，见下）、`ManualComfyUIBridgeProvider`（人工复制粘贴桥接）、`FalAIVideoProvider`（预留，暂未实现）、`DemoVideoProvider`（本地 ffmpeg 合成演示）。
+- 实现：`ModalMiniMaxH3Provider`（通过 Modal SDK 调用已部署的 `minimax-h3-diffusers-service.H3BatchRunner`，见下）、`FalAIVideoProvider`（预留，暂未实现）、`DemoVideoProvider`（本地 ffmpeg 合成演示）。
 - 新增视频后端只需继承 `VideoProvider` 并注册，不改业务代码。
 - `ModalMiniMaxH3Provider` 调用约定（服务端源码 `modal/h3_diffusers_service.py`，属于用户自有部署脚本，本项目不修改）：
   - 按 `MODAL_H3_APP` / `MODAL_H3_CLASS` 用 `modal.Cls.from_name` 查找，凭证为本机 Modal 登录，没有 Web 端点、没有 URL。
-  - 锁定首帧后统一走 `workflow="ref2va"`：`images[0]` = 锁定首帧（`<Picture 1>`），其后为该分镜绑定的商品参考图（`<Picture 2>`…，总数 ≤9）；提示词前自动声明各 Picture 的角色。
+  - 锁定首帧后统一走 `workflow="ref2va"`：`images[0]` = 锁定首帧（`<Picture 1>`），其后为该分镜绑定的商品参考图（`<Picture 2>`…，总数 ≤9）；官方卡带提示词原样发送（自带 `<Picture N>` 定义），`i2va` 只传首帧、`ref2va` 传首帧 + 参考图；旧版卡带提示词前自动声明各 Picture 的角色。
   - 帧数 = 时长 × 24fps，向上取到 17n+5，范围 124~345（约 5.2~14.4 秒；短于 5.2 秒的分镜会被拉长到 5.2 秒）。
   - `aspect_ratio` 直接传剧本比例；同一剧本使用同一 seed。
   - 「检查服务」只做 `hydrate()` 查找，不启动 GPU。
@@ -212,7 +213,7 @@ variables: [product_name]        # 选填，声明正文使用的变量
 | `runtime.py` | 持有配置、Skill 注册表、类目/平台、存储；决定真实 / 演示模式；创建各通道客户端 |
 | `planner_engine.py` | 执行 `ecommerce_planner` Skill → draft 策划案；支持单槽位重生成；以参考图数量自动纠正生图模式 |
 | `script_engine.py` | 执行 `video_scriptwriter` Skill → draft 分镜剧本；第 1 镜强制为 ≤3 秒钩子；画外音字段自动转为镜头内对白 |
-| `prompt_compiler.py` | 执行 `image_prompt` / `video_prompt` Skill；生成每镜 H3 提示词与 ComfyUI All-in-One 全局连续提示词 |
+| `prompt_compiler.py` | 执行 `image_prompt` / `video_prompt` Skill；生成每镜 H3 提示词（官方卡带自动选择 I2VA / Ref2VA） |
 | `render_engine.py` | 并发生成候选图 / 首帧 / 视频，异步生成器逐条产出事件，每张图完成立即落盘 |
 | `project_service.py` | 新建项目、跨模块复用参考图、定稿导出 zip、详情页长图序列 |
 | `compliance.py` | 广告法 / 类目违禁词检查 |
@@ -220,7 +221,7 @@ variables: [product_name]        # 选填，声明正文使用的变量
 ## 5.8 界面（`app/ui/`）
 
 - `header.py`：项目管理、类目/平台联动、类目专属商品信息表单 + 实时合规检查、Skill 管理、API 配置（写回 `.env`，白名单键）。
-- `image_tab.py`：主图与详情页共用的三步式工作流。`video_tab.py`：视频剧本 → 首帧锁定 → H3 提示词 → ComfyUI 协同专区 / 直接生成。
+- `image_tab.py`：主图与详情页共用的三步式工作流。`video_tab.py`：视频剧本 → 首帧锁定 → Modal H3 生成视频（逐个 / 选分镜，每个分镜独立播放器），H3 提示词折叠在可选的查看 / 微调区。
 - 浏览器端 `gr.State` 只存 `project_id`；`Project` 对象由服务端 `Workspace` 缓存并按项目加锁。
 - 关键事件设置了 `api_name`，`tests/test_ui_e2e.py` 用 `gradio_client` 启动真实服务端到端驱动全流程。
 - 系统代理（如 127.0.0.1:7890）会导致 Gradio 本机自检 502：`app/main.py` 启动时自动把本机地址加入 `NO_PROXY`。

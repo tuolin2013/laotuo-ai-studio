@@ -26,7 +26,6 @@ EDITABLE_ENV_KEYS = (
     "RIGHTAPI_BASE_URL",
     "MODAL_H3_APP",
     "MODAL_H3_CLASS",
-    "COMFYUI_URL",
     "RIGHTAPI_LLM_API_FORMAT",
     "DEMO_MODE",
 )
@@ -85,7 +84,6 @@ class Settings:
     modal_h3_class: str = "H3BatchRunner"
     modal_h3_steps: int = 30
     modal_h3_timeout: float = 2400
-    comfyui_url: str = ""
     fal_key: str = field(default="", repr=False)
     fal_video_model: str = ""
     # 强制演示模式：即使填了 Key 也不调用真实接口
@@ -150,7 +148,6 @@ def load_settings(env_file: Path | None = None, override: bool = False) -> Setti
         modal_h3_class=e("MODAL_H3_CLASS", "H3BatchRunner").strip(),
         modal_h3_steps=max(1, int(e("MODAL_H3_STEPS", "30"))),
         modal_h3_timeout=float(e("MODAL_H3_TIMEOUT_SECONDS", "2400")),
-        comfyui_url=e("COMFYUI_URL", ""),
         fal_key=e("FAL_KEY", ""),
         fal_video_model=e("FAL_VIDEO_MODEL", ""),
         demo_mode=_bool(e("DEMO_MODE")),

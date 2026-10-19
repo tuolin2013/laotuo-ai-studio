@@ -17,13 +17,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.engine.image_router import image_key, route_image_request
-from app.engine.prompt_compiler import PromptCompiler
+from app.engine.prompt_compiler import DEFAULT_H3_SKILL, PromptCompiler, h3_mode_label
 from app.engine.runtime import EngineRuntime
 from app.providers.demo.aesthetics import pill_from_copy
 from app.providers.demo.render import DemoArt, render_demo_image
 from app.providers.image import gpt_image_size, gpt_quality_for, is_experimental_size
 from app.providers.image_models import protocol_of
-from app.providers.video import ManualActionRequired, VideoProviderError, VideoRequest
+from app.providers.video import VideoProviderError, VideoRequest
 from app.schemas.common import mode_for_reference_count
 from app.schemas.plan import CandidateImage, ImagePlan, ImageSlot
 from app.schemas.project import Project
@@ -282,15 +282,33 @@ class RenderEngine:
 
     # ------------------------------------------------------------ 视频
 
+    async def compile_h3(
+        self, project: Project, script: VideoScript, shot: StoryboardShot, skill_id: str | None = None
+    ) -> str:
+        """编译单个分镜的 H3 提示词（官方卡带自动选择 I2VA / Ref2VA），落盘到 prompts/ 并保存项目。"""
+        prompt = await self.compiler.h3_prompt(script, shot, skill_id or DEFAULT_H3_SKILL)
+        prompt_dir = self.rt.store.asset_dir(project.project_id, "prompts")
+        (prompt_dir / f"h3_{shot.shot_id}.txt").write_text(prompt, encoding="utf-8")
+        self._save(project)
+        return prompt
+
     async def render_video(
-        self, project: Project, script: VideoScript, shot_id: str, provider_id: str
+        self, project: Project, script: VideoScript, shot_id: str, provider_id: str = "modal_minimax_h3",
+        skill_id: str | None = None,
     ) -> AsyncIterator[RenderEvent]:
+        """生成单个分镜的带声视频。还没有 H3 提示词时先自动编写，再提交视频后端。
+
+        每次生成都追加为该分镜的新版本（不覆盖旧视频）。
+        """
         frame = script.require_first_frame_confirmed(shot_id)
         shot = script.get_shot(shot_id)
         if not shot.h3_prompt:
-            raise ValueError("请先运行 H3 Skill 生成该分镜的音画提示词")
+            yield RenderEvent("✍️ 正在自动编写 H3 音画提示词…", item_id=shot_id)
+            await self.compile_h3(project, script, shot, skill_id)
+            yield RenderEvent(f"✅ H3 提示词已生成（{h3_mode_label(shot)}）", item_id=shot_id)
         provider = self.rt.video_provider(provider_id)
         yield RenderEvent(f"🎬 视频后端：{provider.display_name}", item_id=shot_id)
+        refs = [a for a in script.references_for(shot_id) if a.file_path.exists()]
         req = VideoRequest(
             shot_id=shot_id, prompt=shot.h3_prompt, first_frame_path=frame.file_path,
             aspect_ratio=script.aspect_ratio, duration_seconds=shot.duration_seconds,
@@ -298,10 +316,10 @@ class RenderEngine:
             with_audio=shot.audio_mode != "silent",
             # ref2va：首帧之后附上该分镜绑定的商品参考图，保证包装一致
             extra={
-                "reference_paths": [a.file_path for a in script.references_for(shot_id) if a.file_path.exists()],
-                "reference_roles": [a.role for a in script.references_for(shot_id) if a.file_path.exists()],
+                "reference_paths": [a.file_path for a in refs],
+                "reference_roles": [a.role for a in refs],
                 # 官方 h3-prompt-writing 模式（i2va / ref2va）；旧版卡带为 None
-                "h3_prompt_mode": shot.h3_prompt_mode if shot.h3_prompt_variants else None,
+                "h3_prompt_mode": shot.h3_official_mode,
                 "seed": int(hashlib.sha256(script.script_id.encode()).hexdigest()[:8], 16),
             },
         )
@@ -311,8 +329,8 @@ class RenderEngine:
                 if ev.video_path:
                     script.bind_video(shot_id, ev.video_path, provider=provider.provider_id)
                     self._save(project)
-                    yield RenderEvent("✅ 视频已绑定到分镜", video_path=ev.video_path, item_id=shot_id, done=True)
-        except ManualActionRequired as e:
-            yield RenderEvent(f"📋 {e}", item_id=shot_id, done=True)
+                    n = len(script.get_shot(shot_id).videos)
+                    yield RenderEvent(f"✅ 视频已绑定到分镜（第 {n} 版）", video_path=ev.video_path,
+                                      item_id=shot_id, done=True)
         except VideoProviderError as e:
             yield RenderEvent(f"❌ 视频生成失败：{e}", item_id=shot_id, error=True, done=True)

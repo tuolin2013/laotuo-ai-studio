@@ -5,8 +5,6 @@ from app.engine.image_router import image_key, route_image_request
 from app.providers.llm import LLMError, extract_json
 from app.providers.video import (
     FalAIVideoProvider,
-    ManualActionRequired,
-    ManualComfyUIBridgeProvider,
     ModalMiniMaxH3Provider,
     VideoProviderError,
     VideoRequest,
@@ -81,23 +79,19 @@ def test_extract_json():
 
 
 def test_video_providers_registered():
-    assert set(available_providers()) >= {"modal_minimax_h3", "manual_comfyui", "fal_ai"}
+    assert set(available_providers()) >= {"modal_minimax_h3", "demo", "fal_ai"}
+    assert "manual_comfyui" not in available_providers()  # ComfyUI 人工桥接已移除
     prov = ModalMiniMaxH3Provider()
     assert prov.app_name == "minimax-h3-diffusers-service" and prov.class_name == "H3BatchRunner"
     assert prov.timeout_seconds == 2400
 
 
-async def test_warmup_and_manual_bridge(tmp_path):
+async def test_warmup_and_reserved_fal(tmp_path):
     warm = await ModalMiniMaxH3Provider(runner_factory=lambda wf: None).warmup()
     assert warm.ready
 
     req = VideoRequest(shot_id="shot_1", prompt="p", first_frame_path=tmp_path / "f.png",
                        aspect_ratio="9:16", duration_seconds=3, output_dir=tmp_path)
-    gen = ManualComfyUIBridgeProvider(comfyui_url="https://comfy.modal.run").generate(req)
-    first = await anext(gen)
-    assert "comfy.modal.run" in first.message and "9:16" in first.message
-    with pytest.raises(ManualActionRequired):
-        await anext(gen)
     with pytest.raises(VideoProviderError):
         await anext(FalAIVideoProvider().generate(req))
 
