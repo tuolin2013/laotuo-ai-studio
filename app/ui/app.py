@@ -12,11 +12,10 @@ from app.settings import Settings
 from app.ui.header import build_header
 from app.ui.image_tab import DETAIL_SPEC, MAIN_SPEC, build_image_tab
 from app.ui.state import Workspace
+from app.ui.theme import CSS, THEME
 from app.ui.video_tab import build_video_tab
 
-CSS = ""
-
-THEME = gr.themes.Soft(primary_hue="emerald", secondary_hue="amber")
+__all__ = ["CSS", "THEME", "build_app"]  # app.main 启动时把主题与样式传给 launch()
 
 
 def build_app(settings: Settings, runtime: EngineRuntime | None = None) -> gr.Blocks:

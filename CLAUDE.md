@@ -222,6 +222,7 @@ variables: [product_name]        # 选填，声明正文使用的变量
 
 - `header.py`：项目管理、类目/平台联动、类目专属商品信息表单 + 实时合规检查、Skill 管理、API 配置（写回 `.env`，白名单键）。
 - `image_tab.py`：主图与详情页共用的三步式工作流。`video_tab.py`：视频剧本 → 首帧锁定 → Modal H3 生成视频（逐个 / 选分镜，每个分镜独立播放器），H3 提示词折叠在可选的查看 / 微调区。
+- `theme.py`：界面主题与 CSS 唯一来源（`THEME` / `CSS`，由 `app/main.py` 传给 `launch()`）。界面代码只用 `elem_classes`（`step-card`、`terminal-log`、`info-grid`、`plan-table` 等）引用样式，不写内联样式；步骤标题用 `step_header()`。
 - 浏览器端 `gr.State` 只存 `project_id`；`Project` 对象由服务端 `Workspace` 缓存并按项目加锁。
 - 关键事件设置了 `api_name`，`tests/test_ui_e2e.py` 用 `gradio_client` 启动真实服务端到端驱动全流程。
 - 系统代理（如 127.0.0.1:7890）会导致 Gradio 本机自检 502：`app/main.py` 启动时自动把本机地址加入 `NO_PROXY`。

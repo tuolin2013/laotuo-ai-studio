@@ -30,6 +30,7 @@ from app.ui.state import (
     new_blank_slot,
     slots_to_rows,
 )
+from app.ui.theme import step_header
 
 MAX_REF_ROLES = 8
 
@@ -132,86 +133,96 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
     planner, renderer = PlannerEngine(rt), RenderEngine(rt)
     is_detail = spec.key == "detail_page"
 
-    with gr.Row():
+    with gr.Row(elem_classes=["workbench"]):
         # ---------------------------------------------------------------- 左侧：工作区
         with gr.Column(scale=7):
-            gr.Markdown(f"### Step 1　生成与编辑{spec.label}策划案")
-            with gr.Row():
-                if is_detail:
-                    count_mode = gr.Radio([("AI 按卖点自动规划屏数", "auto"), ("手动指定屏数", "manual")],
-                                          value="auto", label="屏数模式")
-                    count = gr.Slider(4, 15, value=8, step=1, label="手动屏数（4~15）")
-                else:
-                    count_mode = gr.State("manual")
-                    count = gr.Slider(1, 10, value=5, step=1, label="主图数量（随平台默认，可改）")
-                ratio = gr.Dropdown(list(spec.ratios), value=spec.default_ratio, label=f"{spec.label}比例")
-            aesthetic = gr.Dropdown(
-                AESTHETIC_CHOICES, value="auto", label="🎨 全局视觉设计美学流派",
-                info="选「自动匹配」时 AI 为每张图分别挑选流派；选定某个流派则整套统一使用，生成后仍可在表格中逐张修改",
-            )
-            idea = gr.Textbox(
-                label="💡 我的策划想法（选填）", lines=2,
-                placeholder="不填：按类目与平台自动策划；填写：优先按您的想法定制。例如：中秋主题、暖金色调、重点突出白霜对比",
-            )
-            with gr.Row():
-                gen_btn = gr.Button(f"✨ 生成{spec.label}策划案", variant="primary")
-                regen_btn = gr.Button("🔄 按新想法重新生成")
-            status = gr.Markdown(f"尚未生成{spec.label}策划案")
-            table = gr.Dataframe(
-                headers=SLOT_HEADERS, datatype=["number", "str", "str", "str", "str", "str", "str", "str", "str"],
-                interactive=True, wrap=True, static_columns=[0],
-                column_widths=["4%", "10%", "9%", "11%", "26%", "10%", "10%", "10%", "10%"],
-                label=f"可编辑策划区（生图模式可填：{' / '.join(MODE_CHOICES)}；美学流派、构图模式填中文名或「自动」）",
-            )
-            with gr.Row():
-                save_edit = gr.Button("💾 保存表格修改")
-                slot_pick = gr.Dropdown(label="选择槽位", choices=[], scale=2)
-                regen_slot = gr.Button("🎲 单独重新生成该槽位")
-            with gr.Row():
-                add_slot = gr.Button("➕ 在末尾新增槽位")
-                del_slot = gr.Button("🗑️ 删除所选槽位")
-                up_slot = gr.Button("⬆️ 上移")
-                down_slot = gr.Button("⬇️ 下移")
-            with gr.Row():
-                confirm_btn = gr.Button(f"✅ 确认{spec.label}策划案，生成传图清单", variant="primary")
-                unlock_btn = gr.Button("🔓 解锁返回修改策划")
-
-            gr.Markdown("### Step 2　按清单传图与并发渲染")
-            checklist = gr.Markdown(_checklist_md(None))
-            with gr.Row():
-                reuse_btn = gr.Button("♻️ 一键复用项目内其他模块已上传的同角色参考图")
-            uploads = []
-            with gr.Row():
-                for i in range(MAX_REF_ROLES):
-                    uploads.append(gr.Image(type="filepath", visible=False, height=180, key=f"{spec.key}_up_{i}",
-                                            sources=["upload", "clipboard"]))
-            with gr.Accordion("🎯 为特定槽位单独上传 / 替换参考图", open=False):
+            with gr.Column(elem_classes=["step-card"]):
+                step_header(1, f"生成与编辑{spec.label}策划案")
                 with gr.Row():
-                    single_slot = gr.Dropdown(label="槽位", choices=[])
-                    single_img = gr.Image(type="filepath", label="单独参考图（只绑定到该槽位）", height=160)
-                single_btn = gr.Button("📎 绑定到该槽位")
-            with gr.Row():
-                model = gr.Dropdown(model_choices(rt.settings.image_models), value=rt.settings.image_models[0],
-                                    label="生图模型（image 高质量渠道）", scale=3)
-                res = gr.Dropdown(list(IMAGE_RESOLUTIONS), value=rt.settings.image_resolution, label="分辨率")
-                quality = gr.Dropdown(list(IMAGE_QUALITIES), value=rt.settings.image_quality,
-                                      label="GPT 质量档（xhigh/max 仅 2.5）")
-                cand = gr.Slider(1, 4, value=2, step=1, label="每槽位候选图数量")
-            render_btn = gr.Button(f"🚀 开始并发生成{spec.label}", variant="primary", size="lg")
+                    if is_detail:
+                        count_mode = gr.Radio([("AI 按卖点自动规划屏数", "auto"), ("手动指定屏数", "manual")],
+                                              value="auto", label="屏数模式")
+                        count = gr.Slider(4, 15, value=8, step=1, label="手动屏数（4~15）")
+                    else:
+                        count_mode = gr.State("manual")
+                        count = gr.Slider(1, 10, value=5, step=1, label="主图数量（随平台默认，可改）")
+                    ratio = gr.Dropdown(list(spec.ratios), value=spec.default_ratio, label=f"{spec.label}比例")
+                aesthetic = gr.Dropdown(
+                    AESTHETIC_CHOICES, value="auto", label="🎨 全局视觉设计美学流派",
+                    info="选「自动匹配」时 AI 为每张图分别挑选流派；选定某个流派则整套统一使用，"
+                         "生成后仍可在表格中逐张修改",
+                )
+                idea = gr.Textbox(
+                    label="💡 我的策划想法（选填）", lines=2,
+                    placeholder="不填：按类目与平台自动策划；填写：优先按您的想法定制。"
+                                "例如：中秋主题、暖金色调、重点突出白霜对比",
+                )
+                with gr.Row():
+                    gen_btn = gr.Button(f"✨ 生成{spec.label}策划案", variant="primary")
+                    regen_btn = gr.Button("🔄 按新想法重新生成")
+                status = gr.Markdown(f"尚未生成{spec.label}策划案", elem_classes=["status-note"])
+                # 列宽用像素：总宽超过卡片时横向滚动，标题、画面描述、美学 / 构图列不再被压窄
+                table = gr.Dataframe(
+                    headers=SLOT_HEADERS, datatype=["number", "str", "str", "str", "str", "str", "str", "str", "str"],
+                    interactive=True, wrap=True, static_columns=[0],
+                    column_widths=[64, 170, 160, 200, 380, 160, 150, 150, 190],
+                    label=f"可编辑策划区（生图模式可填：{' / '.join(MODE_CHOICES)}；"
+                          "美学流派、构图模式填中文名或「自动」）",
+                    elem_classes=["plan-table"],
+                )
+                with gr.Row():
+                    save_edit = gr.Button("💾 保存表格修改")
+                    slot_pick = gr.Dropdown(label="选择槽位", choices=[], scale=2)
+                    regen_slot = gr.Button("🎲 单独重新生成该槽位")
+                with gr.Row():
+                    add_slot = gr.Button("➕ 在末尾新增槽位")
+                    del_slot = gr.Button("🗑️ 删除所选槽位")
+                    up_slot = gr.Button("⬆️ 上移")
+                    down_slot = gr.Button("⬇️ 下移")
+                with gr.Row():
+                    confirm_btn = gr.Button(f"✅ 确认{spec.label}策划案，生成传图清单", variant="primary")
+                    unlock_btn = gr.Button("🔓 解锁返回修改策划")
+
+            with gr.Column(elem_classes=["step-card"]):
+                step_header(2, "按清单传图与并发渲染")
+                checklist = gr.Markdown(_checklist_md(None), elem_classes=["status-note"])
+                with gr.Row():
+                    reuse_btn = gr.Button("♻️ 一键复用项目内其他模块已上传的同角色参考图")
+                uploads = []
+                with gr.Row():
+                    for i in range(MAX_REF_ROLES):
+                        uploads.append(gr.Image(type="filepath", visible=False, height=180,
+                                                key=f"{spec.key}_up_{i}", sources=["upload", "clipboard"]))
+                with gr.Accordion("🎯 为特定槽位单独上传 / 替换参考图", open=False):
+                    with gr.Row():
+                        single_slot = gr.Dropdown(label="槽位", choices=[])
+                        single_img = gr.Image(type="filepath", label="单独参考图（只绑定到该槽位）", height=160)
+                    single_btn = gr.Button("📎 绑定到该槽位")
+                with gr.Row():
+                    model = gr.Dropdown(model_choices(rt.settings.image_models), value=rt.settings.image_models[0],
+                                        label="生图模型（image 高质量渠道）", scale=3)
+                    res = gr.Dropdown(list(IMAGE_RESOLUTIONS), value=rt.settings.image_resolution, label="分辨率")
+                    quality = gr.Dropdown(list(IMAGE_QUALITIES), value=rt.settings.image_quality,
+                                          label="GPT 质量档（xhigh/max 仅 2.5）")
+                    cand = gr.Slider(1, 4, value=2, step=1, label="每槽位候选图数量")
+                render_btn = gr.Button(f"🚀 开始并发生成{spec.label}", variant="primary", size="lg",
+                                       elem_classes=["cta"])
 
         # ---------------------------------------------------------------- 右侧：日志与结果
         with gr.Column(scale=5):
-            logs = gr.Textbox(label="📜 运行日志 Running Logs", lines=14, max_lines=14, autoscroll=True,
-                              interactive=False)
-            gallery = gr.Gallery(label="候选图（生成一张回显一张）", columns=3, height=420, object_fit="contain")
-            winners = gr.CheckboxGroup(label="⭐ 勾选定稿图（Winner）", choices=[])
-            with gr.Row():
-                save_winner = gr.Button("⭐ 保存定稿勾选")
-                export_btn = gr.Button("📦 打包导出定稿")
-            export_file = gr.File(label="导出文件", interactive=False)
-            if is_detail:
-                long_preview = gr.Gallery(label="📜 详情页长图序列预览（按屏顺序，每屏定稿图）", columns=1,
-                                          height=520, object_fit="contain")
+            logs = gr.Textbox(label="📜 运行日志 Running Logs", lines=12, max_lines=12, autoscroll=True,
+                              interactive=False, elem_classes=["terminal-log"])
+            with gr.Column(elem_classes=["step-card"]):
+                step_header(3, "勾选定稿并打包导出")
+                gallery = gr.Gallery(label="候选图（生成一张回显一张）", columns=3, height=420, object_fit="contain")
+                winners = gr.CheckboxGroup(label="⭐ 勾选定稿图（Winner）", choices=[])
+                with gr.Row():
+                    save_winner = gr.Button("⭐ 保存定稿勾选")
+                    export_btn = gr.Button("📦 打包导出定稿")
+                export_file = gr.File(label="导出文件", interactive=False)
+                if is_detail:
+                    long_preview = gr.Gallery(label="📜 详情页长图序列预览（按屏顺序，每屏定稿图）", columns=1,
+                                              height=520, object_fit="contain")
 
     # ================================================================ 刷新函数
     def _refresh(pid):

@@ -49,6 +49,7 @@ from app.ui.state import (
     new_blank_shot,
     shots_to_rows,
 )
+from app.ui.theme import step_header
 
 VIDEO_RATIOS = ["9:16", "16:9", "1:1"]
 SCRIPT_MODES = [("📝 自己策划原创剧本", "original"), ("📹 克隆参考爆款视频 (Hypit Clone)", "clone")]
@@ -260,132 +261,144 @@ def build_video_tab(ws: Workspace, header: Header) -> None:
     concept_engine, story_engine = ConceptEngine(rt), StoryEngine(rt)
     writer, renderer = ScriptEngine(rt), RenderEngine(rt)
 
-    with gr.Row():
+    with gr.Row(elem_classes=["workbench"]):
         with gr.Column(scale=7):
             # ========================================================== Step 1: 分镜剧本
-            gr.Markdown("## Step 1　带货视频分镜剧本")
-            script_mode = gr.Radio(SCRIPT_MODES, value="original", label="策划方式（二选一）",
-                                   info="两种方式生成的剧本都填入下方同一个可编辑分镜表，"
-                                        "之后的确认剧本 → 锁首帧 → H3 提示词 → 生成视频流程完全一样")
-            with gr.Column(visible=True) as original_box, gr.Row():
-                vtype = gr.Dropdown([(v, k) for k, v in VIDEO_TYPE_LABELS.items()], value="product_showcase",
-                                    label="视频类型（内容形式）")
-                shots_n = gr.Slider(3, 8, value=5, step=1, label="分镜数量")
-            with gr.Column(visible=False) as clone_box:
-                clone_file = gr.File(label="📥 上传参考爆款视频（.mp4 / .mov / .webm）", type="filepath",
-                                     file_types=list(VIDEO_EXTENSIONS))
+            with gr.Column(elem_classes=["step-card"]):
+                step_header(1, "带货视频分镜剧本")
+                script_mode = gr.Radio(SCRIPT_MODES, value="original", label="策划方式（二选一）",
+                                       info="两种方式生成的剧本都填入下方同一个可编辑分镜表，"
+                                            "之后的确认剧本 → 锁首帧 → H3 提示词 → 生成视频流程完全一样")
+                with gr.Column(visible=True) as original_box, gr.Row():
+                    vtype = gr.Dropdown([(v, k) for k, v in VIDEO_TYPE_LABELS.items()], value="product_showcase",
+                                        label="视频类型（内容形式）")
+                    shots_n = gr.Slider(3, 8, value=5, step=1, label="分镜数量")
+                with gr.Column(visible=False) as clone_box:
+                    clone_file = gr.File(label="📥 上传参考爆款视频（.mp4 / .mov / .webm）", type="filepath",
+                                         file_types=list(VIDEO_EXTENSIONS))
+                    with gr.Row():
+                        clone_strategy = gr.Radio(CLONE_STRATEGIES, value="replicate", label="克隆策略")
+                        clone_frames = gr.Slider(MIN_FRAMES, MAX_FRAMES, value=6, step=1,
+                                                 label="抽取关键帧数量（= 克隆分镜数）")
+                vratio = gr.Dropdown(VIDEO_RATIOS, value="9:16", label="视频比例（首帧强制同步）")
+                idea = gr.Textbox(label="💡 我的视频策划/克隆想法（选填）", lines=2,
+                                  placeholder="例如：办公室女生冲一杯，看到白霜惊喜说话；"
+                                              "克隆时可写：人设换成宝妈、保留原片的开箱钩子")
+                gen_btn = gr.Button("✨ 生成带货视频剧本", variant="primary")
+
+                with gr.Column(visible=False) as clone_result:
+                    gr.Markdown("#### 🎞️ 原视频关键帧时间轴预览")
+                    clone_gallery = gr.Gallery(show_label=False, columns=4, height=260, object_fit="contain")
+                    gr.Markdown("#### 🔍 原爆款视频拆解分析")
+                    clone_md = gr.Markdown()
+
+                with gr.Accordion("🧭 进阶（原创）：三步式专业编剧　创意大纲 → 完整剧本 → 分镜脚本",
+                                  open=False) as pro_box:
+                    gr.Markdown("使用上方的视频类型、分镜数量、视频比例与想法；第 ③ 步编译出的分镜同样填入下方分镜表。")
+                    vdur = gr.Slider(5, 60, value=15, step=1, label="目标时长(秒)")
+                    concept_btn = gr.Button("① 生成创意大纲（30 秒电梯演讲）")
+                    concept_display = gr.Markdown(_concept_md(ws, None))
+                    concept_confirm = gr.Button("② ✅ 确认创意大纲，生成完整剧本")
+                    story_status = gr.Markdown(_story_md(ws, None))
+                    story_content = gr.Textbox(label="📜 剧本正文（Markdown，可编辑）", lines=12, max_lines=30)
+                    with gr.Row():
+                        story_save = gr.Button("💾 保存剧本修改")
+                        story_regen = gr.Button("🔄 重新生成剧本")
+                        story_confirm = gr.Button("✅ 确认剧本")
+                        story_unlock = gr.Button("🔓 解锁剧本")
+                    storyboard_btn = gr.Button("③ 🎬 把已确认剧本编译为分镜（填入下方分镜表）", variant="primary")
+
+                status = gr.Markdown("尚未生成分镜剧本", elem_classes=["status-note"])
+                # 列宽用像素：12 列总宽超过卡片时横向滚动，画面描述、对白、环境音列保持可读宽度
+                table = gr.Dataframe(headers=SHOT_HEADERS, interactive=True, wrap=True, static_columns=[0],
+                                     datatype=["number", "number", *["str"] * 10],
+                                     column_widths=[60, 84, 100, 120, 300, 220, 260, 160, 260, 240, 160, 190],
+                                     label="可编辑分镜表（含人物同期声对白与原生环境音，无画外音）",
+                                     elem_classes=["plan-table"])
                 with gr.Row():
-                    clone_strategy = gr.Radio(CLONE_STRATEGIES, value="replicate", label="克隆策略")
-                    clone_frames = gr.Slider(MIN_FRAMES, MAX_FRAMES, value=6, step=1,
-                                             label="抽取关键帧数量（= 克隆分镜数）")
-            vratio = gr.Dropdown(VIDEO_RATIOS, value="9:16", label="视频比例（首帧强制同步）")
-            idea = gr.Textbox(label="💡 我的视频策划/克隆想法（选填）", lines=2,
-                              placeholder="例如：办公室女生冲一杯，看到白霜惊喜说话；"
-                                          "克隆时可写：人设换成宝妈、保留原片的开箱钩子")
-            gen_btn = gr.Button("✨ 生成带货视频剧本", variant="primary")
-
-            with gr.Column(visible=False) as clone_result:
-                gr.Markdown("#### 🎞️ 原视频关键帧时间轴预览")
-                clone_gallery = gr.Gallery(show_label=False, columns=4, height=260, object_fit="contain")
-                gr.Markdown("#### 🔍 原爆款视频拆解分析")
-                clone_md = gr.Markdown()
-
-            with gr.Accordion("🧭 进阶（原创）：三步式专业编剧　创意大纲 → 完整剧本 → 分镜脚本", open=False) as pro_box:
-                gr.Markdown("使用上方的视频类型、分镜数量、视频比例与想法；第 ③ 步编译出的分镜同样填入下方分镜表。")
-                vdur = gr.Slider(5, 60, value=15, step=1, label="目标时长(秒)")
-                concept_btn = gr.Button("① 生成创意大纲（30 秒电梯演讲）")
-                concept_display = gr.Markdown(_concept_md(ws, None))
-                concept_confirm = gr.Button("② ✅ 确认创意大纲，生成完整剧本")
-                story_status = gr.Markdown(_story_md(ws, None))
-                story_content = gr.Textbox(label="📜 剧本正文（Markdown，可编辑）", lines=12, max_lines=30)
+                    save_edit = gr.Button("💾 保存分镜修改")
+                    shot_pick = gr.Dropdown(label="选择分镜", choices=[], scale=2)
+                    regen_shot = gr.Button("🎲 单独重写该分镜")
                 with gr.Row():
-                    story_save = gr.Button("💾 保存剧本修改")
-                    story_regen = gr.Button("🔄 重新生成剧本")
-                    story_confirm = gr.Button("✅ 确认剧本")
-                    story_unlock = gr.Button("🔓 解锁剧本")
-                storyboard_btn = gr.Button("③ 🎬 把已确认剧本编译为分镜（填入下方分镜表）", variant="primary")
-
-            status = gr.Markdown("尚未生成分镜剧本")
-            table = gr.Dataframe(headers=SHOT_HEADERS, interactive=True, wrap=True, static_columns=[0],
-                                 datatype=["number", "number", *["str"] * 10],
-                                 label="可编辑分镜表（含人物同期声对白与原生环境音，无画外音）")
-            with gr.Row():
-                save_edit = gr.Button("💾 保存分镜修改")
-                shot_pick = gr.Dropdown(label="选择分镜", choices=[], scale=2)
-                regen_shot = gr.Button("🎲 单独重写该分镜")
-            with gr.Row():
-                add_shot = gr.Button("➕ 新增分镜")
-                del_shot = gr.Button("🗑️ 删除所选分镜")
-                up_shot = gr.Button("⬆️ 上移")
-                down_shot = gr.Button("⬇️ 下移")
-            with gr.Row():
-                confirm_btn = gr.Button("✅ 确认分镜剧本", variant="primary")
-                unlock_btn = gr.Button("🔓 解锁返回修改分镜剧本")
+                    add_shot = gr.Button("➕ 新增分镜")
+                    del_shot = gr.Button("🗑️ 删除所选分镜")
+                    up_shot = gr.Button("⬆️ 上移")
+                    down_shot = gr.Button("⬇️ 下移")
+                with gr.Row():
+                    confirm_btn = gr.Button("✅ 确认分镜剧本", variant="primary")
+                    unlock_btn = gr.Button("🔓 解锁返回修改分镜剧本")
 
             # ========================================================== Step 2: 首帧锁定
-            gr.Markdown("## Step 2　首帧定妆图生成与防变形锁死")
-            gr.Markdown("**工作流**：① 按汇总清单上传参考图 → ② 生成候选首帧 → ③ 逐镜勾选商品未变形的首帧并锁定")
-            with gr.Accordion("2.1　按汇总清单上传首帧所需参考图", open=True):
-                checklist = gr.Markdown(_checklist_md(None))
-                reuse_btn = gr.Button("♻️ 一键复用项目已上传的同角色参考图（主图 / 详情页）")
-                uploads = []
-                with gr.Row():
-                    for i in range(MAX_REF_ROLES):
-                        uploads.append(gr.Image(type="filepath", visible=False, height=170, key=f"video_up_{i}",
-                                                sources=["upload", "clipboard"]))
-            with gr.Accordion("2.2　批量生成所有分镜的静态首帧候选图", open=True):
-                with gr.Row():
-                    frame_model = gr.Dropdown(model_choices(rt.settings.image_models),
-                                              value=rt.settings.image_models[0], label="首帧生图模型")
-                    frame_res = gr.Dropdown(list(IMAGE_RESOLUTIONS), value=rt.settings.image_resolution,
-                                            label="分辨率")
-                    frame_n = gr.Slider(1, 4, value=2, step=1, label="每镜生成几张候选")
-                frame_btn = gr.Button("🖼️ 开始批量生成各分镜首帧候选图", variant="primary", size="lg")
-            with gr.Accordion("2.3　预览候选首帧，逐镜勾选并锁定商品未变形的图", open=True):
-                gr.Markdown("**防变形检查**：仔细查看商品包装、文字、LOGO 是否保持原样，无扭曲或错字。"
-                            "锁定后该首帧会作为视频起始帧送给 H3 模型")
-                frames = gr.Gallery(label="所有分镜的首帧候选（🔒 = 已锁定）", columns=4, height=360,
-                                    object_fit="contain")
-                locked_frames = gr.CheckboxGroup(label="🔒 勾选锁定各分镜的首帧", choices=[])
-                with gr.Row():
-                    save_locked = gr.Button("🔒 保存首帧锁定勾选", variant="primary")
-                    lock_all_btn = gr.Button("🔒 全部分镜自动锁定最新首帧（快捷操作）", variant="secondary")
+            with gr.Column(elem_classes=["step-card"]):
+                step_header(2, "首帧定妆图生成与防变形锁死")
+                gr.Markdown("**工作流**：① 按汇总清单上传参考图 → ② 生成候选首帧 → ③ 逐镜勾选商品未变形的首帧并锁定")
+                with gr.Accordion("2.1　按汇总清单上传首帧所需参考图", open=True):
+                    checklist = gr.Markdown(_checklist_md(None))
+                    reuse_btn = gr.Button("♻️ 一键复用项目已上传的同角色参考图（主图 / 详情页）")
+                    uploads = []
+                    with gr.Row():
+                        for i in range(MAX_REF_ROLES):
+                            uploads.append(gr.Image(type="filepath", visible=False, height=170,
+                                                    key=f"video_up_{i}", sources=["upload", "clipboard"]))
+                with gr.Accordion("2.2　批量生成所有分镜的静态首帧候选图", open=True):
+                    with gr.Row():
+                        frame_model = gr.Dropdown(model_choices(rt.settings.image_models),
+                                                  value=rt.settings.image_models[0], label="首帧生图模型")
+                        frame_res = gr.Dropdown(list(IMAGE_RESOLUTIONS), value=rt.settings.image_resolution,
+                                                label="分辨率")
+                        frame_n = gr.Slider(1, 4, value=2, step=1, label="每镜生成几张候选")
+                    frame_btn = gr.Button("🖼️ 开始批量生成各分镜首帧候选图", variant="primary", size="lg",
+                                          elem_classes=["cta"])
+                with gr.Accordion("2.3　预览候选首帧，逐镜勾选并锁定商品未变形的图", open=True):
+                    gr.Markdown("**防变形检查**：仔细查看商品包装、文字、LOGO 是否保持原样，无扭曲或错字。"
+                                "锁定后该首帧会作为视频起始帧送给 H3 模型")
+                    frames = gr.Gallery(label="所有分镜的首帧候选（🔒 = 已锁定）", columns=4, height=360,
+                                        object_fit="contain")
+                    locked_frames = gr.CheckboxGroup(label="🔒 勾选锁定各分镜的首帧", choices=[])
+                    with gr.Row():
+                        save_locked = gr.Button("🔒 保存首帧锁定勾选", variant="primary")
+                        lock_all_btn = gr.Button("🔒 全部分镜自动锁定最新首帧（快捷操作）", variant="secondary")
 
             # ========================================================== Step 3: Modal MiniMax H3 生成视频
-            gr.Markdown("## Step 3　MiniMax H3 生成带声视频（Modal）")
-            gr.Markdown("点「开始生成」后，系统先为每个分镜**自动编写 H3 音画提示词**，再交给 Modal 上的 MiniMax H3 "
-                        "生成带原生声音的视频，**不需要选择提示词模式**：分镜绑定了商品参考图时，首帧和参考图一起送入"
-                        "（包装更稳）；没有参考图时只用锁定首帧。每个分镜约 5~8 分钟，多个分镜排队逐个生成。")
-            video_way = gr.Radio([("① 逐个分镜依次生成（全部已锁定首帧的分镜）", "all"),
-                                  ("② 选分镜生成（只生成勾选的分镜）", "pick")], value="all", label="生成方式")
-            skip_done = gr.Checkbox(value=True, label="跳过已有视频的分镜（只补齐还没生成的）")
-            video_pick = gr.CheckboxGroup(choices=[], visible=False,
-                                          label="勾选要生成的分镜（已有视频的分镜再次生成会保存为新版本，不覆盖旧视频）")
-            with gr.Row():
-                video_btn = gr.Button("🎬 开始生成视频", variant="primary", size="lg", scale=3)
-                warm_btn = gr.Button("🔎 检查 Modal H3 服务（不启动 GPU、不扣费）", scale=2)
-            video_progress = gr.Markdown()
-            gr.Markdown("#### 🎞️ 各分镜视频（每个分镜单独显示最新版本，带原生声音）")
-            players = []
-            for start in range(0, MAX_VIDEO_SLOTS, SLOTS_PER_ROW):
+            with gr.Column(elem_classes=["step-card"]):
+                step_header(3, "MiniMax H3 生成带声视频（Modal）")
+                gr.Markdown("点「开始生成」后，系统先为每个分镜**自动编写 H3 音画提示词**，再交给 Modal 上的 "
+                            "MiniMax H3 生成带原生声音的视频，**不需要选择提示词模式**："
+                            "分镜绑定了商品参考图时，首帧和参考图一起送入（包装更稳）；没有参考图时只用锁定首帧。"
+                            "每个分镜约 5~8 分钟，多个分镜排队逐个生成。")
+                video_way = gr.Radio([("① 逐个分镜依次生成（全部已锁定首帧的分镜）", "all"),
+                                      ("② 选分镜生成（只生成勾选的分镜）", "pick")], value="all", label="生成方式")
+                skip_done = gr.Checkbox(value=True, label="跳过已有视频的分镜（只补齐还没生成的）")
+                video_pick = gr.CheckboxGroup(choices=[], visible=False,
+                                              label="勾选要生成的分镜（已有视频的分镜再次生成会保存为新版本，不覆盖旧视频）")
                 with gr.Row():
-                    for i in range(start, start + SLOTS_PER_ROW):
-                        players.append(gr.Video(visible=False, height=360, interactive=False, autoplay=False,
-                                                min_width=160, key=f"video_player_{i}"))
-            with gr.Accordion("🗂️ 全部视频版本（含重新生成前的旧版本）", open=False):
-                versions = gr.Gallery(show_label=False, columns=4, height=320, object_fit="contain")
-            with gr.Accordion("📝 H3 音画提示词（系统自动编写，可选查看 / 微调）", open=False):
-                with gr.Row():
-                    h3_shot = gr.Dropdown(label="查看哪个分镜", choices=[], scale=2)
-                    h3_rewrite = gr.Button("🪄 重新编写该分镜")
-                    h3_all_btn = gr.Button("🪄 为全部已锁定首帧的分镜重新编写")
-                h3_info = gr.Markdown()
-                h3_edit = gr.Textbox(label="H3 提示词（可手动微调，保存后生成视频时使用）", lines=8, buttons=["copy"])
-                save_h3 = gr.Button("💾 保存微调")
+                    video_btn = gr.Button("🎬 开始生成视频", variant="primary", size="lg", scale=3,
+                                          elem_classes=["cta"])
+                    warm_btn = gr.Button("🔎 检查 Modal H3 服务（不启动 GPU、不扣费）", scale=2)
+                video_progress = gr.Markdown()
+                gr.Markdown("#### 🎞️ 各分镜视频（每个分镜单独显示最新版本，带原生声音）")
+                players = []
+                for start in range(0, MAX_VIDEO_SLOTS, SLOTS_PER_ROW):
+                    with gr.Row():
+                        for i in range(start, start + SLOTS_PER_ROW):
+                            players.append(gr.Video(visible=False, height=360, interactive=False, autoplay=False,
+                                                    min_width=160, key=f"video_player_{i}"))
+                with gr.Accordion("🗂️ 全部视频版本（含重新生成前的旧版本）", open=False):
+                    versions = gr.Gallery(show_label=False, columns=4, height=320, object_fit="contain")
+                with gr.Accordion("📝 H3 音画提示词（系统自动编写，可选查看 / 微调）", open=False):
+                    with gr.Row():
+                        h3_shot = gr.Dropdown(label="查看哪个分镜", choices=[], scale=2)
+                        h3_rewrite = gr.Button("🪄 重新编写该分镜")
+                        h3_all_btn = gr.Button("🪄 为全部已锁定首帧的分镜重新编写")
+                    h3_info = gr.Markdown()
+                    h3_edit = gr.Textbox(label="H3 提示词（可手动微调，保存后生成视频时使用）", lines=8,
+                                         buttons=["copy"])
+                    save_h3 = gr.Button("💾 保存微调")
 
-        with gr.Column(scale=5):
-            logs = gr.Textbox(label="📜 运行日志 Running Logs", lines=24, max_lines=24, autoscroll=True,
-                              interactive=False)
+        # 日志停靠在右侧：页面滚到 Step 2 / Step 3 时仍然可见
+        with gr.Column(scale=5, elem_classes=["log-dock"]):
+            logs = gr.Textbox(label="📜 运行日志 Running Logs", lines=20, max_lines=20, autoscroll=True,
+                              interactive=False, elem_classes=["terminal-log"])
 
     # ================================================================ 刷新
     def _refresh(pid, sel_shot=None, preview: ReferenceVideoSource | None = None, picked=None):

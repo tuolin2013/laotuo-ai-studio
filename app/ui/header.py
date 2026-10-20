@@ -64,36 +64,40 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
     default_plat = "taobao" if "taobao" in rt.platforms else plat_choices[0][1]
     project_id = gr.State(None)
 
-    gr.Markdown("# 🏭 电商 AIGC 内容工厂\n主图 · 详情页 · 带货短视频（MiniMax H3 原生音画一体）")
-    mode_status = gr.Markdown(rt.mode_summary())
-
-    with gr.Row(equal_height=True):
-        with gr.Column(scale=3):
-            with gr.Group():
-                with gr.Row():
-                    project_name = gr.Textbox(label="项目名称", placeholder="例如：莓茶中秋大促", scale=2)
-                    new_btn = gr.Button("➕ 新建项目", variant="primary", scale=1)
-                with gr.Row():
-                    history = gr.Dropdown(choices=ws.project_choices(), label="历史项目（自动保存）", scale=3)
-                    refresh_hist = gr.Button("🔄", scale=0, min_width=50)
-                    load_btn = gr.Button("📂 加载", scale=1)
+    # 顶栏两张卡片：左侧品牌 + 通道状态 + 项目操作，右侧类目 / 平台 / 商品信息（标签在左、每行 3 个字段）
+    with gr.Row(elem_classes=["app-header"]):
+        with gr.Column(scale=5, min_width=360, elem_classes=["project-panel"]):
+            gr.Markdown("# 🏭 电商 AIGC 内容工厂\n主图、详情页与带货短视频（MiniMax H3 原生音画一体）",
+                        elem_classes=["app-brand"])
+            mode_status = gr.Markdown(rt.mode_summary(), elem_classes=["mode-status"])
+            # 新建按钮宽度 = 🔄 + 📂 加载 两个按钮之和，两行输入框左右边缘对齐
+            with gr.Row(elem_classes=["toolbar-row"]):
+                project_name = gr.Textbox(label="项目名称", placeholder="例如：莓茶中秋大促", max_lines=1, scale=2)
+                new_btn = gr.Button("➕ 新建项目", variant="primary", scale=0, min_width=148)
+            with gr.Row(elem_classes=["toolbar-row"]):
+                history = gr.Dropdown(choices=ws.project_choices(), label="历史项目", scale=3)
+                refresh_hist = gr.Button("🔄", scale=0, min_width=44)
+                load_btn = gr.Button("📂 加载", scale=0, min_width=96)
             project_info = gr.Markdown(
-                "👉 请先 **新建项目** 或 **加载历史项目**，所有内容会自动保存到 workspace/projects/")
-        with gr.Column(scale=4):
-            with gr.Row():
-                category = gr.Dropdown(cat_choices, value=default_cat, label="类目")
-                platform = gr.Dropdown(plat_choices, value=default_plat, label="目标平台")
-            platform_hint = gr.Markdown()
-            with gr.Accordion("📝 商品信息（随类目切换）", open=True):
-                info_fields = []
-                with gr.Row():
-                    for i in range(MAX_FORM_FIELDS):
-                        info_fields.append(gr.Textbox(visible=False, scale=1, min_width=160, key=f"info_{i}"))
-                compliance = gr.Markdown()
+                "👉 请先 **新建项目** 或 **加载历史项目**，所有内容会自动保存到 workspace/projects/",
+                elem_classes=["project-info"])
+        with (gr.Column(scale=7, min_width=360),
+              gr.Accordion("📦 类目、平台与商品信息", open=True, elem_classes=["compact-form"]),
+              gr.Row(elem_classes=["info-grid"])):
+            category = gr.Dropdown(cat_choices, value=default_cat, label="类目")
+            platform = gr.Dropdown(plat_choices, value=default_plat, label="目标平台")
+            info_fields = [gr.Textbox(visible=False, lines=1, max_lines=1, scale=1, min_width=160, key=f"info_{i}")
+                           for i in range(MAX_FORM_FIELDS)]
+            # 平台提示与合规检查放在网格最后一行，不占输入框的格子
+            platform_hint = gr.Markdown(elem_classes=["platform-hint"])
+            compliance = gr.Markdown(elem_classes=["compliance"])
+
+    # Skill 管理与 API 配置左右并排：两个折叠面板依次放进同一行
+    config_row = gr.Row(elem_classes=["config-row"])
 
     # ---------------- Skill 管理
     skill_dropdowns: dict[str, gr.Dropdown] = {}
-    with gr.Accordion("🔌 插卡式 Skill 管理与在线微调", open=False):
+    with config_row, gr.Accordion("🔌 插卡式 Skill 管理与在线微调", open=False):
         with gr.Row():
             for slot in SKILL_SLOTS:
                 choices = rt.skills.choices(slot, default_cat)
@@ -111,7 +115,7 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
 
     # ---------------- API 配置
     s = rt.settings
-    with gr.Accordion("⚙️ API 密钥与接口配置", open=False):
+    with config_row, gr.Accordion("⚙️ API 密钥与接口配置", open=False):
         gr.Markdown("Key 只保存在本机 `.env` 文件中。未填写的通道会自动使用 **演示模式**"
                     "（本地生成逼真预览，不消耗额度）。")
         demo_toggle = gr.Checkbox(value=s.demo_mode, label="🧪 本地演示测试模式（勾选后即使填了 Key 也不调用真实接口）")
