@@ -11,6 +11,7 @@ from app.engine.diagnostics import diagnose
 from app.engine.project_service import create_project
 from app.schemas.skill import SKILL_SLOTS
 from app.settings import IMAGE_QUALITIES, IMAGE_RESOLUTIONS, save_env
+from app.ui.pro_panel import build_pro_panel, pro_badge
 from app.ui.state import UIError, Workspace, friendly
 
 MAX_FORM_FIELDS = 8
@@ -65,11 +66,16 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
     default_plat = "taobao" if "taobao" in rt.platforms else plat_choices[0][1]
     project_id = gr.State(None)
 
-    # 顶栏两张卡片：左侧品牌 + 通道状态 + 项目操作，右侧类目 / 平台 / 商品信息（标签在左、每行 3 个字段）
+    # 品牌栏：左侧产品名，右侧「👑 老庹 AI 工坊」小徽章（点开展示卡带状态与商业版说明，默认收起）
+    with gr.Row(elem_classes=["top-bar"]):
+        gr.Markdown("# 🏭 老庹 AI 电商内容工厂\n主图、详情页与带货短视频（MiniMax H3 原生音画一体）",
+                    elem_classes=["app-brand"])
+        badge = pro_badge()
+    build_pro_panel(rt.skills, badge, SLOT_LABELS)
+
+    # 顶栏两张卡片：左侧通道状态 + 项目操作，右侧类目 / 平台 / 商品信息（标签在左、每行 3 个字段）
     with gr.Row(elem_classes=["app-header"]):
         with gr.Column(scale=5, min_width=360, elem_classes=["project-panel"]):
-            gr.Markdown("# 🏭 电商 AIGC 内容工厂\n主图、详情页与带货短视频（MiniMax H3 原生音画一体）",
-                        elem_classes=["app-brand"])
             mode_status = gr.Markdown(rt.mode_summary(), elem_classes=["mode-status"])
             # 新建按钮宽度 = 🔄 + 📂 加载 两个按钮之和，两行输入框左右边缘对齐
             with gr.Row(elem_classes=["toolbar-row"]):

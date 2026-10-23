@@ -1,26 +1,40 @@
-# laotuo-ai-studio · 电商 AIGC 内容工厂
+<div align="center">
 
-![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![Gradio](https://img.shields.io/badge/gradio-6.30.0-orange)
-![Lint](https://img.shields.io/badge/lint-ruff-261230)
-![License](https://img.shields.io/badge/license-GPL--3.0-blue)
+# 🏭 老庹 AI 电商内容工厂
 
-面向电商运营的一体化 AIGC 内容生产工具。选好类目和平台、填写商品信息后，在一个 Web 界面里完成三类素材：
+**Laotuo AI E-Commerce Studio**
+
+「插卡式 Skill 驱动」的全链路电商视觉工作台 —— 一键生成高转化主图、深度详情页、MiniMax H3 原生音画带货视频与剪映 / 达芬奇后期工程
+
+![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
+![Gradio](https://img.shields.io/badge/Gradio-6-F97316)
+![Claude](https://img.shields.io/badge/LLM-Claude%20Opus%205.5-D97757)
+![MiniMax H3](https://img.shields.io/badge/Video-MiniMax%20H3%20Audio--Video-0EA5E9)
+![Export](https://img.shields.io/badge/Export-Jianying%20%26%20DaVinci-7C3AED)
+![License](https://img.shields.io/badge/License-Apache--2.0%20%2B%20terms-16A34A)
+
+[快速启动](#-3-分钟快速启动) · [插卡式架构](#-任天堂插卡式-skill-架构) · [商业版与定制](#-商业版本与定制服务) · [商务合作](#-商务合作)
+
+</div>
+
+选好类目和平台、填好商品信息，在一个本地 Web 界面里产出三类素材：
 
 - 主图：按平台建议张数策划，逐槽位并发出图、勾选定稿、打包导出。
 - 详情页：按屏规划，生成长图序列预览。
-- 带货短视频：基于 MiniMax H3 原生音画一体生成，画面和声音一次产出，用「首帧锁定」防止商品变形。
+- 带货短视频：MiniMax H3 原生音画一体，画面和声音一次产出；先锁定首帧再生成，商品不变形。成片可一键合成 mp4，或导出剪映草稿、达芬奇工程继续精剪。
 
-全部 AI 能力由 `config/skills/` 下的 Markdown「卡带」驱动，代码里不写死提示词。没有 API Key 也能完整跑通流程（零 Key 演示模式）。
+全部 AI 能力由 Markdown「卡带」驱动，代码里不写死提示词。**没有 API Key 也能完整体验全流程**（零 Key 演示模式）。
 
 ## 目录
 
-- [功能特性](#功能特性)
-- [快速开始](#快速开始)
+- [🔥 为什么通用 AI 做不出能卖货的电商图？](#-为什么通用-ai-做不出能卖货的电商图)
+- [功能一览](#功能一览)
+- [🎮 任天堂插卡式 Skill 架构](#-任天堂插卡式-skill-架构)
+- [🚀 3 分钟快速启动](#-3-分钟快速启动)
+- [💼 商业版本与定制服务](#-商业版本与定制服务)
 - [配置说明](#配置说明)
 - [使用教程](#使用教程)
 - [系统架构](#系统架构)
-- [插卡式 Skill 系统](#插卡式-skill-系统)
 - [扩展开发](#扩展开发)
 - [开发与测试](#开发与测试)
 - [安全须知](#安全须知)
@@ -28,7 +42,18 @@
 - [许可证](#许可证)
 - [致谢](#致谢)
 
-## 功能特性
+## 🔥 为什么通用 AI 做不出能卖货的电商图？
+
+通用 AI 工具能画出好看的图，但电商图要同时做到四件事：商品是真的、细节是对的、文案合规、能让人下单。
+
+| 电商图的硬要求 | 普通 AI 工具 | 老庹 AI 内容工厂 |
+|---|---|---|
+| ① 商品不走样 | 凭空画包装，包装字乱码、logo 变形 | **0 / 1 / 多图路由**：按实际上传的商品参考图数量，自动选文生图、单图保真编辑或 2~3 图融合；视频**先锁定首帧再生成**，并把商品参考图一起交给 H3（Ref2VA）。中文排版有 8 条防变形底线（逐字锁死、平面正视、高反差等） |
+| ② 品类细节画对 | 不认识品类，莓茶白霜画成发霉、草本切片画成一堆木屑 | 类目配置写清品类特征（如莓茶白霜是黄酮自然析出、不是霉变），配合**光学微距构图**；草本原料按《中国药典》性状图谱逐味入画，同框易混的原料单独提醒 |
+| ③ 懂广告法 | 文案里常出现「最」「第一」、功效承诺 | 广告法与类目违禁词**实时检查**；卡带内置合规红线，所有示范句由自动化测试逐条校验 |
+| ④ 文案和视频会卖货 | 文案像说明书，视频开头留不住人，后期还要从头剪 | **三维视觉美学**（5 大美学流派 × 6 大构图 + 8 种中文排版方案）+《电商高转化文案写作指南》（FAB、五感具象、场景点名、诚实交底）；视频黄金 3 秒钩子模板、**Hypit 爆款视频结构克隆**；剪辑大师一键成片，**剪映 / 达芬奇工程一键导出** |
+
+## 功能一览
 
 - 三步式策划工作流：填写想法（选填）→ AI 生成草稿 → 人工编辑并确认。确认后才能传图和渲染。
 - 生图模式自动判定：按参考图数量在文生图（0 张）、单图保真编辑（1 张）、多图融合（2~3 张）之间路由。
@@ -37,12 +62,83 @@
 - 视频双路策划：原创剧本，或克隆参考爆款视频的结构（本地抽帧 → 拆解 → 替换为本品）。
 - MiniMax H3 提示词自动编写：内置官方 `h3-prompt-writing` 技能。分镜绑定了商品参考图时用 Ref2VA，否则用 I2VA，无需手动选择。
 - 视频版本管理：每个分镜单独显示最新视频，重新生成会保存为新版本，不覆盖旧视频。
+- 剪辑大师一键成片：自动定位台词、排顺序、加转场和字幕花字，导出 mp4、剪映草稿或达芬奇工程。
 - 三路并发：主图、详情页、视频三个选项卡各自排队，互不阻塞；切换选项卡不会中断任务。
 - 实时回显：运行日志实时滚动，图片生成一张显示一张。
 - 本地持久化：所有状态写入 `workspace/projects/`，重启后可恢复历史项目。
 - 合规检查：按广告法与类目违禁词实时提示。
 
-## 快速开始
+## 🎮 任天堂插卡式 Skill 架构
+
+工作台是「游戏机」，每项 AI 能力是一个「卡槽」，Markdown 卡带是「游戏卡」。换一张卡带就换一套策划、编剧或提示词写法，不用改一行代码。
+
+```mermaid
+flowchart LR
+    subgraph Cards["卡带"]
+        direction TB
+        Open[("🌱 开源卡带<br/>config/skills/")]
+        Pro[("👑 Pro 卡带包<br/>config/skills_pro/")]
+    end
+    subgraph Console["工作台的 4 大热插拔卡槽"]
+        direction TB
+        P["① ecommerce_planner<br/>电商策划"]
+        S["② video_scriptwriter<br/>视频分镜剧本"]
+        I["③ image_prompt<br/>生图提示词"]
+        V["④ video_prompt<br/>H3 音画提示词"]
+    end
+    Cards -. 插入 / 热重载 .-> Console
+    P --> I --> IMG["🖼️ 主图 / 详情页<br/>GPT Image · Nano Banana"]
+    S --> I
+    S --> V --> H3["🎬 带声短视频<br/>MiniMax H3"]
+    H3 --> ED["✂️ 剪辑大师<br/>成片 / 剪映 / 达芬奇"]
+```
+
+除 4 大主卡槽外，还有视频进阶编剧（`concept_writer`、`story_scriptwriter`）和剪辑大师（`video_editor`）。卡槽由文件夹名决定：
+
+| 卡槽 | 用途 |
+|---|---|
+| `ecommerce_planner` | 主图 / 详情页策划 |
+| `concept_writer` | 视频创意大纲 |
+| `story_scriptwriter` | 视频完整剧本（按视频类型分卡带） |
+| `video_scriptwriter` | 视频分镜剧本（原创 / 爆款克隆） |
+| `image_prompt` | 生图提示词（GPT Image / Nano Banana） |
+| `video_prompt` | MiniMax H3 音画提示词 |
+| `video_editor` | 剪辑大师：分镜视频 → 剪辑方案（顺序、出入点、转场、卖点花字） |
+
+卡带格式为 YAML front matter + Markdown 正文：
+
+```markdown
+---
+skill_id: my_planner_v2          # 必填，全局唯一，小写字母 / 数字 / 下划线
+name: 我的策划 Skill              # 必填，界面显示名
+description: 一句话说明            # 选填
+version: "1.0"                   # 选填
+variables: [product_name]        # 选填，声明正文使用的变量
+default: false                   # 选填，true 表示该卡槽默认选中
+categories: [zhangjiajie_berry_tea]  # 选填，类目专属卡带；不写则所有类目可用
+references: [references/guide.md]    # 选填，附属指南，加载时自动读入
+---
+正文……可以使用 {{ product_name }} 这样的变量占位。
+```
+
+- 新卡带放进对应文件夹即可被识别，按文件修改时间热重载，无需重启。
+- 渲染时缺少变量会报错，不会把未填充的占位符发给模型。
+- 单张卡带解析失败不影响其他卡带，错误显示在界面上。
+- 界面「🔌 插卡式 Skill 管理与在线微调」可预览正文，并临时覆盖当前会话的指令，覆盖内容不写回文件。
+- 附属指南只允许放在卡带同目录的 `references/` 下，单文件不超过 200KB。
+
+### 👑 Pro 卡带包
+
+`config/skills_pro/` 是商业 Pro 卡带包的安装位置，目录结构与 `config/skills/` 相同（`{卡槽}/*.md`，可带 `references/`）。
+
+- 拿到 Pro 卡带包 zip 后，解压到 `config/skills_pro/`，点「🔌 插卡式 Skill 管理」里的「🔄 重新扫描本地 .md 卡带」即可使用，不用重启。
+- Pro 卡带在下拉框中显示为「[👑 Pro] 卡带名」；类目专属的 Pro 卡带在切换到该类目时自动选中。
+- Pro 卡带可以直接引用开源卡槽 `references/` 下的同名指南，卡带包里不用重复携带。
+- `skill_id` 与开源卡带重复的 Pro 卡带不会覆盖开源卡带，会作为错误显示出来。
+- 界面顶部「👑 老庹 AI 工坊」入口可以查看当前加载了哪些开源 / Pro 卡带。
+- `config/skills_pro/` 已被 `.gitignore` 忽略，不会被提交到仓库。
+
+## 🚀 3 分钟快速启动
 
 ### 环境要求
 
@@ -68,7 +164,38 @@ cp .env.example .env          # 不填任何 Key 也能启动（演示模式）
 
 浏览器打开 http://127.0.0.1:7860 。
 
-首次体验建议保持 `.env` 中的 Key 为空，或在界面勾选「🧪 本地演示测试模式」，先走一遍完整流程，不消耗任何额度。
+### 还没有 API Key？直接用演示模式
+
+**不填任何 Key 也能立即体验完整全链路**：策划 → 编辑确认 → 传图 → 出图 → 视频剧本 → 首帧锁定 → 生成视频 → 剪辑成片 → 导出剪映 / 达芬奇。
+
+- 没填 Key 的通道会自动走本地演示：策划和剧本使用与真实输出结构一致的演示数据，图片由本机绘制真实中文排版的预览图（右上角带「DEMO」角标），视频由本机 ffmpeg 合成。
+- 已经填了 Key，也可以在「⚙️ API 密钥与接口配置」里勾选「🧪 本地演示测试模式」，强制全部走演示。
+- 演示模式不联网调用任何付费接口，不消耗额度。
+
+体验满意后，再按[配置说明](#配置说明)填入 Key，切换到真实生成。
+
+## 💼 商业版本与定制服务
+
+本项目采用 Open-Core 模式：工作台底座开源免费，深度行业卡带与交付服务收费。
+
+| | 🌱 开源社区版 | 👑 商业专业版 | 🏢 企业尊享定制版 |
+|---|---|---|---|
+| 英文名 | Community Free | Pro Skill Packs | Enterprise Turnkey |
+| 工作台底座 | ✅ 完整功能（主图 / 详情页 / 视频 / 剪辑导出） | ✅ | ✅ |
+| 卡带 | 通用策划、编剧、提示词卡带 | 深度行业高转化卡带包，如《张家界莓茶 / 传统茗茶专享包》《宠物营养补充剂 · 情感共鸣包》；实拍微距增强配置；持续更新的爆款脚本库 | 品牌专属 SKU 卡带一对一深度定制 |
+| 部署 | 本地自部署 | 本地自部署，解压卡带包即用 | 免配置云端独享工作台（含 Modal H3 高速视频后端） |
+| 服务 | GitHub Issue 交流 | 卡带更新 | 成品视觉包代制作、团队培训 |
+| 适合 | 开发者、愿意自己动手的店主 | 想直接用上行业打磨过的卡带的卖家 | 品牌方、代运营公司 |
+
+### 📬 商务合作
+
+> **定制专属行业 Skill 卡带 / 获取云端独享版 / 视觉包代制作**
+>
+> - 微信：`（待填写）`
+> - 邮箱：`（待填写）`
+> - 公众号：`（待填写）`
+
+<!-- 填写真实联系方式时，同步修改 app/ui/pro_panel.py 中的 CONTACTS（界面顶部「👑 老庹 AI 工坊」入口） -->
 
 ## 配置说明
 
@@ -134,7 +261,7 @@ cp .env.example .env          # 不填任何 Key 也能启动（演示模式）
 ### 1. 准备项目（顶部控制栏）
 
 1. 点击「➕ 新建项目」，或在下拉框中选择历史项目后点「📂 加载」。
-2. 选择类目和平台。内置类目：张家界莓茶、宠物营养补充剂；内置平台：淘宝 / 天猫、拼多多、微信小店 / 视频号小店。
+2. 选择类目和平台。内置类目：张家界莓茶、宠物营养补充剂；内置平台：淘宝 / 天猫、拼多多、微信小店 / 视频号小店。开源版两个类目都使用通用策划卡带；安装了对应的 Pro 卡带包后，切换类目会自动选中该类目的专属卡带。
 3. 展开「📝 商品信息」填写表单。表单字段随类目变化，下方实时显示合规检查结果。
 4. 配好 Key 后，点「🩺 连通性诊断」验证。诊断不提交画图任务，不消耗额度。
 
@@ -230,7 +357,7 @@ workspace/projects/{project_id}/
 ```mermaid
 flowchart LR
     UI["Gradio 界面<br/>app/ui"] --> Engine["引擎层<br/>app/engine"]
-    Engine --> Skills[("Skill 卡带<br/>config/skills")]
+    Engine --> Skills[("Skill 卡带<br/>config/skills + skills_pro")]
     Engine --> Config[("类目 / 平台配置<br/>config/*.json")]
     Engine --> Store[("本地持久化<br/>workspace/projects")]
     Engine --> Providers["Provider 层<br/>app/providers"]
@@ -274,49 +401,13 @@ flowchart LR
 - `demo.queue()` 开启队列，三个选项卡使用不同的 `concurrency_id`，互不阻塞。
 - 事件处理中不使用阻塞 IO，网络请求统一使用 `httpx.AsyncClient`，外部进程用 `asyncio` 子进程。
 
-## 插卡式 Skill 系统
-
-每个 AI 能力对应 `config/skills/` 下的一个卡槽，卡槽由文件夹名决定：
-
-| 卡槽 | 用途 |
-|---|---|
-| `ecommerce_planner` | 主图 / 详情页策划 |
-| `concept_writer` | 视频创意大纲 |
-| `story_scriptwriter` | 视频完整剧本（按视频类型分卡带） |
-| `video_scriptwriter` | 视频分镜剧本（原创 / 爆款克隆） |
-| `image_prompt` | 生图提示词（GPT Image / Nano Banana） |
-| `video_prompt` | MiniMax H3 音画提示词 |
-| `video_editor` | 剪辑大师：分镜视频 → 剪辑方案（顺序、出入点、转场、卖点花字） |
-
-卡带格式为 YAML front matter + Markdown 正文：
-
-```markdown
----
-skill_id: my_planner_v2          # 必填，全局唯一，小写字母 / 数字 / 下划线
-name: 我的策划 Skill              # 必填，界面显示名
-description: 一句话说明            # 选填
-version: "1.0"                   # 选填
-variables: [product_name]        # 选填，声明正文使用的变量
-default: false                   # 选填，true 表示该卡槽默认选中
-categories: [zhangjiajie_berry_tea]  # 选填，类目专属卡带；不写则所有类目可用
-references: [references/guide.md]    # 选填，附属指南，加载时自动读入
----
-正文……可以使用 {{ product_name }} 这样的变量占位。
-```
-
-- 新卡带放进对应文件夹即可被识别，按文件修改时间热重载，无需重启。
-- 渲染时缺少变量会报错，不会把未填充的占位符发给模型。
-- 单张卡带解析失败不影响其他卡带，错误显示在界面上。
-- 界面「🔌 插卡式 Skill 管理与在线微调」可预览正文，并临时覆盖当前会话的指令，覆盖内容不写回文件。
-- 附属指南只允许放在卡带同目录的 `references/` 下，单文件不超过 200KB。
-
 ## 扩展开发
 
 ### 新增类目或平台
 
 在 `config/categories/` 或 `config/platforms/` 下新增 JSON 文件，文件名必须与其中的 `category_id` / `platform_id` 一致。字段定义见 [app/schemas/config.py](app/schemas/config.py)，可参考现有的 [zhangjiajie_berry_tea.json](config/categories/zhangjiajie_berry_tea.json)。
 
-类目专属卡带建议命名为 `laotuo_{类目}_{卡槽}_skill.md`，并在 front matter 中声明 `categories`。
+类目专属卡带在 front matter 中声明 `categories`，建议命名为 `{品牌}_{类目}_{卡槽}_skill.md`。自己写的卡带放进 `config/skills/{卡槽}/`；不想公开的卡带放进 `config/skills_pro/{卡槽}/`（不入 git）。
 
 ### 新增画图模型
 
@@ -339,11 +430,13 @@ references: [references/guide.md]    # 选填，附属指南，加载时自动�
 
 - 测试使用 `httpx.MockTransport` 与测试替身模拟外部接口，不需要真实 Key，也不会产生费用。
 - `tests/test_ui_e2e.py` 会启动真实 Gradio 服务，用 `gradio_client` 驱动全流程。
+- 依赖 Pro 卡带内容的测试放在 `tests/pro/`（不入 git），没有安装 Pro 卡带包时自动跳过。
 - 项目全局规范见 [CLAUDE.md](CLAUDE.md)。
 
 ## 安全须知
 
-- `.env` 已被 `.gitignore` 忽略，请勿提交。日志与诊断结果中的 Key 均已打码。
+- `.env` 与 `.env.*`（`.env.example` 除外）已被 `.gitignore` 忽略，请勿提交。日志与诊断结果中的 Key 均已打码。
+- `modal/`（自有 GPU 部署脚本）、`config/skills_pro/`（Pro 卡带包）、`workspace/`（项目素材）同样不入库。
 - 界面默认只监听 `127.0.0.1`，且没有登录鉴权。如果把 `GRADIO_SERVER_NAME` 改为 `0.0.0.0`，同一网络内任何人都能访问界面并使用你的 Key。
 - 开启了系统代理（如 `127.0.0.1:7890`）时，启动程序会自动把本机地址加入 `NO_PROXY`，避免 Gradio 自检返回 502。
 - 合规检查基于关键词匹配，只作提示，不构成法律意见。AI 生成的文案与画面在发布前请人工审核。
@@ -358,16 +451,23 @@ references: [references/guide.md]    # 选填，附属指南，加载时自动�
 4. 面向用户的界面文案使用中文。
 5. 提交信息遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)，例如 `feat(video): ...`。
 
-提交贡献即表示你同意以 GPL-3.0 授权你的代码。
+提交贡献即表示你同意 [LICENSE](LICENSE) 中的贡献者条款：你的代码按本项目许可证发布，并可被用于商业 Pro 版与云端服务。
 
 ## 许可证
 
-本项目采用 [GNU 通用公共许可证 v3.0（GPL-3.0）](LICENSE) 发布。你可以自由使用、修改和再发布本项目；再发布修改后的版本时，必须同样以 GPL-3.0 开源并附带源代码。
+本项目采用 **Apache License 2.0 + 附加条件**发布，完整条款见 [LICENSE](LICENSE)。附加条件意味着它不是 OSI 认定的标准开源许可证，使用前请看清下面三条：
+
+- ✅ 免费：个人学习、研究，以及在自己（或自己公司）经营的店铺里生产商品素材。
+- ✋ 需要书面授权：用本项目对外提供付费托管 / SaaS / 多租户服务；去掉「老庹」品牌标识后销售或提供服务；转售或公开 Pro 卡带包。
+- 🤝 贡献者条款：提交的代码可被用于商业版本。
+
+如需商业授权，请见[商务合作](#-商务合作)。
 
 仓库中收录的第三方内容，版权归原作者所有，不适用本项目的许可证：
 
 - `config/skills/video_prompt/official_h3_prompt_writing.md` 中的「Official Skill」原文，以及同目录 `references/base-en.txt`、`references/ref-en.txt`（来自 MiniMax-AI/MiniMax-H3）
 - `.claude/skills/h3-prompt-writing/` 与 `.claude/skills/hypit/` 下的技能文件
+- `.claude/skills/frontend-design/`（Apache-2.0，许可证见同目录 `LICENSE.txt`）
 
 ## 致谢
 

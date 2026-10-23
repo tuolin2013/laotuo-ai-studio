@@ -3,11 +3,26 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
-.env
 .gradio/
+*.egg-info/
+
+# 密钥：.env 与 .env.local、.env.production 等一律不入库，只保留模板 .env.example
+.env
+.env.*
+!.env.example
+
 # 项目运行产物不入库，只保留目录占位
 workspace/*
 !workspace/.gitkeep
-*.egg-info/
+
+# 私有资产（不进开源仓库）
+# 自有 Modal GPU 部署脚本（MiniMax H3 服务端）
+modal/
+# 商业 Pro 卡带包：付费客户解压到这里，界面自动加载并标记「[👑 Pro]」
+config/skills_pro/
+# 依赖 Pro 卡带的测试（随 Pro 卡带包一起分发）
+tests/pro/
+# 宣传片渲染输出
+promo-film/out/
 # 本地参考资料（检测报告、包装稿等 PDF），体积大且不属于代码
 .claude/docs/

@@ -5,7 +5,7 @@ import time
 import pytest
 
 from app.engine.skill_loader import SKILLS_DIR, SkillRegistry
-from app.schemas.skill import SKILL_SLOTS, SkillRenderError
+from app.schemas.skill import PRO_BADGE, SKILL_SLOTS, SkillRenderError
 
 EXPECTED = {
     "concept_writer": {"default_concept_writer"},
@@ -31,7 +31,8 @@ def test_builtin_skills_scanned_in_all_four_slots():
     reg = SkillRegistry()
     assert reg.errors == {}
     for slot in SKILL_SLOTS:
-        assert {c.skill_id for c in reg.list(slot)} == EXPECTED[slot]
+        # 本机装了 Pro 卡带包时一并加载，这里只核对开源卡带
+        assert {c.skill_id for c in reg.list(slot) if not c.is_pro} == EXPECTED[slot]
 
 
 def test_builtin_skills_declare_all_placeholders():
@@ -129,3 +130,73 @@ def test_category_specific_planner_is_filtered_and_preferred(skills_copy):
     assert tea == ["tea_only_planner", "default_planner"]
     assert [c.skill_id for c in reg.list("ecommerce_planner", "pet_supplement")] == ["default_planner"]
     assert reg.get("ecommerce_planner", "tea_only_planner").categories == ["zhangjiajie_berry_tea"]
+
+
+# ---------------------------------------------------------------- 商业 Pro 卡带包（config/skills_pro/）
+
+PRO_CARD = """---
+skill_id: pro_tea_planner
+name: 莓茶行业高转化策划
+categories: [zhangjiajie_berry_tea]
+references: [references/ecommerce_copywriting_guide.md]
+target_models: [claude-opus-5-5]
+variables: [user_creative_idea]
+---
+Pro 指令：{{ user_creative_idea }}
+"""
+
+
+def _pro_slot(skills_dir):
+    """与开源卡带目录同级的 skills_pro/{slot}/，和 config/skills_pro/ 的位置关系一致。"""
+    return skills_dir.with_name("skills_pro") / "ecommerce_planner"
+
+
+def test_pro_pack_is_loaded_with_badge(skills_copy):
+    pro = _pro_slot(skills_copy)
+    pro.mkdir(parents=True)
+    (pro / "pro_tea.md").write_text(PRO_CARD, encoding="utf-8")
+    reg = SkillRegistry(skills_copy)
+    assert reg.errors == {}
+    card = reg.get("ecommerce_planner", "pro_tea_planner")
+    assert card.is_pro and card.display_name == f"{PRO_BADGE} 莓茶行业高转化策划"
+    assert not reg.get("ecommerce_planner", "default_planner").is_pro
+    # 按类目专属规则排第一；下拉框显示名带 Pro 标记
+    assert reg.choices("ecommerce_planner", "zhangjiajie_berry_tea")[0] == (
+        f"{PRO_BADGE} 莓茶行业高转化策划（pro_tea_planner）", "pro_tea_planner")
+    assert card.render(user_creative_idea="中秋") == "Pro 指令：中秋\n"
+    # Pro 卡带包不必携带开源仓库已有的附属指南：回落到开源卡槽的 references/
+    guide = "references/ecommerce_copywriting_guide.md"
+    assert "FAB" in card.reference_texts[guide]
+    assert card.reference_paths == [(skills_copy / "ecommerce_planner" / guide).resolve()]
+
+
+def test_without_pro_pack_only_open_source_cards_load(skills_copy, tmp_path):
+    reg = SkillRegistry(skills_copy, pro_dir=tmp_path / "not_installed")
+    assert reg.errors == {}
+    assert not any(c.is_pro for slot in SKILL_SLOTS for c in reg.list(slot))
+    assert {c.skill_id for c in reg.list("ecommerce_planner")} == EXPECTED["ecommerce_planner"]
+
+
+def test_pro_card_cannot_replace_open_source_card(skills_copy):
+    pro = _pro_slot(skills_copy)
+    pro.mkdir(parents=True)
+    fake = pro / "fake_default.md"
+    fake.write_text(PRO_CARD.replace("pro_tea_planner", "default_planner"), encoding="utf-8")
+    reg = SkillRegistry(skills_copy)
+    assert "重复" in reg.errors[fake]
+    assert not reg.get("ecommerce_planner", "default_planner").is_pro
+
+
+def test_pro_pack_unzipped_while_running_is_hot_loaded(skills_copy):
+    """服务运行中解压 Pro 卡带包：重新扫描即可加载；删除后消失。"""
+    reg = SkillRegistry(skills_copy)
+    pro = _pro_slot(skills_copy)
+    pro.mkdir(parents=True)
+    path = pro / "pro_tea.md"
+    path.write_text(PRO_CARD, encoding="utf-8")
+    assert reg.refresh() is True
+    assert reg.get("ecommerce_planner", "pro_tea_planner").is_pro
+    path.unlink()
+    reg.refresh()
+    with pytest.raises(KeyError):
+        reg.get("ecommerce_planner", "pro_tea_planner")

@@ -1,4 +1,4 @@
-# CLAUDE.md — 电商 AIGC 内容工厂（laotuo-ai-studio）
+# CLAUDE.md — 老庹 AI 电商内容工厂（laotuo-ai-studio）
 
 本文件是项目的全局规范。所有代码改动必须遵守这里的约定；规范变更时先改本文件。
 
@@ -11,6 +11,10 @@
 - 带货短视频（MiniMax H3 原生音画一体，含首帧锁定防变形）
 
 产品负责人不写代码，所有命令由工程师（或 AI 工程师）执行。
+
+品牌：老庹 AI 电商内容工厂（Laotuo AI E-Commerce Studio），出品方「老庹 AI 工作室（Laotuo AI Studio）」。「庹」读 tuǒ，不是「拓」，界面与文档一律写「老庹」；skill_id、文件名与仓库名沿用拼音 `laotuo`。
+
+商业模式 Open-Core：工作台底座开源，行业高转化卡带（Pro 卡带包）与部署 / 定制服务收费。许可证为 Apache-2.0 + 附加条件（见 `LICENSE` 文末补充条款）。README 与界面中的卖点只写代码里真实存在的能力。以下内容不进开源仓库：`.env` / `.env.*`（`.env.example` 除外）、`modal/`（自有 GPU 部署脚本）、`config/skills_pro/`、`tests/pro/`、`workspace/`、`promo-film/out/`。
 
 ## 2. 技术栈
 
@@ -71,12 +75,13 @@ workspace/projects/{project_id}/
 ├── config/
 │   ├── categories/      # 类目配置 JSON
 │   ├── platforms/       # 平台配置 JSON
-│   └── skills/          # 插卡式 Skill（.md 卡带）
-│       ├── ecommerce_planner/
-│       ├── video_scriptwriter/
-│       ├── image_prompt/
-│       ├── video_prompt/
-│       └── video_editor/
+│   ├── skills/          # 插卡式 Skill（.md 卡带，开源）
+│   │   ├── ecommerce_planner/
+│   │   ├── video_scriptwriter/
+│   │   ├── image_prompt/
+│   │   ├── video_prompt/
+│   │   └── video_editor/
+│   └── skills_pro/      # 商业 Pro 卡带包（可选，不入 git，结构同 skills/）
 ├── app/
 │   ├── main.py          # Gradio 启动入口
 │   ├── settings.py      # 读取 .env
@@ -112,7 +117,8 @@ variables: [product_name]        # 选填，声明正文使用的变量
 - 解析失败的卡带不影响其他卡带，错误记录在 `registry.errors` 中供界面展示。
 - 界面支持预览卡带正文，并可临时覆盖（override）当前会话使用的指令，覆盖内容不写回 `.md` 文件。
 - 附属指南：front matter 的 `references: [references/x.txt]` 或正文中出现的 `references/*.txt` 会在加载时自动读入（只允许卡带同目录 `references/` 下，单文件 ≤200KB）；附属文件修改同样触发热重载。`default: true` 的卡带在下拉框中默认选中。
-- 类目专属卡带：front matter 写 `categories: [category_id]`，只在对应类目下出现，并在切换到该类目时自动选中（优先于 `default: true`）；不写 `categories` 的为通用卡带，所有类目可见。每个类目一张专属卡带，命名 `laotuo_{类目}_{卡槽}_skill.md`，如 `ecommerce_planner/laotuo_zhangjiajie_meicha_planner_skill.md`。
+- 类目专属卡带：front matter 写 `categories: [category_id]`，只在对应类目下出现，并在切换到该类目时自动选中（优先于 `default: true`）；不写 `categories` 的为通用卡带，所有类目可见。每个类目一张专属卡带，命名 `laotuo_{类目}_{卡槽}_skill.md`，如 `ecommerce_planner/laotuo_zhangjiajie_meicha_planner_skill.md`（行业专属卡带属于 Pro 卡带包，见下条）。
+- 商业 Pro 卡带包（Open-Core）：`config/skills_pro/{slot}/*.md` 与开源卡带目录结构相同，目录存在才加载（`SkillRegistry(pro_dir=…)`，默认为 `skills_dir` 同级的 `skills_pro/`），先开源后 Pro 扫描；`SkillCard.is_pro` 为真，`display_name` 前缀 `[👑 Pro]`（`PRO_BADGE`），下拉框选项用 `display_name`。`skill_id` 与开源卡带重复的 Pro 卡带报错、不覆盖开源卡带。Pro 卡带在自己目录找不到 `references/` 附属指南时，回落到开源同名卡槽的 `references/`（实际文件记在 `reference_files`）。`config/skills_pro/` 与依赖 Pro 卡带内容的测试 `tests/pro/` 均不入 git；张家界莓茶、辰荣贝康两张行业策划卡带即放在这里，开源仓库只保留通用卡带，公开测试不得依赖 Pro 卡带（需要类目专属卡带时在临时目录里自建）。
 - 官方 H3 技能：`config/skills/video_prompt/official_h3_prompt_writing.md` 收录 MiniMax-AI/MiniMax-H3 `skills/h3-prompt-writing/SKILL.md` 原文（附 `references/base-en.txt`、`references/ref-en.txt` 原版），同一份原版也放在 `.claude/skills/h3-prompt-writing/` 供 Claude Code 使用。正文使用 `{{ h3_mode }}` 的卡带即支持双模式，**模式由系统自动选择，界面不让用户选**（`prompt_compiler.auto_h3_mode`）：分镜绑定了文件存在的商品参考图 → `ref2va`，否则 → `i2va`：
   - `i2va`：按 base-en.txt 输出 I2VA 指令行 + `integrated_multimodal_description` / `overall_soundscape` / `non_diegetic_music`；视频后端只传锁定首帧。
   - `ref2va`：按 ref-en.txt 输出六段式 `subject_definitions` / `summary` / `retention_analysis` / `detailed_description` / `overall_soundscape` / `non_diegetic_music`；`<Picture 1>` = 锁定首帧，`<Picture 2>`… = 该分镜绑定的商品参考图（与后端传图顺序一致）。
@@ -250,6 +256,7 @@ RightAPI 的 Key 绑定渠道，一把 Key 只能调用所绑渠道的模型，�
 - `image_tab.py`：主图与详情页共用的三步式工作流。`video_tab.py`：视频剧本 → 首帧锁定 → Modal H3 生成视频（逐个 / 选分镜，每个分镜独立播放器），H3 提示词折叠在可选的查看 / 微调区。
 - `edit_panel.py`：视频 Step 4（剪辑方案表格、成片选项、一键成片、导出剪映 / 达芬奇）。布局在 Step 3 之后，事件在运行日志创建后绑定；刷新输出独立于 `video_tab` 的 `refresh_outputs`，不改变其位置顺序（端到端测试按位置读取）。成片与导出都使用剪辑方案快照，处理过程中继续改表格不影响本次结果。
 - `theme.py`：界面主题与 CSS 唯一来源（`THEME` / `CSS`，由 `app/main.py` 传给 `launch()`）。界面代码只用 `elem_classes`（`step-card`、`terminal-log`、`info-grid`、`plan-table` 等）引用样式，不写内联样式；步骤标题用 `step_header()`。
+- `pro_panel.py`：品牌栏右侧「👑 老庹 AI 工坊 · 定制行业专属卡带 / 商业版」小徽章（`pro-badge`），点开才显示面板（`pro-panel`，默认隐藏）：按卡槽统计开源 / Pro 卡带、列出已加载的 Pro 卡带与加载错误，以及三档版本与商务联系方式（`CONTACTS`，与 README「📬 商务合作」同步）。
 - 浏览器端 `gr.State` 只存 `project_id`；`Project` 对象由服务端 `Workspace` 缓存并按项目加锁。
 - 关键事件设置了 `api_name`，`tests/test_ui_e2e.py` 用 `gradio_client` 启动真实服务端到端驱动全流程。
 - 系统代理（如 127.0.0.1:7890）会导致 Gradio 本机自检 502：`app/main.py` 启动时自动把本机地址加入 `NO_PROXY`。

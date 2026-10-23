@@ -223,6 +223,49 @@ CSS = """
   color: #0F172A;
 }
 .gradio-container .app-brand p { margin: 2px 0 0; font-size: 12.5px; color: #64748B; }
+
+/* ---------- 品牌栏：产品名 + 右侧「👑 老庹 AI 工坊」小徽章（琥珀色，与青松绿主操作区分开） ---------- */
+.top-bar {
+  align-items: center !important;
+  justify-content: space-between;
+  flex-wrap: wrap !important;
+  gap: 8px 12px !important;
+  padding: 2px 2px 0;
+}
+/* 品牌块按 0 起算宽度：否则 Markdown 的 width: 100% 会占满一行，把徽章挤到下一行 */
+.top-bar > .app-brand { flex: 1 1 0% !important; min-width: 0 !important; width: auto !important; }
+@media (max-width: 640px) { .top-bar > .app-brand { flex-basis: 100% !important; } }
+.gradio-container button.pro-badge {
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid #FCD34D;
+  border-radius: 999px;
+  background: #FFFBEB;
+  color: #92400E;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.gradio-container button.pro-badge:hover { background: #FEF3C7; border-color: #F59E0B; }
+.gradio-container .column.pro-panel {
+  background: #FFFFFF;
+  border: 1px solid #FDE68A;
+  border-radius: 10px;
+  padding: 12px 16px !important;
+  gap: 8px !important;
+}
+.pro-panel-head { align-items: center !important; justify-content: space-between; flex-wrap: nowrap !important; }
+.pro-panel-head > .pro-title { flex: 1 1 0% !important; min-width: 0 !important; width: auto !important; }
+.gradio-container button.pro-close { flex: 0 0 auto; height: 28px; padding: 0 12px; white-space: nowrap; }
+.gradio-container .pro-title h3 { margin: 0; font-size: 15px; font-weight: 600; color: #0F172A; }
+.pro-grid { gap: 12px 24px !important; align-items: flex-start !important; }
+.pro-grid > .block { flex: 1 1 0; min-width: min(380px, 100%) !important; }
+.gradio-container .pro-panel h4 { margin: 0 0 6px; font-size: 13.5px; font-weight: 600; color: #0F172A; }
+.gradio-container .pro-panel p,
+.gradio-container .pro-panel li,
+.gradio-container .pro-panel td,
+.gradio-container .pro-panel th { font-size: 12.5px; line-height: 1.6; color: #334155; }
 .gradio-container .mode-status p,
 .gradio-container .project-info p {
   margin: 0;

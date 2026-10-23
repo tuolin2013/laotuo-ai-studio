@@ -24,6 +24,8 @@ SKILL_SLOTS: tuple[SkillSlot, ...] = (
 
 _VAR_PATTERN = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 _SKILL_ID_PATTERN = re.compile(r"^[a-z0-9_]+$")
+# 本地 Pro 卡带包（config/skills_pro/）中的卡带在界面上的名称前缀
+PRO_BADGE = "[👑 Pro]"
 
 
 class SkillRenderError(ValueError):
@@ -49,6 +51,10 @@ class SkillCard(BaseModel):
     source_path: Path | None = None
     # 加载时读入的附属指南全文：{相对路径: 内容}
     reference_texts: dict[str, str] = Field(default_factory=dict)
+    # 附属指南的实际文件（Pro 卡带可复用开源卡槽 references/ 下的同名指南，所以不一定在卡带同目录）
+    reference_files: list[Path] = Field(default_factory=list)
+    # 是否来自本地 Pro 卡带包（config/skills_pro/），由加载器按所在目录设置
+    is_pro: bool = False
     # 是否为界面上的临时覆盖版本（不写回 .md 文件）
     is_override: bool = False
 
@@ -61,6 +67,11 @@ class SkillCard(BaseModel):
 
     def applies_to(self, category_id: str | None) -> bool:
         return not self.categories or category_id is None or category_id in self.categories
+
+    @property
+    def display_name(self) -> str:
+        """界面显示名：Pro 卡带在名称前标记「[👑 Pro]」。"""
+        return f"{PRO_BADGE} {self.name}" if self.is_pro else self.name
 
     @property
     def placeholders(self) -> set[str]:
@@ -76,8 +87,7 @@ class SkillCard(BaseModel):
 
     @property
     def reference_paths(self) -> list[Path]:
-        base = self.source_path.parent if self.source_path else Path(".")
-        return [base / r for r in self.reference_texts]
+        return list(self.reference_files)
 
     def reference_context(self, names: list[str] | None = None) -> str:
         """把附属指南拼成追加在指令后面的上下文。names 为文件名（如 base-en.txt），None 表示全部。"""
