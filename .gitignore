@@ -22,7 +22,7 @@ modal/
 config/skills_pro/
 # 依赖 Pro 卡带的测试（随 Pro 卡带包一起分发）
 tests/pro/
-# 宣传片渲染输出
-promo-film/out/
+# 宣传片生成脚本与渲染输出（脚本只备份到私人仓库，见 scripts/sync_private_backup.py）
+promo-film/
 # 本地参考资料（检测报告、包装稿等 PDF），体积大且不属于代码
 .claude/docs/

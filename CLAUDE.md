@@ -15,7 +15,9 @@
 
 品牌：老庹 AI 电商内容工厂（Laotuo AI E-Commerce Studio），出品方「老庹 AI 工作室（Laotuo AI Studio）」。「庹」读 tuǒ，不是「拓」，界面与文档一律写「老庹」；skill_id、文件名与仓库名沿用拼音 `laotuo`。
 
-商业模式 Open-Core：工作台底座开源，行业高转化卡带（Pro 卡带包）与部署 / 定制服务收费。许可证为 Apache-2.0 + 附加条件（见 `LICENSE` 文末补充条款）。README 与界面中的卖点只写代码里真实存在的能力。以下内容不进开源仓库：`.env` / `.env.*`（`.env.example` 除外）、`modal/`（自有 GPU 部署脚本）、`config/skills_pro/`、`tests/pro/`、`workspace/`、`promo-film/out/`。
+商业模式 Open-Core：工作台底座开源，行业高转化卡带（Pro 卡带包）与部署 / 定制服务收费。许可证为 Apache-2.0 + 附加条件（见 `LICENSE` 文末补充条款）。README 与界面中的卖点只写代码里真实存在的能力。以下内容不进开源仓库：`.env` / `.env.*`（`.env.example` 除外）、`modal/`（自有 GPU 部署脚本）、`config/skills_pro/`、`tests/pro/`、`workspace/`、`promo-film/`。
+
+私人全量备份（`scripts/sync_private_backup.py`）：公开仓 `origin` 的 `main` 只放开源底座；私人仓 `private` 的 `main` = 本地 `master` 最新提交 + 磁盘上的 `modal/`、`config/skills_pro/`、`tests/pro/`、`promo-film/`（不含 `promo-film/out/`）。备份提交记在隐藏引用 `refs/backup/private-full`，用临时索引生成，不切换分支、不碰工作区与暂存区。脚本安装 `.git/hooks/pre-push`：私有目录推往 `private` 以外的远端一律拦截；任何远端都拦截 `.env` / `.env.*`、缓存产物、`workspace/` 运行产物、`.env` 与 `~/.modal.toml` 中密钥的原文和常见 Key 格式。不要把私有目录提交到 `master`。
 
 ## 2. 技术栈
 
@@ -33,6 +35,7 @@ python -m venv .venv
 .venv/Scripts/python -m pytest
 .venv/Scripts/python -m ruff check .
 .venv/Scripts/python -m app.main        # 单命令启动 Web 界面
+.venv/Scripts/python scripts/sync_private_backup.py   # 提交后一键推送公开仓 + 私人全量备份（--private-only / --dry-run）
 ```
 
 ## 3. 系统架构
