@@ -57,6 +57,10 @@ def compile_planner(
         aspect_ratio=aspect_ratio,
         user_creative_idea=_idea(user_creative_idea),
     )
+    # 卡带声明的附属指南（如电商文案写作指南）附在指令之后
+    guide = skill.reference_context()
+    if guide:
+        text = f"{text}\n\n# 附属指南（撰写 title / subtitle / copy_text 时遵循）\n\n{guide}"
     name = AESTHETIC_STYLE_NAMES.get(aesthetic_style)
     if name is None:
         return text

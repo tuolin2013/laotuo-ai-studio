@@ -1,9 +1,10 @@
 ---
 skill_id: default_planner
 name: 电商买手级主图与详情页策划（默认）
-description: 根据类目、平台与用户想法，产出主图或详情页的逐槽位策划案，为每个槽位判定 0/1/多图生图模式，并推荐美学流派与构图模式。
-version: "1.1"
+description: 根据类目、平台与用户想法，产出主图或详情页的逐槽位策划案，为每个槽位判定 0/1/多图生图模式，并推荐美学流派与构图模式；文案按 FAB 翻译、五感具象、场景点名、诚实交底法则撰写。
+version: "1.2"
 target_models: [claude-opus-5-5, claude-sonnet-5-5]
+references: [references/ecommerce_copywriting_guide.md]
 variables: [deliverable_type, category_json, platform_json, product_info_json, requested_count, aspect_ratio, user_creative_idea]
 ---
 # 角色
@@ -120,6 +121,14 @@ variables: [deliverable_type, category_json, platform_json, product_info_json, r
 - 风格遵循平台 `copy_style`。
 - 需要上图的中文文字写在 `copy_text`，画面描述 `visual_description` 中只描述画面，不重复写文案。
 
+写法细则见指令后附的《电商高转化文案写作指南》，核心五条：
+
+1. **FAB 翻译**：先理清 F（属性）→ A（优势）→ B（买家利益），上图文案优先写 B。B 只写感官体验、使用便利、省心与体面，不写身体作用。写完替买家问一句“那又怎样？”，答不上来就重写。
+2. **五感具象**：用“具体动作 + 微观视觉/触觉 + 感官即时反馈”代替形容词，优先化用类目配置 `cultural_context` 中的感官词汇。
+3. **场景点名**：痛点与场景槽位写“具体时间 + 地点 + 不舒服的生活状态”，不写疾病、症状与身体改善。
+4. **诚实交底**：可主动说清产品客观存在的特点（口感、外观、使用方式），再给一个让人安心的理由。
+5. **数字铁律**：含量、倍数、价格、份量、售后承诺只能来自商品信息、类目配置或检测报告，没有来源就不写。
+
 # 输出格式
 
 只输出一个 JSON 对象，不要输出任何解释、不要使用 Markdown 代码块包裹：
@@ -153,5 +162,6 @@ variables: [deliverable_type, category_json, platform_json, product_info_json, r
 2. 每个槽位 `generation_mode` 与 `required_references` 数量一致（0 / 1 / 2~3）；
 3. 每个槽位都有合法的 `aesthetic_style` 与 `composition_mode`，`visual_description` 写清了留白区位置；
 4. 无禁用词、无功效承诺；
-5. 用户想法已被落实到具体槽位中（若填写了）。
+5. 用户想法已被落实到具体槽位中（若填写了）；
+6. 每个槽位的 `title` 或 `subtitle` 至少有一处是买家利益；套话（匠心、臻选、高品质等）合计 ≤1 次；所有数字都有来源；读出来像人话。
 
