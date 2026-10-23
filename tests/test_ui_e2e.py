@@ -1,6 +1,7 @@
 """界面端到端测试：启动真实 Gradio 服务，用 gradio_client 像浏览器一样驱动三大选项卡全流程（演示模式）。"""
 
 import os
+import shutil
 import socket
 import subprocess
 from pathlib import Path
@@ -12,6 +13,7 @@ from PIL import Image
 from app.engine.compiler import h3_structure_issues
 from app.engine.prompt_compiler import auto_h3_mode
 from app.engine.runtime import EngineRuntime
+from app.engine.skill_loader import SKILLS_DIR, SkillRegistry
 from app.settings import Settings
 from app.ui.app import build_app
 
@@ -22,6 +24,8 @@ TEA = "zhangjiajie_berry_tea"
 V_STATUS, V_TABLE, V_PICK, V_PROGRESS = 1, 2, 15, 16
 V_PLAYERS = slice(17, 29)
 V_VERSIONS, V_H3_EDIT = 29, 32
+# 类目专属策划卡带：开源仓库里没有（行业卡带在 Pro 卡带包中），测试时临时放一张
+PET_ONLY_PLANNER = "---\nskill_id: pet_only_planner\nname: 宠物类目专属策划\ncategories: [pet_supplement]\n---\n宠物\n"
 
 
 def video_generate_args(mode: str, video=None, frames: int = 6, idea: str = "办公室女生冲一杯") -> tuple:
@@ -42,7 +46,12 @@ def server(tmp_path_factory):
     os.environ["NO_PROXY"] = "127.0.0.1,localhost"
     os.environ["no_proxy"] = "127.0.0.1,localhost"
     ws = tmp_path_factory.mktemp("ws")
-    rt = EngineRuntime(settings=Settings(workspace_dir=ws), demo_delay=0, force_demo=True)
+    # 卡带目录用副本：不加载本机的 Pro 卡带包，测试结果与是否安装无关
+    skills = tmp_path_factory.mktemp("cards") / "skills"
+    shutil.copytree(SKILLS_DIR, skills)
+    (skills / "ecommerce_planner" / "pet_only.md").write_text(PET_ONLY_PLANNER, encoding="utf-8")
+    rt = EngineRuntime(settings=Settings(workspace_dir=ws), skills=SkillRegistry(skills), demo_delay=0,
+                       force_demo=True)
     demo = build_app(rt.settings, runtime=rt)
     port = _free_port()
     demo.queue().launch(server_name="127.0.0.1", server_port=port, prevent_thread_lock=True, quiet=True,

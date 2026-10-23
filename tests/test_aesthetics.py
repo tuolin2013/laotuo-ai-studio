@@ -153,7 +153,7 @@ def test_table_rejects_unknown_style_with_chinese_hint():
 
 
 def test_compile_planner_appends_global_style_only_when_chosen():
-    card = SkillRegistry().get("ecommerce_planner", "laotuo_zhangjiajie_meicha_planner")
+    card = SkillRegistry().get("ecommerce_planner", "default_planner")
     args = (card, "main_image", CATS[TEA], PLATS["taobao"], "1:1", 5, None)
     assert "# 全局美学流派" not in compile_planner(*args)
     text = compile_planner(*args, aesthetic_style="nordic_warm_lifestyle")
