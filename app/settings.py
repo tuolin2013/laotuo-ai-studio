@@ -95,6 +95,9 @@ class Settings:
     modal_h3_timeout: float = 2400
     fal_key: str = field(default="", repr=False)
     fal_video_model: str = ""
+    # 剪映草稿文件夹：导出剪映草稿时直接写进这里（重新打开剪映即可在「本地草稿」看到）；
+    # 未配置时自动查找本机剪映 / CapCut 的默认位置，都没有时为 None（只打包下载）
+    jianying_draft_dir: Path | None = None
     # 强制演示模式：即使填了 Key 也不调用真实接口
     demo_mode: bool = False
     workspace_dir: Path = PROJECT_ROOT / "workspace"
@@ -127,6 +130,23 @@ def _modal_logged_in() -> bool:
     if os.environ.get("MODAL_TOKEN_ID") and os.environ.get("MODAL_TOKEN_SECRET"):
         return True
     return (Path.home() / ".modal.toml").exists()
+
+
+def default_jianying_dir() -> Path | None:
+    """本机剪映专业版（或 CapCut）的默认草稿文件夹；没有安装时返回 None。"""
+    base = os.environ.get("LOCALAPPDATA")
+    if not base:
+        return None
+    for app in ("JianyingPro", "CapCut"):
+        path = Path(base) / app / "User Data" / "Projects" / "com.lveditor.draft"
+        if path.is_dir():
+            return path
+    return None
+
+
+def _jianying_dir(value: str) -> Path | None:
+    value = value.strip().strip('"')
+    return Path(value) if value else default_jianying_dir()
 
 
 def _resolution(value: str) -> str:
@@ -170,6 +190,7 @@ def load_settings(env_file: Path | None = None, override: bool = False) -> Setti
         modal_h3_timeout=float(e("MODAL_H3_TIMEOUT_SECONDS", "2400")),
         fal_key=e("FAL_KEY", ""),
         fal_video_model=e("FAL_VIDEO_MODEL", ""),
+        jianying_draft_dir=_jianying_dir(e("JIANYING_DRAFT_DIR", "")),
         demo_mode=_bool(e("DEMO_MODE")),
         workspace_dir=workspace if workspace.is_absolute() else PROJECT_ROOT / workspace,
         server_name=e("GRADIO_SERVER_NAME", "127.0.0.1"),

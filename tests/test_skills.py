@@ -16,6 +16,7 @@ EXPECTED = {
     "video_scriptwriter": {"default_scriptwriter", "hypit_viral_clone"},
     "image_prompt": {"gpt_image_2", "gemini_nano_banana"},
     "video_prompt": {"official_h3_prompt_writing", "minimax_h3_prompt"},
+    "video_editor": {"default_video_editor"},
 }
 
 

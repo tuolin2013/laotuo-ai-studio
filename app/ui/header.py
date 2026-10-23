@@ -21,6 +21,7 @@ SLOT_LABELS = {
     "video_scriptwriter": "分镜脚本编译",
     "image_prompt": "生图提示词",
     "video_prompt": "视频提示词（H3）",
+    "video_editor": "剪辑大师（一键成片）",
 }
 
 

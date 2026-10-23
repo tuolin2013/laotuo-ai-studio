@@ -10,11 +10,15 @@ dependencies = [
     "pillow==12.3.0",
     "python-dotenv==1.2.4",
     "pyyaml==6.0.3",
-    # MiniMax H3 通过 Modal SDK 调用；python-socks 用于本机配置了 HTTP 代理时连接 Modal
+    # MiniMax H3 通过 Modal SDK 调用；本机配置了 HTTP 代理时，python-socks 用于连接 Modal，
+    # aiohttp-socks 用于 Modal 上传素材（blob upload）
     "modal==1.6.1",
     "python-socks[asyncio]==3.1.1",
-    # 参考爆款视频抽帧：自带 ffmpeg 二进制，无需单独安装 / 配置 PATH
+    "aiohttp-socks==0.12.0",
+    # 参考爆款视频抽帧 / 一键成片：自带 ffmpeg 二进制，无需单独安装 / 配置 PATH
     "imageio-ffmpeg==0.6.0",
+    # 一键导出剪映草稿（Apache-2.0）
+    "pyJianYingDraft==0.3.1",
 ]
 
 [build-system]

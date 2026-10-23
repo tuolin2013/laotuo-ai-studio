@@ -74,7 +74,9 @@ def test_app_builds_with_all_tabs(server):
     names = set(client.view_api(return_format="dict", print_info=False)["named_endpoints"])
     expected = {"/new_project", "/main_image_generate", "/main_image_confirm", "/main_image_render",
                 "/detail_page_generate", "/detail_page_reuse", "/detail_page_render", "/video_generate",
-                "/video_confirm", "/video_first_frames", "/video_lock_all", "/video_h3", "/video_render"}
+                "/video_confirm", "/video_first_frames", "/video_lock_all", "/video_h3", "/video_render",
+                "/video_edit_plan", "/video_edit_save", "/video_edit_render", "/video_export_jianying",
+                "/video_export_resolve"}
     assert expected <= names
 
 
@@ -172,6 +174,37 @@ def _check_video_render(client, rt, pid: str, log: str) -> None:
 
     out = client.predict("all", [], True, "official_h3_prompt_writing", out[0], api_name="/video_render")
     assert "都已有视频" in _last(out[0])
+    _check_edit(client, rt, pid, out[0])
+
+
+def _check_edit(client, rt, pid: str, log: str) -> None:
+    """Step 4：剪辑大师生成方案 → 表格微调 → 一键成片 → 导出剪映草稿 / 达芬奇工程。"""
+    out = client.predict("default_video_editor", "控制在 20 秒内", log, api_name="/video_edit_plan")
+    plan = rt.store.load(pid).video_edit
+    script = rt.store.load(pid).video_script
+    assert plan is not None and len(plan.clips) == len(script.shots)
+    assert plan.clips[0].shot_index == 1 and "剪辑方案完成" in out[0]
+    # 最新视频版本：镜头 1 生成过两版，剪辑方案用第 2 版
+    assert plan.clips[0].video_id == script.shots[0].videos[-1].video_id
+    table = out[2]
+    assert len(table["data"]) == len(script.shots) and table["data"][0][1] == "镜头 1"
+
+    table["data"][-1][2] = False  # 停用最后一个镜头
+    out = client.predict(table, True, True, 0.2, True, out[0], api_name="/video_edit_save")
+    assert "已保存剪辑修改" in _last(out[0])
+    assert not rt.store.load(pid).video_edit.clips[-1].enabled
+
+    out = client.predict(out[2], True, True, 0.2, True, out[0], api_name="/video_edit_render")
+    assert "成片已生成" in _last(out[0])
+    cut = rt.store.load(pid).video_edit.latest_render
+    assert cut is not None and cut.file_path.exists() and _video_path(out[3])
+
+    table, log = out[2], out[0]
+    # 剪映草稿文件夹留空：只打包下载（测试机不写入真实的剪映目录）
+    out = client.predict(table, True, True, 0.2, True, "", log, api_name="/video_export_jianying")
+    assert "剪映草稿已导出" in _last(out[0]) and str(out[1]).endswith(".zip")
+    out = client.predict(table, True, True, 0.2, True, out[0], api_name="/video_export_resolve")
+    assert "达芬奇工程已导出" in _last(out[0]) and str(out[1]).endswith(".zip")
 
 
 def _viral_video(path: Path) -> str:

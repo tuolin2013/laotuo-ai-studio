@@ -132,6 +132,31 @@ def compile_clone_scriptwriter(
     )
 
 
+def compile_video_editor(
+    skill: SkillCard,
+    script,
+    clips: list[dict[str, Any]],
+    category: CategoryConfig,
+    platform: PlatformConfig,
+    product_info: dict[str, str] | None = None,
+    user_edit_idea: str | None = None,
+) -> str:
+    """剪辑大师：剧本概要 + 每个分镜视频的实测信息（时长、有声段落、台词）。"""
+    text = _render(
+        skill,
+        aspect_ratio=script.aspect_ratio,
+        target_duration_seconds=script.target_duration_seconds,
+        script_summary=script.script_summary or IDEA_PLACEHOLDER,
+        clips_json=_json(clips),
+        category_json=_dump(category),
+        platform_json=_dump(platform),
+        product_info_json=_json(product_info or {}),
+        user_edit_idea=_idea(user_edit_idea),
+    )
+    guide = skill.reference_context()
+    return f"{text}\n\n# 附属指南\n\n{guide}" if guide else text
+
+
 # 本草性状生图指南：只在画面提到类目原料时附上，其余附属指南（如电商美学指南）始终附上
 HERB_GUIDE = "tcm_herb_visual_guide.md"
 

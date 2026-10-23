@@ -198,6 +198,18 @@ H3 提示词由系统在生成前自动编写，写法按分镜自动选择：
 
 H3 帧数按「时长 × 24fps」向上取整到 17n+5，范围 124~345 帧（约 5.2~14.4 秒），短于 5.2 秒的分镜会被拉长。
 
+Step 4　剪辑大师一键成片 · 导出剪映 / 达芬奇草稿
+
+1. 点「🧠 生成剪辑方案」（可先在「✂️ 我的剪辑想法」里写要求，例如「控制在 30 秒内」）。剪辑大师会先检测每个分镜视频里台词和声音的实际位置，再决定顺序、掐头去尾、转场和卖点花字，保证不剪断台词。台词字幕直接取自剧本里的人物同期声对白，不做语音识别，字不会错。
+2. 在剪辑方案表格里微调：改「顺序」调换镜头先后、取消「启用」去掉某个镜头、修改入点 / 出点、转场（硬切 / 叠化 / 闪黑 / 闪白）、原声音量和卖点花字，改完点「💾 保存剪辑修改」。
+3. 展开「🎚️ 成片选项」可以选择是否烧录字幕和花字，并上传背景音乐（请使用有版权授权的音乐）。人物说话时音乐自动压低，成片响度统一到短视频平台常用的 -14 LUFS。
+4. 点「🎞️ 一键成片」，本地 ffmpeg 合成 1080P、24 帧的 mp4，在「成片预览」中播放和下载。
+5. 想继续精剪时：
+   - 「🎬 一键导出剪映草稿」：本机装了剪映专业版时，草稿会直接写进剪映的草稿文件夹，重新打开剪映就能在「本地草稿」里看到；同时提供 zip 压缩包，可拷到其他电脑使用。
+   - 「🎨 一键导出达芬奇工程」：生成 FCPXML 1.10（DaVinci Resolve 18 及以上）、OTIO 时间线、台词字幕 / 卖点花字 SRT 和素材文件夹，压缩包里附中文导入说明。
+
+两种草稿的时间线与成片完全一致：顺序、出入点、转场、字幕都已排好。剪映草稿和达芬奇工程目前只验证了文件结构，还没有在真实软件中打开测试，首次使用时请确认能正常导入。
+
 ### 4. 产出文件
 
 ```
@@ -209,7 +221,8 @@ workspace/projects/{project_id}/
 ├── first_frames/{shot_id}/ # 视频首帧
 ├── videos/{shot_id}/       # 生成的视频（每次重新生成都保留为新版本）
 ├── prompts/                # 编译后的提示词
-└── exports/                # 打包导出的 zip
+├── edits/{edit_id}/        # 一键成片 mp4（每次合成都保留为新文件）与字幕文件
+└── exports/                # 打包导出的 zip、剪映草稿、达芬奇工程
 ```
 
 ## 系统架构
@@ -251,6 +264,9 @@ flowchart LR
 | `project_service.py` | 新建 / 加载项目、跨模块复用参考图、导出定稿 |
 | `compliance.py` | 广告法与类目违禁词检查 |
 | `diagnostics.py` | 连通性诊断 |
+| `edit_engine.py` | 剪辑大师：检测各分镜视频的台词位置，执行 `video_editor` 卡带生成剪辑方案 |
+| `edit_render.py` | 按剪辑方案用 ffmpeg 合成成片（转场、字幕花字、背景音乐、响度统一） |
+| `draft_export.py` | 导出剪映草稿与达芬奇工程（FCPXML / OTIO / SRT） |
 
 ### 并发模型
 
@@ -270,6 +286,7 @@ flowchart LR
 | `video_scriptwriter` | 视频分镜剧本（原创 / 爆款克隆） |
 | `image_prompt` | 生图提示词（GPT Image / Nano Banana） |
 | `video_prompt` | MiniMax H3 音画提示词 |
+| `video_editor` | 剪辑大师：分镜视频 → 剪辑方案（顺序、出入点、转场、卖点花字） |
 
 卡带格式为 YAML front matter + Markdown 正文：
 
@@ -357,3 +374,5 @@ references: [references/guide.md]    # 选填，附属指南，加载时自动�
 - [MiniMax-H3](https://github.com/MiniMax-AI/MiniMax-H3)：官方 `h3-prompt-writing` 技能原文收录于 [config/skills/video_prompt/](config/skills/video_prompt/)
 - [RightAPI](https://docs.rightapi.ai/)：LLM 与画图统一网关
 - [Gradio](https://www.gradio.app/)、[Modal](https://modal.com/)、[Pydantic](https://docs.pydantic.dev/)、[httpx](https://www.python-httpx.org/)、[Pillow](https://python-pillow.org/)
+- [pyJianYingDraft](https://github.com/GuanYixuan/pyJianYingDraft)（Apache-2.0）：剪映草稿生成
+- [kajisho5/ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill)（MIT）：FCPXML / OTIO 时间线写法参考

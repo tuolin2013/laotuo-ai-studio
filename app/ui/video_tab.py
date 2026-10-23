@@ -1,4 +1,5 @@
-"""【带货视频】选项卡：Step 1 分镜剧本（原创 / 克隆参考爆款视频 二选一）-> Step 2 首帧锁定 -> Step 3 H3 与视频。
+"""【带货视频】选项卡：Step 1 分镜剧本（原创 / 克隆参考爆款视频 二选一）-> Step 2 首帧锁定 -> Step 3 H3 与视频
+-> Step 4 剪辑大师一键成片 / 导出剪映、达芬奇草稿（见 app/ui/edit_panel.py）。
 
 两种策划方式产出同一个 VideoScript，填入同一个可编辑分镜表，之后的确认、首帧、H3、视频流程完全共用：
 - 📝 自己策划原创剧本：一键生成分镜；或在「进阶」里走 创意大纲 → 完整剧本 → 分镜脚本 三步式专业编剧；
@@ -37,6 +38,7 @@ from app.schemas.video import (
     VideoScript,
 )
 from app.settings import IMAGE_RESOLUTIONS
+from app.ui.edit_panel import build_edit_layout, wire_edit_panel
 from app.ui.header import Header, collect_info, require_project
 from app.ui.image_tab import MAX_REF_ROLES
 from app.ui.state import (
@@ -394,6 +396,9 @@ def build_video_tab(ws: Workspace, header: Header) -> None:
                     h3_edit = gr.Textbox(label="H3 提示词（可手动微调，保存后生成视频时使用）", lines=8,
                                          buttons=["copy"])
                     save_h3 = gr.Button("💾 保存微调")
+
+            # ========================================================== Step 4: 剪辑大师一键成片 / 导出草稿
+            edit_panel = build_edit_layout(rt.settings.jianying_draft_dir)
 
         # 日志停靠在右侧：页面滚到 Step 2 / Step 3 时仍然可见
         with gr.Column(scale=5, elem_classes=["log-dock"]):
@@ -755,8 +760,8 @@ def build_video_tab(ws: Workspace, header: Header) -> None:
             msg = friendly(e)
         return [_log(prev, msg), *_refresh(pid)]
 
-    confirm_btn.click(do_confirm, [header.project_id, table, logs], [logs, *refresh_outputs],
-                      api_name="video_confirm")
+    confirm_ev = confirm_btn.click(do_confirm, [header.project_id, table, logs], [logs, *refresh_outputs],
+                                   api_name="video_confirm")
 
     def do_unlock(pid, prev):
         s = _script(ws, pid)
@@ -768,7 +773,7 @@ def build_video_tab(ws: Workspace, header: Header) -> None:
             msg = friendly(e)
         return [_log(prev, msg), *_refresh(pid)]
 
-    unlock_btn.click(do_unlock, [header.project_id, logs], [logs, *refresh_outputs])
+    unlock_ev = unlock_btn.click(do_unlock, [header.project_id, logs], [logs, *refresh_outputs])
 
     # ================================================================ Step 2: 首帧锁定
     def make_upload(i):
@@ -912,10 +917,10 @@ def build_video_tab(ws: Workspace, header: Header) -> None:
                 yield [log, *_video_refresh(pid, sid, picked)]
         yield [_log(log, f"🎉 本轮完成：成功 {ok}/{len(ids)} 个分镜"), *_video_refresh(pid, picked=picked)]
 
-    video_btn.click(do_video, [header.project_id, video_way, video_pick, skip_done,
-                               header.skill_dropdowns["video_prompt"], logs],
-                    [logs, *refresh_outputs], concurrency_id="video_gen", concurrency_limit=1,
-                    api_name="video_render")
+    video_ev = video_btn.click(do_video, [header.project_id, video_way, video_pick, skip_done,
+                                          header.skill_dropdowns["video_prompt"], logs],
+                               [logs, *refresh_outputs], concurrency_id="video_gen", concurrency_limit=1,
+                               api_name="video_render")
 
     async def do_warm(prev):
         prov = rt.video_provider(VIDEO_PROVIDER)
@@ -991,3 +996,6 @@ def build_video_tab(ws: Workspace, header: Header) -> None:
 
     header.load_event.then(_refresh, header.project_id, refresh_outputs)
     header.project_id.change(_refresh, header.project_id, refresh_outputs)
+
+    # Step 4：生成视频、确认 / 解锁剧本后刷新剪辑区
+    wire_edit_panel(ws, header, edit_panel, logs, after=[video_ev, confirm_ev, unlock_ev])

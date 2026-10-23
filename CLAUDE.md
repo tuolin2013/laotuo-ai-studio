@@ -53,7 +53,9 @@ workspace/projects/{project_id}/
 ├── candidates/{slot_id}/   # 生成的候选图
 ├── first_frames/{shot_id}/ # 视频首帧图
 ├── videos/{shot_id}/       # 生成或回传绑定的视频
-└── prompts/                # 编译后的生图 / H3 提示词
+├── prompts/                # 编译后的生图 / H3 提示词
+├── edits/{edit_id}/        # 一键成片 mp4 与字幕 ASS；edits/ 下另存上传的背景音乐
+└── exports/                # 定稿 zip、剪映草稿 zip、达芬奇工程文件夹与 zip
 ```
 
 - 写 JSON 先写临时文件再原子替换，避免崩溃时损坏。
@@ -73,7 +75,8 @@ workspace/projects/{project_id}/
 │       ├── ecommerce_planner/
 │       ├── video_scriptwriter/
 │       ├── image_prompt/
-│       └── video_prompt/
+│       ├── video_prompt/
+│       └── video_editor/
 ├── app/
 │   ├── main.py          # Gradio 启动入口
 │   ├── settings.py      # 读取 .env
@@ -89,7 +92,7 @@ workspace/projects/{project_id}/
 ## 4. 插卡式 Skill 系统
 
 - 所有 AI 能力（电商策划、视频编剧、生图提示词、H3 视频提示词）都由 `config/skills/{slot}/*.md` 卡带驱动，代码里不写死提示词。
-- 4 个卡槽：`ecommerce_planner` / `video_scriptwriter` / `image_prompt` / `video_prompt`。卡槽由所在文件夹决定。
+- 卡槽（`app/schemas/skill.py` 的 `SKILL_SLOTS`）：`concept_writer` / `story_scriptwriter` / `ecommerce_planner` / `video_scriptwriter` / `image_prompt` / `video_prompt` / `video_editor`。卡槽由所在文件夹决定。
 - 卡带格式：顶部 YAML front matter + Markdown 正文模板。
 
 ```markdown
@@ -194,6 +197,19 @@ RightAPI 的 Key 绑定渠道，一把 Key 只能调用所绑渠道的模型，�
 - 视频统一由 Modal MiniMax H3 直接生成（已移除 ComfyUI 人工协同）。Step 3 两种方式：① 逐个分镜依次生成（全部已锁定首帧的分镜，可跳过已有视频的分镜）；② 选分镜生成（勾选若干分镜）。多个分镜在同一事件里串行排队（`concurrency_limit=1`，与服务端单容器一致），单个分镜失败不影响后续分镜。
 - 视频版本：同一分镜重复生成时追加到 `videos`（文件名带时间戳、每个分镜单独目录），绝不覆盖；界面每个分镜一个独立播放器显示最新版本，旧版本在「全部视频版本」画廊中。
 
+### 5.4.1 Step 4：剪辑大师一键成片与草稿导出
+
+- 调研结论（2026-10）：GitHub 上没有现成的「带货短视频剪辑决策」Skill（现有的 ffmpeg / Remotion 类 Skill 只负责执行剪辑，不负责决策，或依赖 Node），所以剪辑决策用自写卡带 `config/skills/video_editor/default_video_editor_skill.md`，渲染与导出用纯 Python + ffmpeg 实现。
+- 流程：`Step 3 生成分镜视频 → 生成剪辑方案（EditPlan）→ 表格微调 → 一键成片 mp4 / 导出剪映草稿 / 导出达芬奇工程`。剪辑方案不需要「确认」状态，可随时重新生成；重新生成时沿用字幕、花字、背景音乐等成片选项。
+- 素材：每个分镜的**最新一版**视频，按剧本顺序；没有视频的分镜不加入剪辑。分镜视频更新后，状态栏提示重新生成方案（`stale_shots()`）。
+- 台词定位：`edit_engine.analyze_media()` 用 ffmpeg `silencedetect`（-30 dB / 0.3 秒）找出有声段落，因为 H3 的台词常常不从第 0 秒开始，按剧本计划时长硬切会剪断台词。`assemble_plan()` 强制：入点不晚于台词开头、出点不早于台词结尾，钩子镜头排第一，未知转场改硬切，花字去违禁词并截到 ≤14 字。环境音贯穿全片、无法定位台词时，按 4.5 字 / 秒的语速估算。
+- 字幕：台词字幕直接取自 `character_dialogue` 引号内的原文（`spoken_text()`），不做语音识别；按标点切成每条 ≤14 字，在台词时间窗内按字数分配时长。
+- 时间轴（`app/schemas/edit.py` 的 `build_timeline()`）：统一 24 fps 整数帧（与 H3 输出一致，不做帧率转换），片段首尾相接；转场借用出点之后、入点之前的余量画面，**不改变总时长**；余量不足时自动缩短，完全没有余量时退化为硬切。成片、剪映草稿、达芬奇时间线三者共用这条时间轴。
+- 一键成片（`edit_render.py`）：ffmpeg 一条滤镜图完成缩放裁切、concat / xfade + acrossfade 转场、ASS 字幕与花字（libass，按字数自动缩字号，竖屏字幕在下方约 1/5 处、花字在上方约 1/8 处，避开平台按钮区）、背景音乐循环、说话时 sidechaincompress 自动压低音乐，并用 loudnorm 统一到 -14 LUFS。ffmpeg 在输出目录运行，滤镜里只用相对文件名，避开 Windows 盘符冒号的转义问题。输出追加到 `EditPlan.renders`，不覆盖旧成片。
+- 剪映草稿（`draft_export.write_jianying_draft()`，依赖 `pyJianYingDraft`，Apache-2.0）：每次导出都新建一个草稿，绝不覆盖同名草稿；剪映打开后会把草稿转存为自己的格式，所以不回读修改旧草稿。素材复制进草稿文件夹 `materials/`；`draft_content.json` 同时复制为 `draft_info.json`（新版剪映读取后者）；`draft_meta_info.json` 换新的 `draft_id` 并补上名称与时长。草稿文件夹由 `JIANYING_DRAFT_DIR` 指定，留空时自动查找 `%LOCALAPPDATA%\JianyingPro\User Data\Projects\com.lveditor.draft`（或 CapCut 同名目录），都没有时只打包 zip 供下载。
+- 达芬奇工程（`draft_export.export_resolve()`）：手写 FCPXML 1.10（Resolve 18 起都能导入）+ OTIO JSON（`Clip.1`，Resolve 18.5+）+ 台词字幕 / 卖点花字 SRT（UTF-8 BOM）+ `media/` 素材（ASCII 文件名）+ 中文导入说明。不依赖 `opentimelineio` 包（没有 Python 3.14 wheel），也不用 Resolve 脚本 API（免费版自 19.1 起不支持外部脚本）。时间线 `tcStart="0s"`，与 SRT 时间对齐。
+- 已验证：真实 H3 片段的成片渲染、草稿文件结构与时间值。**未在真实的剪映 / DaVinci Resolve 中打开验证**（开发机未安装），首次使用时需要人工确认能正常导入。
+
 ### 5.5 可扩展 VideoProvider
 
 - 统一接口位于 `app/providers/video/base.py`：`warmup()`（Serverless 冷启动预热）、`generate()`、默认 600 秒超时。
@@ -224,11 +240,15 @@ RightAPI 的 Key 绑定渠道，一把 Key 只能调用所绑渠道的模型，�
 | `render_engine.py` | 并发生成候选图 / 首帧 / 视频，异步生成器逐条产出事件，每张图完成立即落盘 |
 | `project_service.py` | 新建项目、跨模块复用参考图、定稿导出 zip、详情页长图序列 |
 | `compliance.py` | 广告法 / 类目违禁词检查 |
+| `edit_engine.py` | 分析分镜视频（时长、画面、有声段落）→ 执行 `video_editor` Skill → 纠正为合法的 `EditPlan` |
+| `edit_render.py` | 按剪辑方案用 ffmpeg 合成成片 mp4（转场、ASS 字幕 / 花字、背景音乐避让、响度统一），实时产出进度事件 |
+| `draft_export.py` | 导出剪映草稿（pyJianYingDraft）与达芬奇工程（FCPXML 1.10 / OTIO / SRT），同步 IO，UI 用 `asyncio.to_thread` 调用 |
 
 ## 5.8 界面（`app/ui/`）
 
 - `header.py`：项目管理、类目/平台联动、类目专属商品信息表单 + 实时合规检查、Skill 管理、API 配置（写回 `.env`，白名单键）。
 - `image_tab.py`：主图与详情页共用的三步式工作流。`video_tab.py`：视频剧本 → 首帧锁定 → Modal H3 生成视频（逐个 / 选分镜，每个分镜独立播放器），H3 提示词折叠在可选的查看 / 微调区。
+- `edit_panel.py`：视频 Step 4（剪辑方案表格、成片选项、一键成片、导出剪映 / 达芬奇）。布局在 Step 3 之后，事件在运行日志创建后绑定；刷新输出独立于 `video_tab` 的 `refresh_outputs`，不改变其位置顺序（端到端测试按位置读取）。成片与导出都使用剪辑方案快照，处理过程中继续改表格不影响本次结果。
 - `theme.py`：界面主题与 CSS 唯一来源（`THEME` / `CSS`，由 `app/main.py` 传给 `launch()`）。界面代码只用 `elem_classes`（`step-card`、`terminal-log`、`info-grid`、`plan-table` 等）引用样式，不写内联样式；步骤标题用 `step_header()`。
 - 浏览器端 `gr.State` 只存 `project_id`；`Project` 对象由服务端 `Workspace` 缓存并按项目加锁。
 - 关键事件设置了 `api_name`，`tests/test_ui_e2e.py` 用 `gradio_client` 启动真实服务端到端驱动全流程。

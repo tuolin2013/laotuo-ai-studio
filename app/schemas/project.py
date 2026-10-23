@@ -7,6 +7,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from app.schemas.common import new_id, utc_now
+from app.schemas.edit import EditPlan
 from app.schemas.plan import ImagePlan
 from app.schemas.video import ConceptOutline, ReferenceVideoSource, StoryScript, VideoScript
 
@@ -32,6 +33,8 @@ class Project(BaseModel):
     video_script: VideoScript | None = None       # Step 3: 分镜脚本
     # 克隆模式：最近一次上传并抽帧的参考爆款视频
     video_reference: ReferenceVideoSource | None = None
+    # 视频 Step 4：剪辑大师生成的剪辑方案（一键成片 / 导出剪映、达芬奇草稿）
+    video_edit: EditPlan | None = None
 
     # 当前会话的 Skill 选择（卡槽 -> skill_id）
     selected_skills: dict[str, str] = Field(default_factory=dict)

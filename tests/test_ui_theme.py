@@ -33,9 +33,9 @@ def test_product_info_fields_are_single_line(blocks):
     assert all(b.max_lines == 1 for b in fields)
 
 
-def test_each_tab_has_three_step_cards(blocks):
+def test_each_tab_has_step_cards(blocks):
     cards = [b for b in blocks if isinstance(b, gr.Column) and "step-card" in _classes(b)]
-    assert len(cards) == 9  # 三个选项卡各 Step 1 / 2 / 3
+    assert len(cards) == 10  # 主图 / 详情页各 Step 1~3，视频 Step 1~4（Step 4 剪辑大师一键成片）
 
 
 def test_theme_labels_plain_and_primary_buttons_teal():
