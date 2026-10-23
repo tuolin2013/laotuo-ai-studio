@@ -224,7 +224,7 @@ class RenderEngine:
             items=[(i, s) for i, s in enumerate(plan.slots) if s in slots],
             label_of=lambda i, s: f"#{i + 1}「{s.title}」",
             compile_prompt=lambda s, refs: self.compiler.slot_prompt(s, refs, plan.category_id, plan.platform_id,
-                                                                     skill_id),
+                                                                     skill_id, plan.deliverable_type),
             on_prompt=on_prompt,
             count_of=lambda s: s.candidate_count,
             refs_of=lambda s: plan.references_for(s.slot_id),

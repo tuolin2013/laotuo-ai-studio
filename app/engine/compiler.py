@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from app.providers.demo.content import camera_tags
-from app.schemas.config import CategoryConfig, PlatformConfig
+from app.schemas.config import MAX_HERBS_IN_FRAME, CategoryConfig, IngredientVisual, PlatformConfig
 from app.schemas.plan import AESTHETIC_STYLE_NAMES
 from app.schemas.skill import SkillCard
 from app.schemas.video import ReferenceVideoSource
@@ -16,7 +17,9 @@ SYSTEM_PROMPT = "你是电商 AIGC 内容工厂中的专业 Skill 执行器。�
 
 
 def _dump(model) -> str:
-    return json.dumps(model.model_dump(mode="json"), ensure_ascii=False, indent=2)
+    # 类目配置用 prompt_dict()：原料性状图谱体积大，只在生图时按画面提到的原料另附
+    data = model.prompt_dict() if isinstance(model, CategoryConfig) else model.model_dump(mode="json")
+    return json.dumps(data, ensure_ascii=False, indent=2)
 
 
 def _json(data: Any) -> str:
@@ -125,6 +128,34 @@ def compile_clone_scriptwriter(
     )
 
 
+# 本草性状生图指南：只在画面提到类目原料时附上，其余附属指南（如电商美学指南）始终附上
+HERB_GUIDE = "tcm_herb_visual_guide.md"
+
+
+def herb_visual_section(herbs: list[IngredientVisual], skipped: list[IngredientVisual] | None = None) -> str:
+    """把画面提到的原料性状拼成附在指令后的图谱；同框时外观相近的原料单独提醒。
+
+    skipped：画面提到但超出单图上限、不入画的原料。
+    """
+    lines = [f"画面描述提到以下 {len(herbs)} 味原料。画出它们的实物时，每味单独成堆，外观逐一照抄下列描述"
+             "（只作为包装线稿或中文文字出现的，不额外加实物）："]
+    for h in herbs:
+        line = f"- **{h.name}**（{h.botanical}；{h.part}）：{h.prompt_en}"
+        if h.confusable:
+            line += f"　〔易混：{'、'.join(h.confusable)}〕"
+        lines.append(line)
+    present = {h.name for h in herbs}
+    pairs = sorted({tuple(sorted((h.name, c))) for h in herbs for c in h.confusable if c in present})
+    if pairs:
+        lines.append("")
+        lines.append("同框易混组合（必须写出两者的区别）：" + "；".join(f"{a} ↔ {b}" for a, b in pairs))
+    if skipped:
+        lines.append("")
+        lines.append(f"单图最多画 {MAX_HERBS_IN_FRAME} 味，以下原料本图不画实物（可保留在中文文案里）："
+                     + "、".join(h.name for h in skipped))
+    return "\n".join(lines)
+
+
 def compile_image_prompt(
     skill: SkillCard,
     slot_data: dict[str, Any],
@@ -133,7 +164,10 @@ def compile_image_prompt(
     aspect_ratio: str,
     reference_roles: list[str],
 ) -> str:
-    """slot_data 为槽位（或分镜首帧）的画面信息字典；卡带声明的附属指南（如电商美学指南）附在指令之后。"""
+    """slot_data 为槽位（或分镜首帧）的画面信息字典；卡带声明的附属指南（如电商美学指南）附在指令之后。
+
+    画面提到类目原料（如中式草本）时，再附《本草性状生图指南》与这几味原料的性状图谱，让模型把原料画对。
+    """
     roles = "、".join(f"图{i + 1}={r}" for i, r in enumerate(reference_roles)) or "无（纯文生图）"
     text = _render(
         skill,
@@ -143,8 +177,16 @@ def compile_image_prompt(
         aspect_ratio=aspect_ratio,
         reference_roles=roles,
     )
-    guide = skill.reference_context()
-    return f"{text}\n\n# Attached Reference Guide\n\n{guide}" if guide else text
+    mentioned = category.ingredients_in(slot_data)
+    herbs, skipped = mentioned[:MAX_HERBS_IN_FRAME], mentioned[MAX_HERBS_IN_FRAME:]
+    names = [Path(r).name for r in skill.reference_texts if herbs or Path(r).name != HERB_GUIDE]
+    guide = skill.reference_context(names)
+    if guide:
+        text = f"{text}\n\n# Attached Reference Guide\n\n{guide}"
+    if herbs:
+        text += ("\n\n# 原料性状图谱（Herbal Ingredient Visual Reference，本槽位画面提到的原料）\n\n"
+                 f"{herb_visual_section(herbs, skipped)}")
+    return text
 
 
 H3_SHOT_FIELDS = {

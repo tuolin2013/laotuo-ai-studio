@@ -99,64 +99,66 @@
 
 ## 第三维：中文排版体系（灵魂）
 
-汉字是笔画密集方块字。要让 AI 排出高级感且 95%+ 零乱码准确率的中文，必须执行 **4 大排版铁律**。
+汉字笔画密集，AI 画字最容易出错字、缺笔和变形。排版按两个优先级执行：**第一，文字不变形**（防变形底线，任何方案都不能突破）；**第二，在底线之内按场景大胆创意**（排版方案库可自选、组合、创新）。两者冲突时，一律让位于文字不变形。
 
-### 铁律 1：美学流派与中文字体气质的强制绑定
+### 一、防变形底线（8 条全部遵守）
 
-严禁所有图都用默认黑体！不同美学必须绑定对应字体风格：
+1. **字数**：单张图由 AI 额外渲染的汉字总数 ≤18 字（主图 ≤14 字）。字越少、字号越大，每个汉字分到的像素越多，笔画越准。**唯一例外：详情页信息屏**（用法用量、问答、配料 / 成分保证值、资质许可、规格售后）≤120 字，按生图 Skill「详情页信息屏」一节执行。
+2. **逐字锁死**：所有要上图的中文用英文双引号 `""` 逐字包裹（例如 `Render the exact Chinese headline "满披白霜·高山芽尖"`），每行单独一对引号，照抄原文；画面中不出现引号以外的新文字。包装原有印刷字保持像素级冻结，不重绘。
+3. **平面正视**：文字及其承托面正对镜头、与画面平行。不做透视倾斜，不弧形 / 波浪 / 环绕排列，不印在瓶身、袋子、布料等曲面或会起皱反光的表面。
+4. **字形标准**：笔画结构保持标准印刷体。禁止书法手写、毛笔字、做旧破损、3D 立体挤出、空心描边、渐变或纹理填充笔画、字与字重叠或连笔。视觉特效只加在文字的**承托面**上（毛玻璃、卡片、色带、光晕），字形本身只允许纯色、字重、字距和极轻的投影。
+5. **干净承托面**：每段文字下方必须是均匀干净的承托面：纯色留白、大光圈虚化背景、毛玻璃面板、实色卡片或色带。文字不跨越复杂纹理、商品、道具或面板边缘。
+6. **明暗高反差**（HEX 精确指定）：
+   - 深色承托面（深苍山绿 `#1B3328` / 暖炭黑 `#1E1E1C`）→ 宣纸米白字 `#F5F2EB` 或香槟烫雅金字 `#D4AF37`。
+   - 浅色承托面（云海白 `#F4F7F4` / 奶油米白 `#FAF6F0` / 冰川白 `#F8FAFC` / 白色毛玻璃）→ 深墨绿字 `#1B3328` 或浓炭黑字 `#222222`。
+7. **字号下限**：任何文字的字高不小于画面高度的约 2.5%。小于主标题 40% 的文字（副标题以下的正文、标注、标签）一律用清晰的中等字重黑体，细笔画宋体只用于大号标题。
+8. **零遮挡、不留空**：文字绝不压住商品包装，商品也不挡住任何一个字。本系统没有后期排字环节：画面里的卡片、文字框、胶囊必须写入具体文字，放不下的文字连同它的框一起不画。
 
-| 美学流派 | 绑定中文字体 | 英文描述（供生图 Skill 调用） |
+### 二、创意排版方案库（按场景自选，可组合，可创新）
+
+排版是画面设计的一部分，不是在留白处贴字。根据槽位的场景、构图和美学流派选最合适的方案，同一张图最多组合 2 种；也可以在底线之内提出库外的新方案。不要每张图都默认用常规留白。策划里写的「文字安全留白区」只是文字区的位置建议，这个位置可以用任何方案。
+
+| 方案 | 适用场景 | 写法要点（英文描述供生图 Skill 调用） |
+|---|---|---|
+| A 常规留白 | 首屏 / 主图海报、背景本身干净的棚拍 | 文字直接落在构图留白区，主次层级清楚。`clean typography set directly on the plain negative space` |
+| B 毛玻璃面板 | 生活场景、产区风光、情绪共鸣等背景丰富、没有干净留白的画面 | 一块正对镜头的圆角磨砂玻璃面板，背景强模糊，细白高光边与柔和投影，文字清晰落在面板上。`a front-facing rounded frosted-glass panel with heavy background blur, a subtle 1px white highlight edge and a soft drop shadow; the Chinese text sits crisp and sharp on the panel surface, never blurred or refracted` |
+| C 信息图表 | 原料 / 成分、数据、工艺流程、选购对比 | 编号标注 + 细引线指向原料或商品部位、图标 + 短标签、数据卡、简单柱状 / 环形图、1→2→3 步骤流。每个标签 ≤8 字，引线不穿过文字，图表只用文案里已有的真实数字。`a clean infographic layout with numbered callouts, thin hairline leader lines, small flat line icons and short labels` |
+| D 卡片 / 表格 | 用法用量、问答、配料表、资质、规格售后 | 圆角卡片、标签页、两栏表格、编号列表；问答每组一个独立单元，Q 加粗、A 常规字重。`neatly stacked rounded information cards with generous padding` |
+| E 大字报 / 杂志封面 | 需要强冲击的首屏、品牌态度屏 | 超大主标题占画面 25%~40%，商品摆在字旁，不挡字。`an editorial magazine-cover layout with an oversized bold headline` |
+| F 东方竖排 + 印章 | 新中式茶席、原生态山野美学 | 1~2 列竖排宋刻体主标题，旁缀一枚朱砂红小印章。`a vertical Chinese Songti headline in one or two columns with a small vermilion seal stamp` |
+| G 色带 / 价签 | 促销利益点（买二送一、限时）、高对比零售 | 实色横向色带或圆角价签贴在画面上下边缘，形状平直规整，不用爆炸星形等异形框。`a solid flat color ribbon banner across the top edge` |
+| H 实物承载 | 需要文字融入场景的生活图 | 字印在正对镜头的平整纸卡、亚克力立牌或木牌上，≤10 字，载体不倾斜、不弯曲。`printed on a flat, front-facing paper card standing upright in the scene` |
+
+### 三、字体与层级（推荐默认，可按方案调整）
+
+1. **字体气质跟随美学流派**（推荐默认，不强制；小字一律按底线第 7 条用黑体）：
+
+| 美学流派 | 推荐中文字体 | 英文描述（供生图 Skill 调用） |
 |---|---|---|
 | 🍵 新中式茶席禅意<br>🌿 原生态山野呼吸 | **东方人文宋刻衬线体**<br>*(加朱红小印章点缀)* | `elegant high-contrast Chinese Songti (Ming serif) typography with refined sharp strokes and generous letter-spacing, accented by a small traditional vermilion red seal stamp` |
 | 🔬 科学实证极简风<br>💥 高对比零售视觉锤 | **现代粗黑无衬线体**<br>*(Swiss Grid Sans-Serif)* | `bold modern geometric Chinese Heiti (sans-serif) typography with heavy uniform stroke weight and clean Swiss-grid alignment` |
 | 🏡 北欧暖阳治愈风 | **亲和圆黑体 / 柔黑体** | `warm rounded modern Chinese sans-serif typography with soft approachable edges` |
 
-### 铁律 2：三级视觉层级法则（3 : 1.2 : 0.8 黄金字号比）
-
-电商海报文字必须拆分为主次分明的三层：
-
-1. **一级视觉锤（主标题 `Headline` — 权重 3.0）**：
-   - 字号最大、字重最粗（Bold / Heavy），字数严格 **4~10 个汉字**。
-   - 直接放置在构图预留的干净留白区视觉中心，确保手机缩略图 1 秒可读。
-
-2. **二级解释层（副标题 `Subheadline` — 权重 1.2）**：
-   - 字号缩小为主标题 **40% 左右**，中等字重（Medium / Regular），紧贴主标题下方或侧方对齐，字数 **8~16 个汉字**，可用极细装饰线或间隔号 `·` 分隔。
-
-3. **三级信任胶囊/角标（`Pill Badge / Seal Tag` — 权重 0.8）**：
-   - 凡是 **2~6 个字**的短卖点或背书词（如 `CMA权威检测`、`头采嫩芽`、`张家界核心产区`），**必须装进"圆角胶囊框（sleek rounded pill-shaped badge）"或"中式边框/印章容器"内**！防止散碎小字凌乱，瞬间拉满精致度。
-
-### 铁律 3：横排 vs 古典竖排版式法则
-
-- **现代横排（Horizontal Layout）**：适用于**拼多多全系图、宠物营养补充剂全系图、包含阿拉伯数字/百分比的科学实证图**，阅读效率最高。
-
-- **新中式古典竖排（Vertical Chinese Typography）**：**张家界莓茶专属高级感杀手锏！** 当采用 `三分留白构图` 且美学为 `新中式茶席禅意` 或 `原生态山野` 时，将莓茶包装与茶汤置于画面左下方，在**右上方干净云雾或深绿留白区采用 1~2 列竖排宋刻体**（旁缀一枚小朱砂红印章），瞬间呈现千元级东方茗茶大牌海报气场。
-
-### 铁律 4：明暗高反差与 AI 中文防乱码铁律
-
-1. **明暗反差防吞字（强制配色绑定）**：
-   - **深色留白底**（深苍山绿 `#1B3328` / 暖炭黑 `#1E1E1C`） → 强制配 **宣纸米白字 (`#F5F2EB`)** 或 **香槟烫雅金字 (`#D4AF37`)**。
-   - **浅色留白底**（云海白 `#F4F7F4` / 奶油米白 `#FAF6F0` / 冰川白 `#F8FAFC`） → 强制配 **深墨绿字 (`#1B3328`)** 或 **浓炭黑字 (`#222222`)**。
-
-2. **严禁跨纹理与零遮挡铁律**：
-   - 所有排版文字必须 **100% 落在预设干净留白区**（纯色底或大光圈柔焦虚化区域）内；**绝对禁止**文字横跨复杂树枝交界处、干茶颗粒上，**绝对禁止**遮挡商品包装本体。
-
-3. **"少字大号 + 双引号逐字锁死"防乱码法则**：
-   - 单张图片上由 AI 额外渲染的海报汉字总数严格控制在 **18 个汉字以内**（主图建议 ≤14 字）。字数越精炼、字号越大，AI 分配给每个汉字笔画的像素网格越充裕，笔画越锋利零错字。
-   - 在编译英文生图提示词时，所有需要渲染的中文文本必须使用英文双引号 `""` 逐字包裹锁死（例如：`Render the exact Chinese headline "满披白霜·高山芽尖"`），并与商品包装上原有印刷字严格区分（包装原有文字保持 100% 像素级冻结不重绘）。
+2. **层级清楚**：主标题字号最大、字重最粗，4~10 个汉字，确保手机缩略图 1 秒可读；副标题约为主标题 40%，8~16 个汉字，比例可按方案调整。2~6 字的短卖点或背书词（如 `CMA权威检测`、`头采嫩芽`）适合装进圆角胶囊框（`sleek rounded pill-shaped badge`）或中式印章框，不是每张图都必须有。
+3. **横排与竖排**：拼多多全系图、宠物营养补充剂全系图、含阿拉伯数字 / 百分比的图用现代横排；张家界莓茶采用新中式 / 山野美学 + 三分留白时，可用方案 F 竖排。
 
 ---
 
 ## 第四部分：槽位场景与三维自动映射总表
 
-当用户选择 `auto（AI 自动匹配）` 时，系统策划引擎与生图设计师按以下黄金矩阵自动匹配最优三维组合：
+当用户选择 `auto（AI 自动匹配）` 时，系统策划引擎与生图设计师按以下黄金矩阵自动匹配最优三维组合。排版一列是推荐起点（字母对应第三维「创意排版方案库」），可按画面实际情况换成更合适的方案或组合：
 
-| 槽位场景类型 | 自动匹配【构图模式】 | 自动匹配【设计美学】 | 自动匹配【中文排版方案】 |
+| 槽位场景类型 | 自动匹配【构图模式】 | 自动匹配【设计美学】 | 推荐【中文排版方案】 |
 |---|---|---|---|
-| **莓茶·主图第1张/首屏海报**<br>*(淘宝/微信小店)* | `rule_of_thirds_negative_space`<br>*(主体居右下，左上 35% 留白)* | `new_chinese_zen` 或 `organic_nature_sunlight` | 东方宋刻体·竖排或左对齐 3:1 层级 + 朱红小印章 |
-| **莓茶·主图第1张**<br>*(拼多多高点击)* | `rule_of_thirds_negative_space`<br>*(包装+满霜干茶双主体)* | `high_impact_retail` | 超大号现代粗黑体·顶部横排撞色大字 + 利益点胶囊标 |
-| **莓茶·白霜视觉锤微距**<br>*(主图第2张/白霜屏)* | `extreme_macro_texture`<br>*(100mm 光学微距 + 侧逆光)* | `new_chinese_zen`<br>*(深色粗陶茶则衬托银白霜)* | 暗部留白区配米白/雅金宋刻体主标题 + `[天然黄酮结晶]` 胶囊标 |
-| **莓茶·金黄茶汤与回甘体验**<br>*(主图第3张/冲泡屏)* | `depth_layering` 或 `diagonal_dynamic_flow` | `organic_nature_sunlight` 或 `nordic_warm_lifestyle` | 浅色通透留白区配深墨绿宋刻体，传达"入口微苦·三秒回甘" |
-| **莓茶/宠物品·选购客观对比屏** | `split_screen_comparison`<br>*(70% 暖光好品 vs 30% 冷光普通品)* | `clinical_lab_minimal` | 顶部通栏横排现代粗黑对比标题 + 左右两侧圆角胶囊特征标签 |
-| **莓茶/宠物品·权威检测与规格屏**<br>*(主图第5张/证据屏)* | `knolling_flat_lay`<br>*(90° 俯拍包装+报告秩序平铺)* | `clinical_lab_minimal` 或 `nordic_warm_lifestyle` | 顶部干净留白区排现代粗黑体标题 + 实测数据圆角胶囊角标 |
-| **宠物补充剂·科学配方/主图** | `rule_of_thirds_negative_space` 或 `extreme_macro_texture` | `clinical_lab_minimal` | 瑞士网格现代粗黑无衬线体 + 科技银蓝圆角数据胶囊框 |
-| **宠物补充剂·喂食互动场景** | `depth_layering` | `nordic_warm_lifestyle` | 亲和圆黑体·暖白/深棕高反差横排 + 适口性卖点胶囊标 |
+| **莓茶·主图第1张/首屏海报**<br>*(淘宝/微信小店)* | `rule_of_thirds_negative_space`<br>*(主体居右下，左上 35% 留白)* | `new_chinese_zen` 或 `organic_nature_sunlight` | F 东方竖排 或 A 常规留白：宋刻体 3:1 层级 + 朱红小印章 |
+| **莓茶·主图第1张**<br>*(拼多多高点击)* | `rule_of_thirds_negative_space`<br>*(包装+满霜干茶双主体)* | `high_impact_retail` | E 大字报 + G 色带：超大号粗黑体撞色大字 + 利益点价签 |
+| **莓茶·白霜视觉锤微距**<br>*(主图第2张/白霜屏)* | `extreme_macro_texture`<br>*(100mm 光学微距 + 侧逆光)* | `new_chinese_zen`<br>*(深色粗陶茶则衬托银白霜)* | A 常规留白：暗部配米白/雅金宋刻体主标题；或 C 信息图表：细引线标注白霜 + `[天然黄酮结晶]` 短标签 |
+| **莓茶·金黄茶汤与回甘体验**<br>*(主图第3张/冲泡屏)* | `depth_layering` 或 `diagonal_dynamic_flow` | `organic_nature_sunlight` 或 `nordic_warm_lifestyle` | A 常规留白（浅色通透区配深墨绿宋刻体）；背景杂时用 B 毛玻璃面板 |
+| **莓茶·产区风光 / 生活场景** | `depth_layering` | `organic_nature_sunlight` 或 `nordic_warm_lifestyle` | B 毛玻璃面板 或 H 实物承载 |
+| **莓茶/宠物品·选购客观对比屏** | `split_screen_comparison`<br>*(70% 暖光好品 vs 30% 冷光普通品)* | `clinical_lab_minimal` | C 信息图表：顶部通栏对比标题 + 左右两侧对照标签 |
+| **莓茶/宠物品·权威检测与规格屏**<br>*(主图第5张/证据屏)* | `knolling_flat_lay`<br>*(90° 俯拍包装+报告秩序平铺)* | `clinical_lab_minimal` 或 `nordic_warm_lifestyle` | C 信息图表 + D 卡片：实测数据卡 / 圆角数据胶囊 |
+| **宠物补充剂·科学配方/主图** | `rule_of_thirds_negative_space` 或 `extreme_macro_texture` | `clinical_lab_minimal` | C 信息图表：编号引线标注原料 + 科技银蓝数据胶囊 |
+| **宠物补充剂·喂食互动场景** | `depth_layering` | `nordic_warm_lifestyle` | B 毛玻璃面板 或 A 常规留白：亲和圆黑体 + 适口性卖点胶囊 |
+| **宠物补充剂·情绪共鸣 / 痛点场景** | `depth_layering` | `nordic_warm_lifestyle` | B 毛玻璃面板 或 E 大字报 |
+| **详情页·用法 / 问答 / 配料表 / 资质 / 规格售后** | `rule_of_thirds_negative_space` 或 `knolling_flat_lay` | 跟随整套详情页 | D 卡片 / 表格（可叠加 B 毛玻璃作卡片底）；按「详情页信息屏」规则逐行上图 |
+| **促销利益点屏**<br>*(买赠 / 限时)* | `rule_of_thirds_negative_space` | `high_impact_retail` | G 色带 / 价签 + E 大字报 |

@@ -25,7 +25,7 @@ def compile_story_prompt(
     concept_dict = concept.model_dump(exclude={'created_at'})
     return skill.render(
         concept_json=json.dumps(concept_dict, ensure_ascii=False, indent=2),
-        category_json=json.dumps(category.model_dump(), ensure_ascii=False, indent=2),
+        category_json=json.dumps(category.prompt_dict(), ensure_ascii=False, indent=2),
         platform_json=json.dumps(platform.model_dump(), ensure_ascii=False, indent=2),
         product_info_json=json.dumps(product_info or {}, ensure_ascii=False, indent=2),
     )

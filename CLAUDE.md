@@ -145,6 +145,9 @@ variables: [product_name]        # 选填，声明正文使用的变量
   - Step 1「🎨 全局视觉设计美学流派」选定后整套槽位统一使用该流派（策划指令末尾追加约束，结果再强制覆盖，单槽位重生成同样生效）；构图逐槽位选择。
   - 策划表格中两列显示中文名，可填中文名、代码或「自动」。
   - 生图 Skill 编译时把卡带声明的 `references/` 指南全文附在指令之后；演示模式按流派色板 / 字体与构图留白区绘制预览图（`app/providers/demo/aesthetics.py`）。
+  - 上图字数：海报类槽位 ≤18 个汉字（主图 ≤14）。详情页信息屏（用法 / 问答 / 配料与保证值 / 资质 / 规格售后）放宽到 ≤120 字，逐行照抄 `copy_text`。`slot_prompt_data()` 给生图 Skill 传 `deliverable_type` 与代码数好的 `copy_text_hanzi_count`。系统没有后期排字环节，提示词不得要求卡片 / 文字框留空。
+  - 中文排版两级优先：① 防变形底线（指南第三维 8 条：字数、逐字锁死、平面正视、标准字形、干净承托面、高反差、字号下限、零遮挡不留空），任何创意不得突破；② 底线之内按场景从「创意排版方案库」选型或组合（A 常规留白 / B 毛玻璃面板 / C 信息图表 / D 卡片表格 / E 大字报 / F 东方竖排 / G 色带价签 / H 实物承载），可创新，不默认只用常规留白。字体随美学流派为推荐而非强制。
+- 本草性状生图：类目配置 `ingredient_visuals` 按《中国药典》性状登记每味原料的外观（只写外观、不写功效），`product_lines[].hero_ingredients` 为推荐入画的 3~4 味。槽位 / 首帧的 `title` / `subtitle` / `visual_description` 点名原料时（`CategoryConfig.ingredients_in`，长名优先，「姜黄色」这类形容词不算），编译生图指令才附上 `image_prompt/references/tcm_herb_visual_guide.md` 与这几味的《原料性状图谱》，单图最多 4 味；图谱不进 `category_json`（`prompt_dict()`）。原料实拍参考图角色为 `herb_ingredients`。每味原料的 `source_url` 指向药典 2020 条文；给人看的按单品图谱 `docs/herb_atlas_{category_id}.md` 由 `python -m app.engine.herb_atlas` 从配置生成，不手改，测试检查二者一致。
 
 ### 5.3 RightAPI Key 与画图接口（以官方文档为准）
 

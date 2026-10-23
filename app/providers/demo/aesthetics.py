@@ -20,7 +20,7 @@ class StyleSpec:
     font: str  # serif / sans / rounded
     seal: bool = False  # 朱砂红小印章
     light: str = ""  # 光线（英文，供演示提示词）
-    font_en: str = ""  # 字体描述（英文，指南铁律 1）
+    font_en: str = ""  # 字体描述（英文，指南第三维「字体与层级」）
 
 
 SEAL_RED = "#B83B2A"
@@ -56,7 +56,7 @@ STYLES: dict[str, StyleSpec] = {
         font_en=SANS_EN),
 }
 
-# 新中式 / 山野 + 三分留白：主体放左下，右上方竖排宋体标题（指南铁律 3）
+# 新中式 / 山野 + 三分留白：主体放左下，右上方竖排宋体标题（指南排版方案 F 东方竖排）
 VERTICAL_STYLES = frozenset({"new_chinese_zen", "organic_nature_sunlight"})
 
 # 构图 -> (写进 visual_description 的中文留白说明, 演示提示词英文描述)

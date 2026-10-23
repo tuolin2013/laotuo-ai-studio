@@ -208,10 +208,13 @@ def test_image_skills_attach_aesthetics_guide():
     assert data["aesthetic_style"] == "new_chinese_zen" and data["composition_mode"] == "extreme_macro_texture"
     for skill_id in ("gpt_image_2", "gemini_nano_banana"):
         card = reg.get("image_prompt", skill_id)
-        assert list(card.reference_texts) == ["references/ecommerce_aesthetics_guide.md"]
+        assert list(card.reference_texts) == ["references/ecommerce_aesthetics_guide.md",
+                                              "references/tcm_herb_visual_guide.md"]
         text = compile_image_prompt(card, data, CATS[TEA], PLATS["taobao"], "1:1", [])
         assert '"aesthetic_style": "new_chinese_zen"' in text
-        assert "# Attached Reference Guide" in text and "铁律 4" in text and "{{" not in text
+        assert "# Attached Reference Guide" in text and "防变形底线" in text and "{{" not in text
+        # 莓茶槽位不提草本原料：本草性状指南不附上
+        assert "tcm_herb_visual_guide.md" not in text and "# 原料性状图谱" not in text
 
 
 def test_demo_prompt_uses_style_palette_font_and_layout():
@@ -268,3 +271,77 @@ def test_demo_render_without_composition_uses_classic_layout(tmp_path):
                             tmp_path / "classic.png")
     with Image.open(out) as im:
         assert im.size == (576, 1024)
+
+
+# ---------------------------------------------------------------- 详情页信息屏：放宽字数、卡片不留空
+
+QA_COPY = ("怎么喂：每5公斤体重1片/次\nQ：多久能看到变化？\nA：这是日常营养补充，不承诺时间\n"
+           "Q：家里猫狗都能吃吗？\nA：猫犬通用。注意：本产品不得饲喂反刍动物")
+
+
+def _qa_slot() -> ImageSlot:
+    return ImageSlot(title="按体重喂·三个常问题", copy_text=QA_COPY, visual_description="v",
+                     generation_mode="text_to_image", aspect_ratio="3:4",
+                     aesthetic_style="clinical_lab_minimal", composition_mode="rule_of_thirds_negative_space")
+
+
+def test_slot_prompt_data_carries_deliverable_type_and_hanzi_count():
+    data = slot_prompt_data(_qa_slot(), "detail_page")
+    assert data["deliverable_type"] == "detail_page"
+    # 只数汉字，数字、字母、标点与换行不算
+    assert data["copy_text_hanzi_count"] == 55
+    assert "deliverable_type" not in slot_prompt_data(_qa_slot())
+
+
+def test_image_skills_render_detail_info_screens_in_full():
+    reg = SkillRegistry()
+    data = slot_prompt_data(_qa_slot(), "detail_page")
+    for skill_id in ("gpt_image_2", "gemini_nano_banana"):
+        text = compile_image_prompt(reg.get("image_prompt", skill_id), data, CATS[PET], PLATS["taobao"], "3:4",
+                                    ["product_package"])
+        assert '"deliverable_type": "detail_page"' in text and '"copy_text_hanzi_count": 55' in text
+        assert "## 详情页信息屏" in text and "120" in text and "绝不留空" in text
+        assert "唯一例外：详情页信息屏" in text  # 附属美学指南的例外条款也一并附上
+
+
+async def test_render_plan_tells_image_skill_the_deliverable_type(tmp_path):
+    """真实 LLM 编译生图提示词时，槽位数据里带上 deliverable_type（画图走演示，不调用接口）。"""
+    seen: list[str] = []
+
+    class FakeLLM:
+        async def complete_json(self, system, user, max_tokens=8000, images=None):
+            seen.append(user)
+            return {"prompt": "p"}
+
+    from app.engine.project_service import create_project
+    from app.engine.render_engine import RenderEngine
+
+    rt = EngineRuntime(settings=Settings(workspace_dir=tmp_path, llm_key="LLM"), demo_delay=0)
+    rt.llm_override = FakeLLM()
+    project = create_project(rt, "qa", PET, "taobao")
+    plan = ImagePlan(deliverable_type="detail_page", platform_id="taobao", category_id=PET,
+                     planner_skill_id="default_planner", default_aspect_ratio="3:4")
+    plan.replace_all_items([_qa_slot()])
+    plan.confirm_plan()
+    events = [e async for e in RenderEngine(rt).render_plan(project, plan, "gpt-image-2.5-flare", "gpt_image_2")]
+    assert any(e.image_path for e in events), [e.message for e in events]
+    assert len(seen) == 1 and '"deliverable_type": "detail_page"' in seen[0]
+
+
+def test_image_skills_put_legibility_first_then_creative_layouts():
+    """排版：防变形底线优先，底线之内按场景从方案库创意选型（毛玻璃、信息图表等），不再默认只用常规留白。"""
+    reg = SkillRegistry()
+    data = slot_prompt_data(_qa_slot(), "main_image")
+    for skill_id in ("gpt_image_2", "gemini_nano_banana"):
+        card = reg.get("image_prompt", skill_id)
+        text = compile_image_prompt(card, data, CATS[PET], PLATS["taobao"], "3:4", ["product_package"])
+        body = card.body
+        assert body.index("第一优先：防变形底线") < body.index("第二优先：按场景创意排版")
+        assert "毛玻璃面板" in body and "信息图表" in body and "不要每张图都默认用常规留白" in body
+        # 附属指南：8 条底线 + 8 种方案，全部随指令附上
+        assert "一、防变形底线（8 条全部遵守）" in text and "二、创意排版方案库" in text
+        for scheme in ("A 常规留白", "B 毛玻璃面板", "C 信息图表", "D 卡片 / 表格", "E 大字报", "F 东方竖排",
+                       "G 色带 / 价签", "H 实物承载"):
+            assert scheme in text, (skill_id, scheme)
+        # 旧版「4 大排版铁律」已整体替换（本草指南的「六条铁律」保留）
+        assert "4 大排版铁律" not in body and "铁律 1" not in body and "铁律 4" not in body

@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Any
 
 from app.engine.compiler import (
@@ -28,6 +29,7 @@ from app.schemas.video import H3_MODE_LABELS, H3PromptMode, StoryboardShot, Vide
 
 DEFAULT_IMAGE_SKILL = {"openai": "gpt_image_2", "gemini": "gemini_nano_banana"}
 DEFAULT_H3_SKILL = "official_h3_prompt_writing"
+HANZI = re.compile(r"[\u4e00-\u9fff]")
 
 
 def image_skill_for_model(model: str) -> str:
@@ -50,12 +52,21 @@ def auto_h3_mode(script: VideoScript, shot: StoryboardShot) -> H3PromptMode:
     return "ref2va" if refs else "i2va"
 
 
-def slot_prompt_data(slot: ImageSlot) -> dict[str, Any]:
-    return slot.model_dump(
+def slot_prompt_data(slot: ImageSlot, deliverable_type: str | None = None) -> dict[str, Any]:
+    """槽位的生图输入。
+
+    deliverable_type 让生图 Skill 区分主图与详情页：详情页信息屏（用法 / 问答 / 配料表等）放宽上图字数；
+    copy_text_hanzi_count 由代码数好汉字数，模型不用自己数（大模型数中文字数不可靠）。
+    """
+    data = slot.model_dump(
         mode="json",
         include={"title", "subtitle", "copy_text", "selling_point", "visual_description", "differentiator",
                  "generation_mode", "aspect_ratio", "aesthetic_style", "composition_mode"},
     )
+    if deliverable_type:
+        data["deliverable_type"] = deliverable_type
+    data["copy_text_hanzi_count"] = len(HANZI.findall(slot.copy_text or ""))
+    return data
 
 
 def shot_frame_data(shot: StoryboardShot, aspect_ratio: str) -> dict[str, Any]:
@@ -100,9 +111,10 @@ class PromptCompiler:
             prompt += f"\nAvoid: {out['negative_notes']}"
         return prompt
 
-    async def slot_prompt(self, slot: ImageSlot, references, category_id, platform_id, skill_id) -> str:
-        return await self.image_prompt(slot_prompt_data(slot), references, category_id, platform_id,
-                                       slot.aspect_ratio, skill_id)
+    async def slot_prompt(self, slot: ImageSlot, references, category_id, platform_id, skill_id,
+                          deliverable_type: str | None = None) -> str:
+        return await self.image_prompt(slot_prompt_data(slot, deliverable_type), references, category_id,
+                                       platform_id, slot.aspect_ratio, skill_id)
 
     async def first_frame_prompt(self, script: VideoScript, shot: StoryboardShot, references, skill_id) -> str:
         return await self.image_prompt(shot_frame_data(shot, script.aspect_ratio), references, script.category_id,

@@ -22,7 +22,8 @@
   },
   "core_selling_points": [
     "中式草本配方，多种可饲用天然植物精心制备与浓缩",
-    "鸡肝粉风味片剂，小片好喂",
+    "0.4g 小片、鸡肝粉风味，可直接喂或碾碎拌粮",
+    "添加维生素A乙酸酯、维生素D₃、天然维生素E，保证值完整标示",
     "猫犬通用，按体重计量喂食",
     "配料表与成分保证值完整公开",
     "符合宠物饲料卫生规定，检验合格，有正规生产许可证号",
@@ -61,15 +62,16 @@
     "product_package": "单品包装盒正面照（品牌、单品名、副名清晰）",
     "product_content": "片剂实拍（单片 / 一小把片剂特写）",
     "ingredient_label": "包装盒背面：原料组成、添加剂组成与成分保证值",
+    "herb_ingredients": "本款草本原料实拍：选 3~4 味干燥饮片各放一小碟，纯色背景、自然光、俯拍，看得清形状、颜色与切面",
     "inspection_report": "检验合格证明 / 第三方检测报告页面照",
     "pet_model": "宠物模特照（用户自家或授权宠物，品种尽量与包装一致）",
     "series_lineup": "7 款包装盒并排正面照（系列全家福）"
   },
   "compliance_rules": [
     "宠物营养补充剂属于饲料，不是兽药，禁止宣称治疗、预防疾病或替代药物",
-    "功能表述只能使用包装上的定位语原句或“为××健康提供营养支持”句式",
+    "功能表述只能使用包装上的定位语原句或“为××健康提供营养支持”句式；维生素A、D₃、E 可使用策划卡带列出的营养素功能声称标准句（原文照用，只放在成分屏）",
     "不得出现疾病名称与症状，不得用画面暗示生病、打针、输液",
-    "草本原料只能作为原料组成客观列出，不得解释任何原料的药理功效",
+    "草本原料可列出名称、展示外观品相、使用日常叫法，不得解释任何原料的药理功效或配伍",
     "禁止使用“最”“第一”“100%有效”等绝对化与承诺性用语",
     "妊娠期禁用的单品不得暗示孕期可用",
     "宠物出镜需真实健康、不得展示虐待或强行喂食行为"
@@ -184,6 +186,12 @@
         "葛根",
         "甘草"
       ],
+      "hero_ingredients": [
+        "酸枣仁",
+        "夜交藤",
+        "甘草",
+        "葛根"
+      ],
       "additives": [
         "维生素A乙酸酯",
         "维生素D₃",
@@ -216,6 +224,12 @@
         "土茯苓",
         "远志",
         "诃子"
+      ],
+      "hero_ingredients": [
+        "诃子",
+        "补骨脂",
+        "土茯苓",
+        "远志"
       ],
       "additives": [
         "维生素A乙酸酯",
@@ -259,6 +273,12 @@
         "厚朴",
         "升麻"
       ],
+      "hero_ingredients": [
+        "枸杞子",
+        "薏苡仁",
+        "厚朴",
+        "桑椹"
+      ],
       "additives": [
         "维生素A乙酸酯",
         "维生素D₃",
@@ -293,6 +313,12 @@
         "黄精",
         "沙棘",
         "补骨脂"
+      ],
+      "hero_ingredients": [
+        "银杏叶",
+        "沙棘",
+        "黄精",
+        "薏苡仁"
       ],
       "additives": [
         "维生素A乙酸酯",
@@ -330,6 +356,12 @@
         "野菊花",
         "蒲公英"
       ],
+      "hero_ingredients": [
+        "野菊花",
+        "党参",
+        "益母草",
+        "茯苓"
+      ],
       "additives": [
         "维生素A乙酸酯",
         "维生素D₃",
@@ -364,6 +396,12 @@
         "鱼腥草",
         "知母",
         "野菊花",
+        "地骨皮"
+      ],
+      "hero_ingredients": [
+        "金银花",
+        "野菊花",
+        "桔梗",
         "地骨皮"
       ],
       "additives": [
@@ -403,6 +441,12 @@
         "川芎",
         "薏苡仁"
       ],
+      "hero_ingredients": [
+        "杜仲",
+        "姜黄",
+        "补骨脂",
+        "薏苡仁"
+      ],
       "additives": [
         "维生素A乙酸酯",
         "维生素D₃",
@@ -421,6 +465,541 @@
         "本产品不得饲喂反刍动物"
       ],
       "standard": "Q/CSDD 245-2026"
+    }
+  ],
+  "ingredient_visuals": [
+    {
+      "name": "夜交藤",
+      "aliases": [
+        "首乌藤"
+      ],
+      "botanical": "Polygoni Multiflori Caulis（fleeceflower stem）",
+      "part": "藤茎；圆柱形的段",
+      "appearance": "圆柱形段，直径 4~7mm、长 10~15mm；外皮紫红至紫褐，粗糙，有扭曲纵皱纹，节部略膨大；切面皮部紫红，木部黄白色、导管孔明显，中心有疏松的类白色髓",
+      "prompt_en": "cylindrical cut sections of dried fleeceflower vine stem, 4-7 mm thick and 10-15 mm long, rough purplish-red to purple-brown bark with twisted lengthwise wrinkles; each cut end shows a thin purplish-red bark ring around yellowish-white porous wood and a small pale pith",
+      "confusable": [
+        "桑枝",
+        "茜草"
+      ],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E9%A6%96%E4%B9%8C%E8%97%A4.pdf"
+    },
+    {
+      "name": "酸枣仁",
+      "aliases": [
+        "枣仁"
+      ],
+      "botanical": "Ziziphi Spinosae Semen（spine date seed）",
+      "part": "种子；整粒",
+      "appearance": "扁圆或扁椭圆形，长 5~9mm、宽 5~7mm、厚约 3mm；紫红至紫褐色，平滑有光泽，一面中央有一条隆起的纵线纹",
+      "prompt_en": "flat oval seeds 5-9 mm long and about 3 mm thick, smooth glossy purplish-red to reddish-brown seed coat, one flat face with a single raised line down the middle",
+      "confusable": [
+        "补骨脂"
+      ],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E9%85%B8%E6%9E%A3%E4%BB%81.pdf"
+    },
+    {
+      "name": "远志",
+      "botanical": "Polygalae Radix（thinleaf milkwort root）",
+      "part": "根，抽去木心；中空的圆筒形段",
+      "appearance": "细圆筒形段，直径 2~10mm、长 10~15mm，中间是空的；外表灰黄至灰棕，横皱纹密而深陷",
+      "prompt_en": "short hollow tube-shaped pieces of dried root, 2-10 mm in diameter and 10-15 mm long, greyish-yellow to greyish-brown skin with dense deep crosswise wrinkles, the center empty where the woody core was removed",
+      "confusable": [
+        "地骨皮"
+      ],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E8%BF%9C%E5%BF%97.pdf"
+    },
+    {
+      "name": "葛根",
+      "botanical": "Puerariae Lobatae Radix（kudzu root）",
+      "part": "根；小方块或不规则厚片",
+      "appearance": "边长 5~12mm 的小方块或不规则厚片；切面浅黄棕至棕黄，纤维纹理明显；外皮淡棕，有纵皱",
+      "prompt_en": "small rough cubes 5-12 mm across (or thick irregular slices) of dried kudzu root, light yellowish-brown cut faces with clearly visible coarse fibers, some edges with thin light-brown wrinkled skin",
+      "confusable": [
+        "茯苓"
+      ],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E8%91%9B%E6%A0%B9.pdf"
+    },
+    {
+      "name": "甘草",
+      "botanical": "Glycyrrhizae Radix et Rhizoma（licorice root）",
+      "part": "根和根茎；类圆形或椭圆形斜厚片",
+      "appearance": "斜切厚片，直径 6~35mm、厚 2~4mm；外皮红棕或灰棕，有纵皱；切面黄白，放射状纹理与形成层环明显",
+      "prompt_en": "oval slanted slices of dried licorice root, 6-35 mm wide and 2-4 mm thick, a thin reddish-brown bark rim, pale yellow cut face with fine radiating lines and a visible ring",
+      "confusable": [
+        "党参",
+        "桔梗"
+      ],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E7%94%98%E8%8D%89.pdf"
+    },
+    {
+      "name": "榧子",
+      "botanical": "Torreyae Semen（grand torreya seed）",
+      "part": "种子；整粒带壳",
+      "appearance": "橄榄形或卵圆形，长 2~3.5cm、直径 1.3~2cm；壳薄而硬，灰黄或淡黄棕，有纵皱，一端钝圆、一端稍尖",
+      "prompt_en": "olive-shaped whole seeds 20-35 mm long with a thin hard greyish-yellow to pale tan shell covered in fine lengthwise wrinkles, one end rounded and the other slightly pointed (not the dark roasted snack nut)",
+      "confusable": [
+        "诃子"
+      ],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E6%A6%A7%E5%AD%90.pdf"
+    },
+    {
+      "name": "补骨脂",
+      "aliases": [
+        "破故纸"
+      ],
+      "botanical": "Psoraleae Fructus（psoralea fruit）",
+      "part": "果实；整粒",
+      "appearance": "扁肾形小粒，长 3~5mm、宽 2~4mm、厚约 1.5mm；黑色至黑褐色，哑光，有细微网状皱纹",
+      "prompt_en": "tiny flattened kidney-shaped fruits only 3-5 mm long, matte black to blackish-brown with a fine net-like wrinkled surface, piled like small dark grains",
+      "confusable": [
+        "酸枣仁",
+        "菟丝子",
+        "车前子",
+        "女贞子"
+      ],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E8%A1%A5%E9%AA%A8%E8%84%82.pdf"
+    },
+    {
+      "name": "土茯苓",
+      "botanical": "Smilacis Glabrae Rhizoma（glabrous greenbrier rhizome）",
+      "part": "根茎；长圆形或不规则薄片",
+      "appearance": "大而薄的不规则片，厚 1~5mm，边缘不整齐；外皮黄棕或灰褐；切面类白至淡红棕，粉性，可见点状维管束与多数小亮点",
+      "prompt_en": "large thin irregular slices 1-5 mm thick with ragged edges, a yellowish-brown to greyish-brown rim, and a powdery off-white to pale reddish-brown cut face dotted with tiny shiny specks (not white poria cubes)",
+      "confusable": [
+        "赤芍",
+        "泽泻"
+      ],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E5%9C%9F%E8%8C%AF%E8%8B%93.pdf"
+    },
+    {
+      "name": "诃子",
+      "botanical": "Chebulae Fructus（chebulic myrobalan）",
+      "part": "果实；整果",
+      "appearance": "卵形或长圆形整果，长 2~4cm、直径 2~2.5cm；黄棕至暗棕色，略有光泽，有 5~6 条纵棱，基部有圆形果梗痕",
+      "prompt_en": "whole dried oval fruits 20-40 mm long, yellowish-brown to dark brown with a slight sheen and 5-6 distinct lengthwise ridges, a round stalk scar at the base",
+      "confusable": [
+        "榧子"
+      ],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E8%AF%83%E5%AD%90.pdf"
+    },
+    {
+      "name": "泽泻",
+      "botanical": "Alismatis Rhizoma（oriental water plantain tuber）",
+      "part": "块茎；圆形或椭圆形厚片",
+      "appearance": "圆或椭圆厚片，直径 2~6cm、厚 2~4mm；外圈淡黄至淡黄棕，有环状浅沟纹；切面黄白，粉性，有多数细孔",
+      "prompt_en": "round to oval thick slices 20-60 mm across and 2-4 mm thick, a pale yellowish rim with faint ring grooves, a powdery off-white cut face scattered with many tiny pores",
+      "confusable": [
+        "茯苓",
+        "白术",
+        "土茯苓"
+      ],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E6%B3%BD%E6%B3%BB.pdf"
+    },
+    {
+      "name": "茯苓",
+      "botanical": "Poria（poria mushroom sclerotium）",
+      "part": "菌核；去皮的方块或厚片",
+      "appearance": "去皮后的方块或厚片，大小不一；白色，偶带淡红或淡棕；断面颗粒状，没有纤维和纹理",
+      "prompt_en": "plain chalk-white cubes and thick slabs of dried poria with a fine granular matte texture, no fibers, rings or grain lines, crisp cut edges",
+      "confusable": [
+        "泽泻",
+        "葛根"
+      ],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E8%8C%AF%E8%8B%93.pdf"
+    },
+    {
+      "name": "薏苡仁",
+      "aliases": [
+        "薏米",
+        "薏仁",
+        "苡仁"
+      ],
+      "botanical": "Coicis Semen（Job's tears seed）",
+      "part": "种仁；整粒",
+      "appearance": "宽卵形或长椭圆形粒，长 4~8mm、宽 3~6mm；乳白色，光滑，偶有黄褐色种皮残留；腹面有一条较宽较深的纵沟",
+      "prompt_en": "plump milky-white oval grains 4-8 mm long, smooth and matte, each with one wide deep groove down one side, occasional tiny brownish skin remnants (larger and rounder than rice)",
+      "confusable": [],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E8%96%8F%E8%8B%A1%E4%BB%81.pdf"
+    },
+    {
+      "name": "赤芍",
+      "botanical": "Paeoniae Radix Rubra（red peony root）",
+      "part": "根；类圆形切片",
+      "appearance": "类圆形片，直径 5~30mm、厚 2~4mm；外皮棕褐，粗糙；切面粉白或粉红，皮部窄，木部放射状纹理明显",
+      "prompt_en": "round slices 5-30 mm across and 2-4 mm thick, a rough dark brown bark rim, pinkish-white to pale pink cut face with clear radiating lines",
+      "confusable": [
+        "土茯苓",
+        "金荞麦",
+        "茜草"
+      ],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E8%B5%A4%E8%8A%8D.pdf"
+    },
+    {
+      "name": "车前子",
+      "botanical": "Plantaginis Semen（plantain seed）",
+      "part": "种子；整粒",
+      "appearance": "极小的扁椭圆粒，长约 2mm、宽约 1mm；黄棕至黑褐色，有细皱纹，一面有灰白色凹点状种脐",
+      "prompt_en": "extremely tiny flat oval seeds about 2 mm long, yellowish-brown to dark brown, like fine dark sand when piled",
+      "confusable": [
+        "菟丝子",
+        "补骨脂"
+      ],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E8%BD%A6%E5%89%8D%E5%AD%90.pdf"
+    },
+    {
+      "name": "山茱萸",
+      "aliases": [
+        "山萸肉",
+        "萸肉"
+      ],
+      "botanical": "Corni Fructus（Asiatic cornelian cherry flesh）",
+      "part": "去核果肉；不规则片状或囊状",
+      "appearance": "皱缩的不规则片状或破囊状果肉，长 1~1.5cm、宽 0.5~1cm；紫红至紫黑色，有光泽，质柔软，没有果核",
+      "prompt_en": "shriveled, torn, pitted pieces of dried cornelian cherry flesh 10-15 mm long, glossy purplish-red to purplish-black, soft and slightly sticky-looking, no whole round fruits and no pits",
+      "confusable": [
+        "枸杞子",
+        "桑椹"
+      ],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E5%B1%B1%E8%8C%B1%E8%90%B8.pdf"
+    },
+    {
+      "name": "女贞子",
+      "botanical": "Ligustri Lucidi Fructus（glossy privet fruit）",
+      "part": "果实；整粒",
+      "appearance": "卵形或肾形小果，长 6~8.5mm、直径 3.5~5.5mm；黑紫或灰黑色，皱缩不平；酒制品常附白色粉霜",
+      "prompt_en": "small wrinkled oval dark berries 6-8.5 mm long, matte blackish-purple to greyish-black, some with a faint whitish bloom",
+      "confusable": [
+        "桑椹",
+        "补骨脂"
+      ],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E5%A5%B3%E8%B4%9E%E5%AD%90.pdf"
+    },
+    {
+      "name": "枸杞子",
+      "aliases": [
+        "枸杞"
+      ],
+      "botanical": "Lycii Fructus（goji berry）",
+      "part": "果实；整粒",
+      "appearance": "纺锤形或椭圆形，长 6~20mm、直径 3~10mm；红色或暗红色，果皮皱缩，一端有白色果梗痕",
+      "prompt_en": "dried goji berries, spindle-shaped, 6-20 mm long, red to deep red with slightly wrinkled skin and a tiny white stalk scar at one end",
+      "confusable": [
+        "沙棘",
+        "山茱萸"
+      ],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E6%9E%B8%E6%9D%9E%E5%AD%90.pdf"
+    },
+    {
+      "name": "菟丝子",
+      "botanical": "Cuscutae Semen（dodder seed）",
+      "part": "种子；整粒",
+      "appearance": "类球形小粒，直径 1~2mm；灰棕至棕褐色，粗糙，哑光",
+      "prompt_en": "tiny round seeds only 1-2 mm across, matte greyish-brown and rough, looking like coarse sand in a pile",
+      "confusable": [
+        "车前子",
+        "补骨脂"
+      ],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E8%8F%9F%E4%B8%9D%E5%AD%90.pdf"
+    },
+    {
+      "name": "桑椹",
+      "aliases": [
+        "桑葚"
+      ],
+      "botanical": "Mori Fructus（dried mulberry）",
+      "part": "聚合果；整穗",
+      "appearance": "长圆形聚合果，长 1~2cm、直径 5~8mm，由多数小瘦果聚成，表面颗粒感明显，带短果梗；黄棕、棕红至暗紫色",
+      "prompt_en": "dried mulberries 10-20 mm long and 5-8 mm thick, elongated clusters of tiny bumps with a short stem, dark purple to reddish-brown, dull and slightly shriveled",
+      "confusable": [
+        "女贞子",
+        "山茱萸"
+      ],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E6%A1%91%E6%A4%B9.pdf"
+    },
+    {
+      "name": "泽兰",
+      "botanical": "Lycopi Herba（shiny bugleweed）",
+      "part": "地上部分；茎叶切段",
+      "appearance": "方柱形茎段，直径 2~6mm，四面有浅纵沟，黄绿或带紫色，节处紫色明显，有白色茸毛；切面中空；夹有带锯齿的碎叶",
+      "prompt_en": "short cut segments of square four-sided stems 2-6 mm thick, yellowish-green tinged purple with distinctly purple nodes and fine white hairs, hollow centers, mixed with crumpled serrated leaf bits",
+      "confusable": [
+        "益母草"
+      ],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E6%B3%BD%E5%85%B0.pdf"
+    },
+    {
+      "name": "厚朴",
+      "botanical": "Magnoliae Officinalis Cortex（magnolia bark）",
+      "part": "树皮；弯曲丝条或卷筒",
+      "appearance": "弯曲丝条或单、双卷筒，皮厚 2~7mm；外表面灰褐，粗糙，有椭圆形皮孔；内表面紫棕至深紫褐，较平滑，有油性",
+      "prompt_en": "curled strips and rolled quills of thick dried bark 2-7 mm thick, rough grey-brown outer surface with oval lenticels, smooth oily purplish-brown inner surface",
+      "confusable": [
+        "杜仲",
+        "地骨皮"
+      ],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E5%8E%9A%E6%9C%B4.pdf"
+    },
+    {
+      "name": "升麻",
+      "botanical": "Cimicifugae Rhizoma（Chinese bugbane rhizome）",
+      "part": "根茎；不规则厚片",
+      "appearance": "不规则厚片，厚 2~4mm，体轻；外缘黑褐或棕褐，粗糙，带坚硬须根残基；切面黄绿或淡黄白，有网状或放射状纹理与裂隙",
+      "prompt_en": "irregular lightweight thick slices 2-4 mm thick with a rough blackish-brown rim and stiff rootlet stubs, the cut face yellowish-green to pale yellow with a net-like or radiating pattern and small cracks (Chinese bugbane, not North American black cohosh)",
+      "confusable": [
+        "苍术",
+        "川芎"
+      ],
+      "source_url": "https://wechat-kmhd2.oss-cn-shenzhen.aliyuncs.com/GM4T/StandardSpecification/2020_pharmacopeia/%E5%8D%87%E9%BA%BB.pdf"
+    },
+    {
+      "name": "银杏叶",
+      "botanical": "Ginkgo Folium（dried ginkgo leaf）",
+      "part": "叶；整叶或碎叶",
+      "appearance": "扇形叶，宽 5~15cm，上缘波状、常有凹缺；干后黄绿或浅棕黄，二叉状平行细脉从叶基放射，没有中脉；多皱折、破碎",
+      "prompt_en": "dried fan-shaped ginkgo leaves 5-15 cm wide with a wavy, often notched top edge, fine parallel veins fanning out from the stalk and no midrib, dull yellowish-green to pale tan, slightly crumpled (not fresh bright green, not glowing autumn gold)",
+      "confusable": [],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details15928NEyVKQqDN562270.html"
+    },
+    {
+      "name": "薤白",
+      "botanical": "Allii Macrostemonis Bulbus（longstamen onion bulb）",
+      "part": "鳞茎；整粒",
+      "appearance": "不规则卵圆形小鳞茎，高 0.5~1.5cm、直径 0.5~1.8cm；黄白至淡黄棕，皱缩，半透明，有类白色膜质鳞片，底部有突起的鳞茎盘",
+      "prompt_en": "small wrinkled dried bulbs 5-18 mm across, translucent waxy yellowish-white to pale tan, some with papery whitish skins and a raised root disc at the base, like tiny shriveled shallots",
+      "confusable": [],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details15928bOhAyzXGx169454.html"
+    },
+    {
+      "name": "茜草",
+      "botanical": "Rubiae Radix et Rhizoma（Indian madder root）",
+      "part": "根和根茎；细段或小厚片",
+      "appearance": "细根小段，直径 2~10mm；外皮红棕或暗棕，有细纵纹；切面皮部紫红，木部浅黄红，密布小孔",
+      "prompt_en": "thin short segments of dried madder root only 2-10 mm thick, reddish-brown to dark brown skin, the cut ends purplish-red and finely porous",
+      "confusable": [
+        "夜交藤",
+        "赤芍"
+      ],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details15928sbNktnpxVQ47195.html"
+    },
+    {
+      "name": "黄精",
+      "botanical": "Polygonati Rhizoma（Solomon's seal rhizome）",
+      "part": "根茎；不规则厚片，市售多为酒制黑片",
+      "appearance": "不规则厚片；切面略呈角质样，淡黄至黄棕，可见多数淡黄色筋脉小点；酒黄精通体棕褐至黑色，油润有光泽，质柔软",
+      "prompt_en": "irregular thick slices with a slightly translucent horn-like cut face, pale yellow to yellowish-brown with many small vein dots; the wine-steamed kind is glossy blackish-brown, soft and sticky-looking",
+      "confusable": [
+        "姜黄",
+        "知母"
+      ],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details15928Dlj747kAGo54348.html"
+    },
+    {
+      "name": "沙棘",
+      "botanical": "Hippophae Fructus（dried sea-buckthorn berry）",
+      "part": "果实；整粒干果",
+      "appearance": "类球形小果，直径 5~8mm；橙黄或棕红色，皱缩，常数个粘连成团，顶端有残存花柱",
+      "prompt_en": "small shriveled round dried berries 5-8 mm across, orange-yellow to brownish-red, often stuck together in little clumps (not plump glossy fresh berries)",
+      "confusable": [
+        "枸杞子"
+      ],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details15928cOBbpXv8OI39666.html"
+    },
+    {
+      "name": "党参",
+      "botanical": "Codonopsis Radix（codonopsis root）",
+      "part": "根；类圆形厚片或段",
+      "appearance": "类圆形厚片或段，直径 4~20mm；外皮灰黄至灰棕，有纵皱与横长皮孔样突起；切面皮部淡棕黄，木部淡黄，有裂隙或放射状纹理；略带韧性",
+      "prompt_en": "round thick slices or short segments of dried codonopsis root 4-20 mm thick, greyish-yellow wrinkled skin, the cut face pale yellow with a light-brown outer ring, small cracks and radiating lines, slightly leathery",
+      "confusable": [
+        "桔梗",
+        "甘草"
+      ],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details15928xTjHWJZxeu54348.html"
+    },
+    {
+      "name": "益母草",
+      "botanical": "Leonuri Herba（motherwort）",
+      "part": "地上部分；茎叶切段",
+      "appearance": "方茎切段，长约 2cm，茎直径 2~5mm，四面凹下成纵沟，灰绿或黄绿；切面中部有白色实心髓；夹有皱缩破碎的灰绿色叶片",
+      "prompt_en": "cut segments about 20 mm long of square four-sided stems 2-5 mm thick with grooved sides, greyish-green to yellowish-green, each cut end showing a solid white pith, mixed with crumpled grey-green leaf fragments",
+      "confusable": [
+        "泽兰",
+        "鱼腥草"
+      ],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details15928sXEIdx7R3j54348.html"
+    },
+    {
+      "name": "白术",
+      "botanical": "Atractylodis Macrocephalae Rhizoma（largehead atractylodes rhizome）",
+      "part": "根茎；不规则厚片",
+      "appearance": "较大的不规则厚片；外皮灰黄或灰棕；切面黄白至淡棕，散生稀疏的棕黄色点状油室，可见放射状纹理",
+      "prompt_en": "large irregular thick slices with a greyish-yellow knobby rim, off-white to light tan cut face sprinkled with sparse brownish-yellow oil dots and faint radiating lines",
+      "confusable": [
+        "苍术",
+        "泽泻",
+        "知母"
+      ],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details15928vUMSeWPNdh32404.html"
+    },
+    {
+      "name": "桑枝",
+      "botanical": "Mori Ramulus（mulberry twig）",
+      "part": "嫩枝；类圆形或椭圆形斜厚片",
+      "appearance": "斜切厚片，直径 5~15mm、厚 2~5mm；外皮薄，灰黄或黄褐，有点状皮孔；切面木部黄白，有放射线，中心有小白髓",
+      "prompt_en": "small oval slanted slices of mulberry twig 5-15 mm across and 2-5 mm thick, thin greyish-yellow bark with dot-like lenticels, pale yellowish-white wood with fine radiating rays and a tiny white pith",
+      "confusable": [
+        "夜交藤"
+      ],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details159281y4aftVeXz54348.html"
+    },
+    {
+      "name": "野菊花",
+      "botanical": "Chrysanthemi Indici Flos（dried wild chrysanthemum）",
+      "part": "头状花序；整朵",
+      "appearance": "类球形小花头，直径 3~10mm，棕黄色；外围一轮皱缩卷曲的黄色舌状花，中央多数深黄色管状花，底部有灰绿色苞片",
+      "prompt_en": "tiny dried wild chrysanthemum heads only 3-10 mm across, roughly pea-sized balls, one ring of curled yellow petals around a dense deep-yellow center, greyish-green bracts underneath, slightly brownish-yellow overall",
+      "confusable": [],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details15928ghbw1Noapg62270.html"
+    },
+    {
+      "name": "蒲公英",
+      "botanical": "Taraxaci Herba（dried dandelion whole herb）",
+      "part": "全草；切段",
+      "appearance": "皱缩破碎的段：棕褐色根段、绿褐或暗灰绿色羽状裂叶碎片，偶见黄褐色花头与带白色冠毛的瘦果",
+      "prompt_en": "a loose mix of crumpled cut pieces of dried dandelion: brown wrinkled root bits, dark greyish-green fragments of deeply lobed leaves, and occasional brownish-yellow flower heads with white fluffy seeds",
+      "confusable": [
+        "鱼腥草"
+      ],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details15928aRXDRBuk2y62361.html"
+    },
+    {
+      "name": "金银花",
+      "botanical": "Lonicerae Japonicae Flos（dried honeysuckle bud）",
+      "part": "花蕾；整蕾",
+      "appearance": "细棒状花蕾，上粗下细，略弯曲，长 2~3cm，上部直径约 3mm；黄白或绿白色，密被短柔毛",
+      "prompt_en": "dried unopened honeysuckle buds, slender slightly curved club shapes 20-30 mm long and about 3 mm thick at the top, creamy yellow-white to pale greenish-white with fine fuzzy hairs (closed buds, not open flowers)",
+      "confusable": [],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details15928vDstrPJPdm47195.html"
+    },
+    {
+      "name": "桔梗",
+      "botanical": "Platycodonis Radix（balloon flower root）",
+      "part": "根，多已去皮；椭圆形或不规则厚片",
+      "appearance": "去皮后的白净厚片，直径 7~20mm；切面皮部黄白、较窄，有一圈明显的棕色形成层环，木部较宽，有较多裂隙",
+      "prompt_en": "clean peeled oval slices 7-20 mm across, creamy white cut face with one distinct thin brown ring and many small radial cracks, almost no bark",
+      "confusable": [
+        "党参",
+        "甘草"
+      ],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details15928lxIBUn3wCn54348.html"
+    },
+    {
+      "name": "金荞麦",
+      "botanical": "Fagopyri Dibotryis Rhizoma（golden buckwheat rhizome）",
+      "part": "根茎；不规则厚片",
+      "appearance": "不规则厚片，直径 1~4cm，质坚硬；外皮棕褐；切面淡黄白或淡棕红，有放射状纹理，有的中央髓部颜色较深",
+      "prompt_en": "hard irregular thick slices 10-40 mm across with a dark brown rim, the cut face pale yellowish to pale reddish-brown with radiating lines and a darker center",
+      "confusable": [
+        "赤芍"
+      ],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details15928KoVjKqDhu347195.html"
+    },
+    {
+      "name": "鱼腥草",
+      "botanical": "Houttuyniae Herba（dried fish mint）",
+      "part": "地上部分；切段",
+      "appearance": "扁圆柱形、扭曲的茎段，淡红棕至黄棕，有纵棱（药典记载鲜品茎直径 2.5~4.5mm，干品更细）；夹有黄棕至暗棕色、皱缩破碎的心形叶片与穗状花序",
+      "prompt_en": "cut segments of flattened ridged stems 2-4 mm thick, reddish-brown to yellowish-brown, mixed with crumpled brown fragments of heart-shaped leaves and small spike flower clusters",
+      "confusable": [
+        "蒲公英",
+        "益母草"
+      ],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details159282pk3ff7H7447195.html"
+    },
+    {
+      "name": "知母",
+      "botanical": "Anemarrhenae Rhizoma（anemarrhena rhizome）",
+      "part": "根茎；不规则类圆形厚片",
+      "appearance": "小类圆形厚片，直径 8~15mm；外缘黄棕，常残留黄棕色毛须状叶基纤维；切面黄白至黄色",
+      "prompt_en": "small roundish thick slices 8-15 mm across, pale yellow to off-white cut face, the brownish rim fringed with fine yellowish-brown hair-like fibers",
+      "confusable": [
+        "白术",
+        "黄精"
+      ],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details15928yq65bu5TVF47195.html"
+    },
+    {
+      "name": "地骨皮",
+      "botanical": "Lycii Cortex（wolfberry root bark）",
+      "part": "根皮；筒状或槽状",
+      "appearance": "薄卷筒状或槽状根皮，长 3~10cm、宽 0.5~1.5cm、厚 1~3mm；外表面灰黄至棕黄，粗糙，易成鳞片状剥落；内表面黄白至灰黄",
+      "prompt_en": "thin curled quills and troughs of root bark 30-100 mm long, 5-15 mm wide and 1-3 mm thick, rough greyish-yellow outer surface flaking off in scales, smooth pale yellowish inner surface",
+      "confusable": [
+        "厚朴",
+        "远志"
+      ],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details15928tqf1Eaio3J32504.html"
+    },
+    {
+      "name": "杜仲",
+      "botanical": "Eucommiae Cortex（eucommia bark）",
+      "part": "树皮；小方块或丝",
+      "appearance": "厚 3~7mm 的树皮块或丝；外表面淡棕或灰褐，有皱纹或纵裂槽纹；内表面暗紫色，光滑；折断处有细密、银白色、富弹性的橡胶丝相连",
+      "prompt_en": "flat pieces of thick dried bark 3-7 mm thick, rough light-brown to grey-brown outer surface with furrows, smooth dark purplish inner surface; where a piece is snapped, fine silvery-white elastic latex threads stretch between the halves",
+      "confusable": [
+        "厚朴"
+      ],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details15928f3Rp5skjYD39666.html"
+    },
+    {
+      "name": "苍术",
+      "botanical": "Atractylodis Rhizoma（atractylodes rhizome）",
+      "part": "根茎；不规则类圆形或条形厚片",
+      "appearance": "类圆形或条形厚片，直径 1~4cm；外皮灰棕至黑棕；切面黄白或灰白，散有多数橙黄至棕红色油点，有的析出白色细针状结晶（起霜）",
+      "prompt_en": "irregular thick slices 10-40 mm across with a grey-brown to blackish rim, off-white cut face densely speckled with orange-red oil dots, some showing a faint white crystalline frost",
+      "confusable": [
+        "白术",
+        "木香",
+        "升麻",
+        "川芎"
+      ],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details15928IEl6a1JSir39666.html"
+    },
+    {
+      "name": "木香",
+      "botanical": "Aucklandiae Radix（costus root）",
+      "part": "根；类圆形或不规则厚片",
+      "appearance": "类圆形厚片，直径 5~50mm；外皮黄棕至灰褐；切面棕黄至棕褐，中部有菊花心状放射纹理，形成层环棕色，散有褐色油点",
+      "prompt_en": "round thick slices 5-50 mm across, yellowish-brown to brown cut face with a chrysanthemum-like radiating pattern in the center, a darker brown ring and scattered brown oil dots",
+      "confusable": [
+        "川芎",
+        "苍术"
+      ],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details15928gBd7PtRjTV24200.html"
+    },
+    {
+      "name": "姜黄",
+      "botanical": "Curcumae Longae Rhizoma（turmeric）",
+      "part": "根茎；不规则或类圆形厚片",
+      "appearance": "厚片，直径 1~3cm；外皮深黄；切面棕黄至金黄，角质样，有蜡样光泽，内皮层环纹明显，维管束点状散在",
+      "prompt_en": "round to irregular thick slices 10-30 mm across, deep golden-yellow to orange-brown waxy horn-like cut face with a clear inner ring and scattered dots, deep yellow skin",
+      "confusable": [
+        "黄精"
+      ],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details159288fu90EpQfT54348.html"
+    },
+    {
+      "name": "川芎",
+      "botanical": "Chuanxiong Rhizoma（Sichuan lovage rhizome）",
+      "part": "根茎；不规则厚片",
+      "appearance": "形状不规则、边缘起伏的厚片（习称蝴蝶片）；外皮灰褐；切面黄白或灰黄，有明显的波状环纹或多角形纹理，散生黄棕色油点",
+      "prompt_en": "irregular thick slices with wavy lobed outlines like butterfly wings, grey-brown rim, off-white to greyish-yellow cut face with a distinct wavy ring pattern and scattered yellowish-brown oil dots",
+      "confusable": [
+        "木香",
+        "苍术",
+        "升麻"
+      ],
+      "source_url": "https://shuju.qgyyzs.net/yd2020/details15928b5BeOPuBOv24050.html"
     }
   ]
 }

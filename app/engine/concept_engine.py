@@ -28,7 +28,7 @@ def compile_concept_prompt(
         video_type=video_type,
         aspect_ratio=aspect_ratio,
         target_duration_seconds=target_duration_seconds,
-        category_json=json.dumps(category.model_dump(), ensure_ascii=False, indent=2),
+        category_json=json.dumps(category.prompt_dict(), ensure_ascii=False, indent=2),
         platform_json=json.dumps(platform.model_dump(), ensure_ascii=False, indent=2),
         product_info_json=json.dumps(product_info or {}, ensure_ascii=False, indent=2),
         user_creative_idea=idea,
