@@ -101,8 +101,10 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
     with config_row, gr.Accordion("🔌 插卡式 Skill 管理与在线微调", open=False):
         with gr.Row():
             for slot in SKILL_SLOTS:
-                choices = rt.skills.choices(slot, default_cat)
-                skill_dropdowns[slot] = gr.Dropdown(choices, value=choices[0][1] if choices else None,
+                # 服务端用全部卡带做取值校验：服务重启后，旧页面里已切换到其他类目的卡带仍然有效；
+                # 页面打开时再按当前类目过滤显示（见文末 demo.load）
+                default = rt.skills.choices(slot, default_cat)
+                skill_dropdowns[slot] = gr.Dropdown(rt.skills.choices(slot), value=default[0][1] if default else None,
                                                     label=SLOT_LABELS[slot])
         with gr.Row():
             rescan = gr.Button("🔄 重新扫描本地 .md 卡带")
@@ -297,6 +299,7 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
     # 页面打开时初始化动态表单、平台提示与 Skill 预览
     demo.load(on_category, [category, *info_fields], [*info_fields, compliance])
     demo.load(on_platform, platform, platform_hint)
+    demo.load(lambda cid, *ids: _skill_updates(cid, ids, keep_current=True), [category, *dd], dd)
     demo.load(show_skill, [preview_slot, *dd], skill_body)
     demo.load(lambda: (rt.mode_summary(), gr.update(choices=ws.project_choices())), None, [mode_status, history])
 

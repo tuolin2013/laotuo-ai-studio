@@ -272,6 +272,17 @@ def test_clone_workflow_through_ui(server, tmp_path):
         assert all(h3_structure_issues(s.h3_prompt, s.h3_official_mode) == [] for s in script.shots)
 
 
+def test_category_skill_accepted_without_category_change_event(server):
+    """服务重启后，旧页面直接提交其他类目的专属卡带（服务端会话里没有切换类目的记录）也能生成策划。"""
+    client, _, _ = server
+    pet_info = ["猫犬通用", "辰节宁", "", "", "", "", "", ""]
+    client.predict("重启后旧页面", "pet_supplement", "taobao", *pet_info, api_name="/new_project")
+    skill = "pet_only_planner"
+    out = client.predict("pet_supplement", "taobao", 5, "1:1", "auto", "", skill, "", *pet_info,
+                         api_name="/main_image_generate")
+    assert "策划完成" in _last(out[0]) and len(out[2]["data"]) == 5
+
+
 def test_clone_without_video_is_rejected(server):
     client, _, _ = server
     client.predict("克隆缺视频", TEA, "taobao", *INFO, api_name="/new_project")
