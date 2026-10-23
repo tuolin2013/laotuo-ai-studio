@@ -200,7 +200,7 @@ def build_image_tab(ws: Workspace, header: Header, spec: TabSpec) -> None:
                     single_btn = gr.Button("📎 绑定到该槽位")
                 with gr.Row():
                     model = gr.Dropdown(model_choices(rt.settings.image_models), value=rt.settings.image_models[0],
-                                        label="生图模型（image 高质量渠道）", scale=3)
+                                        label="生图模型（【高质量】/【普通】为 RightAPI 渠道）", scale=3)
                     res = gr.Dropdown(list(IMAGE_RESOLUTIONS), value=rt.settings.image_resolution, label="分辨率")
                     quality = gr.Dropdown(list(IMAGE_QUALITIES), value=rt.settings.image_quality,
                                           label="GPT 质量档（xhigh/max 仅 2.5）")

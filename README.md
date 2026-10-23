@@ -79,7 +79,8 @@ cp .env.example .env          # 不填任何 Key 也能启动（演示模式）
 | 通道 | 需要的配置 | 用途 | 未配置时 |
 |---|---|---|---|
 | LLM | `RIGHTAPI_LLM_KEY` | 执行全部 Skill（策划、编剧、提示词） | 演示数据，JSON 结构与真实输出一致 |
-| 画图 | `RIGHTAPI_IMAGE_KEY` | GPT Image / Nano Banana 生图 | PIL 绘制中文排版的预览图，带「DEMO」角标 |
+| 画图 · image 高质量 | `RIGHTAPI_IMAGE_KEY` | GPT Image / Nano Banana 生图（生产默认） | PIL 绘制中文排版的预览图，带「DEMO」角标 |
+| 画图 · image 普通 | `RIGHTAPI_IMAGE_STD_KEY` | 普通渠道的 GPT Image / Nano Banana 模型 | 同上 |
 | 视频 | 本机已登录 Modal | 调用自行部署的 MiniMax H3 服务 | ffmpeg 合成演示视频 |
 
 `DEMO_MODE=true` 会强制所有通道走演示模式，即使已填写 Key。
@@ -91,7 +92,9 @@ cp .env.example .env          # 不填任何 Key 也能启动（演示模式）
 | `RIGHTAPI_BASE_URL` | `https://www.rightapi.ai` | RightAPI 网关地址，会自动补全协议、去掉结尾的 `/v1` |
 | `RIGHTAPI_LLM_MODEL` | `claude-opus-5-5` | LLM 模型 |
 | `RIGHTAPI_LLM_API_FORMAT` | `auto` | `anthropic`（`/v1/messages`）/ `openai`（`/v1/chat/completions`）/ `auto` 自动探测 |
-| `RIGHTAPI_IMAGE_MODELS` | 高质量渠道 5 个模型 | 界面可选的画图模型，必须是已登记的模型 |
+| `RIGHTAPI_IMAGE_STD_BASE_URL` | 空（同 `RIGHTAPI_BASE_URL`） | 普通渠道的 Base URL |
+| `RIGHTAPI_IMAGE_MODELS` | 两个渠道全部 11 个模型 | 界面可选的画图模型，必须是已登记的模型 |
+| `RIGHTAPI_IMAGE_BUSY_RETRIES` | `3` | 上游繁忙时自动重新提交的次数，`0` 关闭 |
 | `RIGHTAPI_IMAGE_RESOLUTION` | `2K` | `1K` / `2K` / `4K` |
 | `RIGHTAPI_IMAGE_QUALITY` | `high` | GPT Image 质量档，`xhigh` / `max` 仅 2.5 模型可用 |
 | `RIGHTAPI_IMAGE_CONCURRENCY` | `8` | 本机同时进行的画图任务数 |
@@ -107,7 +110,7 @@ cp .env.example .env          # 不填任何 Key 也能启动（演示模式）
 |---|---|---|
 | image 高质量（推荐） | `gpt-image-2.5-flare`、`gpt-image-2.5-sunburst`、`gpt-image-2` | OpenAI 生成 / 编辑接口 |
 | image 高质量（推荐） | `gemini-3-pro-image-preview`、`gemini-nano-banana-2.1` | Gemini `generateContent` |
-| image 普通 | `gpt-image-2-vip`、`gpt-image-2.5` | OpenAI 生成 / 编辑接口 |
+| image 普通 | `gpt-image-2`（目录 ID `gpt-image-2@image`）、`gpt-image-2-vip`、`gpt-image-2.5` | OpenAI 生成 / 编辑接口 |
 | image 普通 | `nano-banana-pro`、`nano-banana-2`、`nano-banana-2-lite` | Gemini `generateContent` |
 
 全部请求以异步任务提交并轮询结果，接口细节以 [RightAPI 官方文档](https://docs.rightapi.ai/docs/rc_draw/) 为准。

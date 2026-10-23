@@ -22,7 +22,7 @@ from app.engine.runtime import EngineRuntime
 from app.providers.demo.aesthetics import pill_from_copy
 from app.providers.demo.render import DemoArt, render_demo_image
 from app.providers.image import gpt_image_size, gpt_quality_for, is_experimental_size
-from app.providers.image_models import protocol_of
+from app.providers.image_models import CHANNEL_LABELS, get_model, live_channel_of, protocol_of
 from app.providers.video import VideoProviderError, VideoRequest
 from app.schemas.common import mode_for_reference_count
 from app.schemas.plan import CandidateImage, ImagePlan, ImageSlot
@@ -63,26 +63,33 @@ class RenderEngine:
         emit: Callable[[str], Awaitable[None]],
     ) -> Path:
         """生成 1 张图（真实接口或演示渲染），返回保存路径。"""
-        if self.rt.is_live("image"):
+        if self.rt.is_live(live_channel_of(model)):
             req = route_image_request(self.rt.settings, model, prompt, aspect_ratio, references,
                                       resolution=resolution, quality=quality)
-            data = (await self.rt.image_client().send(req, image_key(self.rt.settings), on_event=emit))[0]
+            client = self.rt.image_client(self.rt.settings.image_base_url(model))
+            data = (await client.send(req, image_key(self.rt.settings, model), on_event=emit))[0]
             out_path.write_bytes(data)
             return out_path
         await asyncio.sleep(self.rt.demo_delay)
         return await asyncio.to_thread(render_demo_image, art, aspect_ratio, out_path)
 
+    def _mode_label(self, model: str) -> str:
+        """日志用：渠道 + 真实 / 演示。"""
+        ch = CHANNEL_LABELS[get_model(model).channel]
+        return f"image {ch}渠道 · {'真实 API' if self.rt.is_live(live_channel_of(model)) else '演示模式'}"
+
     def describe_request(self, model: str, aspect_ratio: str, n_refs: int, resolution: str | None = None,
                          quality: str | None = None) -> str:
         """日志用：说明本次会调用哪个接口与参数，便于核对协议是否正确。"""
         tier = (resolution or self.rt.settings.image_resolution).upper()
-        if protocol_of(model) == "openai":
+        m = get_model(model)
+        if m.protocol == "openai":
             path = "/v1/images/edits" if n_refs else "/v1/images/generations"
             size = gpt_image_size(aspect_ratio, tier)
             q = gpt_quality_for(model, quality or self.rt.settings.image_quality)
             warn = "（超过 2560x1440 属实验性大图，耗时更长）" if is_experimental_size(size) else ""
             return f"OpenAI 生成 {path} · size {size} · quality {q}{warn}"
-        return f"Gemini 生成 /v1beta/models/{model}:generateContent · {aspect_ratio} · imageSize {tier}"
+        return f"Gemini 生成 /v1beta/models/{m.request_model}:generateContent · {aspect_ratio} · imageSize {tier}"
 
     async def _render_items(
         self,
@@ -191,7 +198,7 @@ class RenderEngine:
         slots = [s for s in plan.slots if slot_ids is None or s.slot_id in slot_ids]
         cat = self.rt.category(plan.category_id)
         res = (resolution or self.rt.settings.image_resolution).upper()
-        mode = "真实 API" if self.rt.is_live("image") else "演示模式"
+        mode = self._mode_label(model)
         total = sum(s.candidate_count for s in slots)
         yield RenderEvent(f"🚀 开始并发生成 {len(slots)} 个槽位 / {total} 张（{model} · {res} · {mode}，"
                           f"同时进行 {self.rt.settings.image_concurrency} 个画图任务）")
@@ -246,7 +253,8 @@ class RenderEngine:
         if missing:
             yield RenderEvent("⚠️ 以下参考图尚未上传，相关首帧将按已有参考图（可能退化为文生图）生成：" +
                               "、".join(m.role for m in missing))
-        yield RenderEvent(f"🖼️ 开始生成 {len(shots)} 个分镜首帧（比例锁定 {script.aspect_ratio}，{model} · {res}）")
+        yield RenderEvent(f"🖼️ 开始生成 {len(shots)} 个分镜首帧（比例锁定 {script.aspect_ratio}，{model} · {res} · "
+                          f"{self._mode_label(model)}）")
 
         def on_prompt(shot: StoryboardShot, prompt: str) -> None:
             shot.first_frame_prompt = prompt

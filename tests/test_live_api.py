@@ -182,7 +182,9 @@ async def test_diagnostics_without_spending_image_quota():
 
     s = Settings(llm_key="LLM-KEY-1234567", image_key="DRAW-KEY-123456", llm_api_format="anthropic")
     report = await diagnose(s, httpx.MockTransport(handler))
-    assert "🟢 LLM" in report and "🟢 画图" in report and "gemini-3-pro-image-preview(gemini)" in report
+    assert "🟢 LLM" in report and "🟢 画图 · image 高质量" in report and "gemini-3-pro-image-preview(gemini)" in report
+    # 普通渠道没填 Key：单独提示，不影响高质量渠道
+    assert "🟡 画图 · image 普通" in report and "RIGHTAPI_IMAGE_STD_KEY" in report
     # Key 打码显示
     assert "DRAW-KEY-123456" not in report and "LLM-KEY-1234567" not in report
     # 诊断不提交画图任务，不消耗额度
@@ -192,4 +194,17 @@ async def test_diagnostics_without_spending_image_quota():
     assert "❌ 画图" in bad and "Key 无效" in bad
 
     empty = await diagnose(Settings(), httpx.MockTransport(handler))
-    assert empty.count("🟡") == 3
+    assert empty.count("🟡") == 4
+
+    # 两个渠道都配置：各自用自己的 Key 探测
+    both = Settings(image_key="DRAW-KEY-123456", image_std_key="STD-KEY-1234567")
+    probes = []
+
+    def probe_handler(req: httpx.Request):
+        probes.append(req.headers["authorization"])
+        return httpx.Response(404)
+
+    report2 = await diagnose(both, httpx.MockTransport(probe_handler))
+    assert "🟢 画图 · image 普通" in report2 and "nano-banana-2-lite(gemini)" in report2
+    assert "Bearer STD-KEY-1234567" in probes and "Bearer DRAW-KEY-123456" in probes
+    assert "STD-KEY-1234567" not in report2

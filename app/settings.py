@@ -9,7 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv, set_key
 
 from app.engine.config_loader import PROJECT_ROOT
-from app.providers.image_models import CATALOG, HQ_MODELS
+from app.providers.image_models import ALL_MODELS, CATALOG, get_model
 
 ENV_FILE = PROJECT_ROOT / ".env"
 # 官方文档 https://docs.rightapi.ai/docs/rc_draw/ 的基础地址（不带 www 时任务查询接口不可达）
@@ -21,6 +21,8 @@ IMAGE_QUALITIES = ("auto", "low", "medium", "high", "xhigh", "max")
 EDITABLE_ENV_KEYS = (
     "RIGHTAPI_LLM_KEY",
     "RIGHTAPI_IMAGE_KEY",
+    "RIGHTAPI_IMAGE_STD_KEY",
+    "RIGHTAPI_IMAGE_STD_BASE_URL",
     "RIGHTAPI_IMAGE_RESOLUTION",
     "RIGHTAPI_IMAGE_QUALITY",
     "RIGHTAPI_BASE_URL",
@@ -64,10 +66,15 @@ class Settings:
     # auto：先试 /v1/messages（Anthropic 原生），404/405 时回退 /v1/chat/completions
     llm_api_format: str = "auto"
     llm_timeout: float = 180
-    # 画图 Key：GPT Image 与 Nano Banana 共用（生产使用「image 高质量」渠道的 Key）
+    # 画图 Key：RightAPI 的 Key 绑定渠道，两个渠道各用一把；同一渠道内 GPT Image 与 Nano Banana 共用
+    # 「image 高质量」渠道（生产默认）
     image_key: str = field(default="", repr=False)
-    # 界面可选的画图模型（必须在 app/providers/image_models.py 的目录中，协议由目录决定）
-    image_models: list[str] = field(default_factory=lambda: list(HQ_MODELS))
+    # 「image 普通」渠道
+    image_std_key: str = field(default="", repr=False)
+    # 普通渠道的 Base URL；留空 = 与 rightapi_base_url 相同
+    image_std_base_url: str = ""
+    # 界面可选的画图模型（必须在 app/providers/image_models.py 的目录中，协议与渠道由目录决定）
+    image_models: list[str] = field(default_factory=lambda: list(ALL_MODELS))
     # 分辨率档位：GPT Image 换算为合法像素尺寸，Gemini 直接作为 imageSize
     image_resolution: str = "2K"
     # GPT Image 质量档；gpt-image-2 不支持 xhigh/max，会自动降为 high
@@ -75,6 +82,8 @@ class Settings:
     # 单个异步任务的最长等待（提交 + 轮询）
     image_timeout: float = 600
     image_poll_interval: float = 4.0
+    # 上游繁忙（temporarily busy / 429 / 503）时自动重新提交的次数，0 = 不重试
+    image_busy_retries: int = 3
     # 同时进行的画图任务数（高质量渠道不限并发，此处只为保护本机带宽）
     image_concurrency: int = 8
     default_video_provider: str = "modal_minimax_h3"
@@ -100,10 +109,18 @@ class Settings:
             {
                 "llm": self.llm_key,
                 "image": self.image_key,
+                "image_std": self.image_std_key,
                 "modal_h3": bool(self.modal_h3_app and self.modal_h3_class) and _modal_logged_in(),
                 "fal_ai": self.fal_key,
             }[channel]
         )
+
+
+    def image_base_url(self, model: str) -> str:
+        """模型所属渠道的 Base URL：普通渠道可单独配置，未配置时与高质量渠道相同。"""
+        if get_model(model).channel == "std" and self.image_std_base_url:
+            return self.image_std_base_url
+        return self.rightapi_base_url
 
 
 def _modal_logged_in() -> bool:
@@ -120,7 +137,7 @@ def _resolution(value: str) -> str:
 def _models(value: str) -> list[str]:
     """只保留目录中登记过协议的模型，未知模型直接忽略，避免调用错接口。"""
     picked = [m for m in _list(value) if m in CATALOG]
-    return picked or list(HQ_MODELS)
+    return picked or list(ALL_MODELS)
 
 
 def load_settings(env_file: Path | None = None, override: bool = False) -> Settings:
@@ -136,11 +153,14 @@ def load_settings(env_file: Path | None = None, override: bool = False) -> Setti
         # 兼容旧版的两个变量名（RIGHTAPI_OPENAI_IMAGE_KEY / RIGHTAPI_GEMINI_IMAGE_KEY）
         image_key=(e("RIGHTAPI_IMAGE_KEY", "") or e("RIGHTAPI_OPENAI_IMAGE_KEY", "")
                    or e("RIGHTAPI_GEMINI_IMAGE_KEY", "")),
+        image_std_key=e("RIGHTAPI_IMAGE_STD_KEY", ""),
+        image_std_base_url=normalize_base_url(u) if (u := e("RIGHTAPI_IMAGE_STD_BASE_URL", "").strip()) else "",
         image_models=_models(e("RIGHTAPI_IMAGE_MODELS", "")),
         image_resolution=_resolution(e("RIGHTAPI_IMAGE_RESOLUTION", "2K")),
         image_quality=q if (q := e("RIGHTAPI_IMAGE_QUALITY", "high").strip().lower()) in IMAGE_QUALITIES else "high",
         image_timeout=float(e("RIGHTAPI_IMAGE_TIMEOUT_SECONDS", "600")),
         image_poll_interval=float(e("RIGHTAPI_IMAGE_POLL_SECONDS", "4")),
+        image_busy_retries=max(0, int(e("RIGHTAPI_IMAGE_BUSY_RETRIES", "3"))),
         image_concurrency=max(1, int(e("RIGHTAPI_IMAGE_CONCURRENCY", "8"))),
         default_video_provider=e("DEFAULT_VIDEO_PROVIDER", "modal_minimax_h3"),
         video_timeout=float(e("VIDEO_TIMEOUT_SECONDS", "600")),

@@ -146,33 +146,37 @@ variables: [product_name]        # 选填，声明正文使用的变量
   - 策划表格中两列显示中文名，可填中文名、代码或「自动」。
   - 生图 Skill 编译时把卡带声明的 `references/` 指南全文附在指令之后；演示模式按流派色板 / 字体与构图留白区绘制预览图（`app/providers/demo/aesthetics.py`）。
 
-### 5.3 RightAPI 两把 Key 与画图接口（以官方文档为准）
+### 5.3 RightAPI Key 与画图接口（以官方文档为准）
 
 权威文档：https://docs.rightapi.ai/docs/rc_draw/ 。默认 Base URL：`https://www.rightapi.ai`（`normalize_base_url` 自动补 `https://`、去掉结尾 `/`、`/v1`、`/v1beta`；裸域名 `rightapi.ai` 下 `/v1/tasks` 不可达，自动改为 `www`）。
 
 | Key | 用途 |
 |---|---|
 | `RIGHTAPI_LLM_KEY` | Claude LLM（AwsQ / 官渠），执行全部 Skill；`/v1/messages` 或 `/v1/chat/completions` |
-| `RIGHTAPI_IMAGE_KEY` | 画图 Key，GPT Image 与 Nano Banana 共用。**生产使用「image 高质量」渠道**（全模型 4K、异步、不限并发） |
+| `RIGHTAPI_IMAGE_KEY` | 「image 高质量」渠道画图 Key，GPT Image 与 Nano Banana 共用。**生产默认**（全模型 4K、异步、不限并发） |
+| `RIGHTAPI_IMAGE_STD_KEY` | 「image 普通」渠道画图 Key（选填）；该渠道 Base URL 可用 `RIGHTAPI_IMAGE_STD_BASE_URL` 单独指定，留空同 `RIGHTAPI_BASE_URL` |
 
-**模型决定协议，绝不按名字猜测**。所有画图模型在 `app/providers/image_models.py` 的 `CATALOG` 中显式登记协议，未登记的模型直接报错拒绝调用（用错接口会 404 / 400）：
+RightAPI 的 Key 绑定渠道，一把 Key 只能调用所绑渠道的模型，所以两个画图渠道各用各的 Key，按模型所属渠道自动选择（`image_key(settings, model)` / `Settings.image_base_url(model)`），绝不拿一个渠道的 Key 调另一个渠道。真实 / 演示也按渠道分别判定（通道 `image` / `image_std`，`live_channel_of(model)`）。
+
+**模型决定协议与渠道，绝不按名字猜测**。所有画图模型在 `app/providers/image_models.py` 的 `CATALOG` 中显式登记协议与渠道，未登记的模型直接报错拒绝调用（用错接口会 404 / 400）。两个渠道同名的 `gpt-image-2`：普通渠道一侧目录 ID 为 `gpt-image-2@image`（`api_model` 记录真实模型名，请求中只发 `gpt-image-2`）；界面下拉框以【高质量】/【普通】前缀区分，高质量渠道排在前面并默认选中：
 
 | 渠道 | 模型 | 协议 | 接口 |
 |---|---|---|---|
 | image 高质量（生产默认） | `gpt-image-2.5-flare`、`gpt-image-2.5-sunburst`、`gpt-image-2` | OpenAI 生成 | 0 张参考图 `POST /v1/images/generations`；≥1 张 `POST /v1/images/edits`（JSON `images` 数组传 data URL） |
 | image 高质量（生产默认） | `gemini-3-pro-image-preview`、`gemini-nano-banana-2.1` | Gemini 生成 | `POST /v1beta/models/{model}:generateContent`，文生图与参考图编辑同一接口（`parts` = 文本 + 按序 `inline_data` 纯 base64）；禁止 `:streamGenerateContent` |
-| image 普通 | `gpt-image-2-vip`、`gpt-image-2.5` | OpenAI 生成 | 同上 |
+| image 普通 | `gpt-image-2`（目录 ID `gpt-image-2@image`）、`gpt-image-2-vip`、`gpt-image-2.5` | OpenAI 生成 | 同上 |
 | image 普通 | `nano-banana-pro`、`nano-banana-2`、`nano-banana-2-lite` | Gemini 生成 | 同上 |
 
 参数规则（`app/providers/image.py`）：
 - 统一异步：请求体固定 `"async": true` → 返回 `task_id` → 每 3~5 秒轮询 `GET /v1/tasks/{task_id}`，整体上限 600 秒。完成态不带 `status`：OpenAI 取 `data[].url`，Gemini 取 `candidates[].content.parts[].text`（文本即 URL）；`failed / expired / canceled` 按失败处理；提交即失败时响应 `status=failed` 并带 `error`。
+- 上游繁忙自动重试：失败原因含 `temporarily busy` / `try again later` / 限流等字样，或提交时 HTTP 429 / 503，视为 `UpstreamBusyError`，等待约 15、30、45 秒（带随机抖动）后重新提交新任务，次数由 `RIGHTAPI_IMAGE_BUSY_RETRIES`（默认 3，0 关闭）控制，日志逐次提示；其他失败与超时不重试。等待期间占用并发名额，不额外加压上游。
 - 结果只有图片 URL（不返回 base64、`response_format` 不生效），由客户端下载保存；下载 CDN 时不携带 API Key。
-- GPT Image 尺寸用像素值：`gpt_image_size()` 把「比例 + 1K/2K/4K」换算为 16 的倍数、长边 ≤3840、总像素 655,360~8,294,400 的合法值；超过 2560x1440 为实验性大图。`quality` 中 `xhigh / max` 仅 2.5 模型可用，`gpt-image-2` 自动降为 `high`。每次请求 `n=1`，候选图通过并发多个任务获得。
+- GPT Image 尺寸用像素值：`gpt_image_size()` 把「比例 + 1K/2K/4K」换算为 16 的倍数、长边 ≤3840、总像素 655,360~8,294,400 的合法值；超过 2560x1440 为实验性大图。`quality` 中 `xhigh / max` 仅目录标记 `supports_xhigh` 的 `gpt-image-2.5-flare / sunburst` 可用，其他 GPT 模型（含普通渠道 `gpt-image-2.5`）自动降为 `high`。每次请求 `n=1`，候选图通过并发多个任务获得。
 - Gemini 用 `generationConfig.imageConfig = {aspectRatio, imageSize}`，`imageSize` 为大写 `1K / 2K / 4K`。
 - 参考图长边 >2048 或 >4MB 时先压缩再上传。
 - 路由依据是槽位**实际绑定**的参考图数量，而不是策划时的模式字段。
 - LLM Key 只用于文本，Image Key 只用于画图；Key 只从环境变量读取，日志与诊断结果中只显示打码后的 Key。旧变量名 `RIGHTAPI_OPENAI_IMAGE_KEY` / `RIGHTAPI_GEMINI_IMAGE_KEY` 仅作读取兼容。
-- 「🩺 连通性诊断」（`app/engine/diagnostics.py`）：LLM 发一条极短消息；画图只查询一个不存在的任务 `GET /v1/tasks/{随机id}` 来验证 Key，不提交画图任务、不消耗额度。
+- 「🩺 连通性诊断」（`app/engine/diagnostics.py`）：LLM 发一条极短消息；画图两个渠道分别用各自的 Key 查询一个不存在的任务 `GET /v1/tasks/{随机id}` 来验证，不提交画图任务、不消耗额度。
 
 ### 5.4 视频：MiniMax H3 原生音画一体
 
@@ -201,7 +205,7 @@ variables: [product_name]        # 选填，声明正文使用的变量
 
 ### 5.6 真实 API / 零 Key 演示双模式
 
-- 每个通道（`llm` / `image` / `modal_h3`）独立判定：填写了 Key / 地址 → 真实接口；未填写 → 演示兜底。判定入口统一为 `EngineRuntime.is_live(channel)`。
+- 每个通道（`llm` / `image` / `image_std` / `modal_h3`）独立判定：填写了 Key / 地址 → 真实接口；未填写 → 演示兜底。判定入口统一为 `EngineRuntime.is_live(channel)`。
 - `DEMO_MODE=true` 或界面「本地演示测试模式」开关可强制全部走演示。
 - 演示模式输出的 JSON 结构与真实 Skill 输出**完全一致**（`app/providers/demo/content.py`），后续编辑 / 确认 / 渲染流程无差别；演示图由 PIL 绘制真实中文排版并合成参考图缩略图，右上角带「DEMO 演示预览」角标。
 - LLM 同时兼容 `/v1/messages`（Anthropic 原生）与 `/v1/chat/completions`（OpenAI 兼容），`RIGHTAPI_LLM_API_FORMAT=auto` 时自动探测。

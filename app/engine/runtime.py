@@ -52,7 +52,7 @@ class EngineRuntime:
             return "🟢 真实 API" if self.is_live(ch) else "🟡 演示模式"
 
         return (
-            f"LLM：{tag('llm')}　｜　画图（GPT-Image + Nano-Banana）：{tag('image')}　｜　"
+            f"LLM：{tag('llm')}　｜　画图 image 高质量：{tag('image')}　｜　image 普通：{tag('image_std')}　｜　"
             f"Modal H3：{tag('modal_h3')}"
         )
 
@@ -64,12 +64,13 @@ class EngineRuntime:
         s = self.settings
         return RightAPILLM(s.rightapi_base_url, s.llm_key, s.llm_model, s.llm_api_format, s.llm_timeout)
 
-    def image_client(self) -> RightAPIImageClient:
+    def image_client(self, base_url: str | None = None) -> RightAPIImageClient:
+        """base_url：模型所属渠道的地址（Settings.image_base_url），默认高质量渠道。"""
         if self.image_client_override is not None:
             return self.image_client_override
         s = self.settings
-        return RightAPIImageClient(base_url=s.rightapi_base_url, timeout=s.image_timeout,
-                                   poll_interval=s.image_poll_interval)
+        return RightAPIImageClient(base_url=base_url or s.rightapi_base_url, timeout=s.image_timeout,
+                                   poll_interval=s.image_poll_interval, busy_retries=s.image_busy_retries)
 
     def video_provider(self, provider_id: str = "modal_minimax_h3") -> VideoProvider:
         """返回视频后端（界面固定使用 Modal MiniMax H3）；未登录 Modal 或演示模式时自动换成本地演示后端。"""

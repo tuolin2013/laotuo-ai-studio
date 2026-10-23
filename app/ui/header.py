@@ -126,22 +126,34 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
                                    ("OpenAI /v1/chat/completions", "openai")], value=s.llm_api_format,
                                   label="LLM 接口格式")
         with gr.Row():
-            img_key = gr.Textbox(value=s.image_key, label="RightAPI 画图通用密钥 (RIGHTAPI_IMAGE_KEY)",
-                                 info="生产请填「image 高质量」渠道 Key：GPT Image 与 Nano Banana 共用，"
-                                      "全模型 4K、异步",
+            img_key = gr.Textbox(value=s.image_key, label="image 高质量渠道密钥 (RIGHTAPI_IMAGE_KEY)",
+                                 info="生产默认：GPT Image 与 Nano Banana 共用，全模型 4K、异步",
                                  type="password", scale=3)
             img_res = gr.Dropdown(list(IMAGE_RESOLUTIONS), value=s.image_resolution, label="默认分辨率")
             img_quality = gr.Dropdown(list(IMAGE_QUALITIES), value=s.image_quality, label="GPT 默认质量档",
                                       info="xhigh/max 仅 gpt-image-2.5-*，gpt-image-2 自动降为 high")
+        with gr.Row():
+            img_std_key = gr.Textbox(value=s.image_std_key, label="image 普通渠道密钥 (RIGHTAPI_IMAGE_STD_KEY)",
+                                     info="RightAPI 的 Key 绑定渠道：普通渠道的模型必须用普通渠道创建的 Key；"
+                                          "留空则这些模型走演示模式",
+                                     type="password", scale=3)
+            img_std_base = gr.Textbox(value=s.image_std_base_url, label="普通渠道 Base URL（选填）",
+                                      info="后台「模型列表」中该渠道的 BaseUrl；留空 = 与下方 RIGHTAPI_BASE_URL 相同",
+                                      scale=2)
         base_url = gr.Textbox(value=s.rightapi_base_url, label="RIGHTAPI_BASE_URL",
                               info="官方文档地址为 https://www.rightapi.ai（填 rightapi.ai 会自动补 www）")
         gr.Markdown(
-            "**模型 → 接口对照（系统按模型自动选择，不会用错）**\n\n"
-            "| 模型 | 协议 | 接口 |\n|---|---|---|\n"
-            "| gpt-image-2.5-flare / gpt-image-2.5-sunburst / gpt-image-2 | OpenAI 生成 | "
-            "无参考图 `/v1/images/generations`，有参考图 `/v1/images/edits` |\n"
-            "| gemini-3-pro-image-preview / gemini-nano-banana-2.1 | Gemini 生成 | "
-            "`/v1beta/models/{model}:generateContent`（文生图与编辑同一接口） |\n\n"
+            "**模型 → 渠道 / 接口对照（系统按模型自动选择 Key 与接口，不会用错）**\n\n"
+            "| 渠道（Key） | 模型 | 协议 | 接口 |\n|---|---|---|---|\n"
+            "| image 高质量（`RIGHTAPI_IMAGE_KEY`） | gpt-image-2.5-flare / gpt-image-2.5-sunburst / gpt-image-2 | "
+            "OpenAI 生成 | 无参考图 `/v1/images/generations`，有参考图 `/v1/images/edits` |\n"
+            "| image 高质量（`RIGHTAPI_IMAGE_KEY`） | gemini-3-pro-image-preview / gemini-nano-banana-2.1 | "
+            "Gemini 生成 | `/v1beta/models/{model}:generateContent`（文生图与编辑同一接口） |\n"
+            "| image 普通（`RIGHTAPI_IMAGE_STD_KEY`） | gpt-image-2 / gpt-image-2-vip / gpt-image-2.5 | "
+            "OpenAI 生成 | 同上 |\n"
+            "| image 普通（`RIGHTAPI_IMAGE_STD_KEY`） | nano-banana-pro / nano-banana-2 / nano-banana-2-lite | "
+            "Gemini 生成 | 同上 |\n\n"
+            "下拉框中模型名前的【高质量】/【普通】标明渠道；两个渠道都有 gpt-image-2，按所选渠道使用对应 Key。\n\n"
             "全部带 `\"async\": true` 提交，轮询 `/v1/tasks/{task_id}` 取图片 URL 后下载保存。")
         with gr.Row():
             modal_app = gr.Textbox(value=s.modal_h3_app, label="MODAL_H3_APP（Modal 应用名）",
@@ -250,10 +262,11 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
     apply_override.click(do_apply, [preview_slot, skill_body, *dd], skill_status)
     reset_override.click(do_reset, [preview_slot, *dd], [skill_body, skill_status])
 
-    def do_save(demo, k1, fmt, k2, res, q, burl, mapp, mcls):
+    def do_save(demo, k1, fmt, k2, k3, std_burl, res, q, burl, mapp, mcls):
         try:
             new = save_env({
                 "RIGHTAPI_LLM_KEY": k1, "RIGHTAPI_LLM_API_FORMAT": fmt, "RIGHTAPI_IMAGE_KEY": k2,
+                "RIGHTAPI_IMAGE_STD_KEY": k3, "RIGHTAPI_IMAGE_STD_BASE_URL": std_burl,
                 "RIGHTAPI_IMAGE_RESOLUTION": res, "RIGHTAPI_IMAGE_QUALITY": q, "RIGHTAPI_BASE_URL": burl,
                 "MODAL_H3_APP": mapp, "MODAL_H3_CLASS": mcls,
                 "DEMO_MODE": "true" if demo else "false",
@@ -264,8 +277,8 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
         rt.force_demo = bool(demo)
         return f"✅ 已保存到 .env 并立即生效（Base URL：`{new.rightapi_base_url}`）", rt.mode_summary()
 
-    save_btn.click(do_save, [demo_toggle, llm_key, llm_fmt, img_key, img_res, img_quality, base_url, modal_app,
-                             modal_cls], [save_status, mode_status])
+    save_btn.click(do_save, [demo_toggle, llm_key, llm_fmt, img_key, img_std_key, img_std_base, img_res, img_quality,
+                             base_url, modal_app, modal_cls], [save_status, mode_status])
 
     async def do_diag():
         yield "🩺 正在检测连通性…"

@@ -1,10 +1,10 @@
 """RightAPI 画图接口（严格按官方文档 https://docs.rightapi.ai/docs/rc_draw/ 实现）。
 
-两种协议，模型决定协议，不能混用（用错会 404 / 400）：
+两种协议，模型决定协议，不能混用（用错会 404 / 400）。模型与渠道见 app/providers/image_models.py：
 
-- OpenAI 生成（gpt-image-2 / gpt-image-2.5-flare / gpt-image-2.5-sunburst）：
+- OpenAI 生成（GPT Image 系列）：
   0 张参考图 POST /v1/images/generations；≥1 张 POST /v1/images/edits
-- Gemini 生成（gemini-3-pro-image-preview / gemini-nano-banana-2.1）：
+- Gemini 生成（Nano Banana 系列）：
   POST /v1beta/models/{model}:generateContent（文生图与参考图编辑同一接口；禁止 :streamGenerateContent）
 
 统一异步：请求体带 "async": true → 返回 task_id → 轮询 GET /v1/tasks/{task_id}。
@@ -18,6 +18,7 @@ import asyncio
 import base64
 import io
 import math
+import random
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +26,8 @@ from typing import Any, Literal
 
 import httpx
 from PIL import Image
+
+from app.providers.image_models import CATALOG
 
 ImageFamily = Literal["openai", "gemini"]
 ProgressCallback = Callable[[str], Awaitable[None]]
@@ -76,9 +79,11 @@ def gpt_image_size(aspect_ratio: str, tier: str) -> str:
 
 
 def gpt_quality_for(model: str, quality: str) -> str:
-    """gpt-image-2 不支持 xhigh / max，自动降为 high，避免 400。"""
+    """xhigh / max 只有目录里标记 supports_xhigh 的模型可用（gpt-image-2.5-flare / sunburst），
+    其他模型自动降为 high，避免 400。"""
     q = quality if quality in GPT_QUALITIES else "high"
-    if q in GPT_25_ONLY_QUALITIES and not model.startswith("gpt-image-2.5"):
+    m = CATALOG.get(model)
+    if q in GPT_25_ONLY_QUALITIES and not (m is not None and m.supports_xhigh):
         return "high"
     return q
 
@@ -205,6 +210,23 @@ class ImageAPIError(RuntimeError):
     pass
 
 
+class UpstreamBusyError(ImageAPIError):
+    """上游算力暂时不足：任务没有生成出图，过一会儿重新提交通常就能成功。"""
+
+
+# 上游繁忙的特征文本（小写匹配）。只认明确的「繁忙 / 限流」，其他失败原样报错
+BUSY_MARKERS = ("temporarily busy", "try again later", "overloaded", "rate limit", "too many requests",
+                "繁忙", "稍后重试", "稍后再试")
+# 上游繁忙时自动重新提交的次数与基础等待秒数（第 n 次等待约 n × 基础秒数，带随机抖动错开）
+BUSY_RETRIES = 3
+BUSY_BACKOFF = 15.0
+
+
+def is_busy_error(text: str) -> bool:
+    t = text.lower()
+    return any(m in t for m in BUSY_MARKERS)
+
+
 # 只重试「请求还没发出去」的连接错误：服务端没收到，重试不会重复提交任务、不会多扣费
 CONNECT_RETRIES = 3
 CONNECT_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.ProxyError)
@@ -230,21 +252,42 @@ class RightAPIImageClient:
         timeout: float = 600,
         poll_interval: float = 4.0,
         transport: httpx.AsyncBaseTransport | None = None,
+        busy_retries: int = BUSY_RETRIES,
+        busy_backoff: float = BUSY_BACKOFF,
     ):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.poll_interval = poll_interval
         self._transport = transport
+        self.busy_retries = max(0, busy_retries)
+        self.busy_backoff = busy_backoff
 
     async def send(self, req: ImageHttpRequest, api_key: str, on_event: ProgressCallback | None = None) -> list[bytes]:
+        """提交并等待出图。上游繁忙导致的失败会等一会儿自动重新提交；其他错误（含超时）不重试。"""
         if not api_key:
             raise ImageAPIError("未配置 RIGHTAPI_IMAGE_KEY")
-        headers = {"Authorization": f"Bearer {api_key}"}
 
         async def emit(msg: str) -> None:
             if on_event is not None:
                 await on_event(msg)
 
+        for attempt in range(self.busy_retries + 1):
+            try:
+                return await self._send_once(req, api_key, emit)
+            except UpstreamBusyError as e:
+                if attempt == self.busy_retries:
+                    if self.busy_retries:
+                        raise UpstreamBusyError(f"{e}（已自动重试 {self.busy_retries} 次仍繁忙，"
+                                                "请稍后再试或换一个画图模型）") from e
+                    raise
+                # 随机抖动：避免同一批失败的任务在同一秒一起重新提交
+                wait = self.busy_backoff * (attempt + 1) * random.uniform(0.8, 1.2)
+                await emit(f"⏳ 上游繁忙，{wait:.0f} 秒后自动重新提交（第 {attempt + 1}/{self.busy_retries} 次重试）")
+                await asyncio.sleep(wait)
+        raise AssertionError("unreachable")
+
+    async def _send_once(self, req: ImageHttpRequest, api_key: str, emit) -> list[bytes]:
+        headers = {"Authorization": f"Bearer {api_key}"}
         async with httpx.AsyncClient(timeout=httpx.Timeout(60, read=120), transport=self._transport) as client:
             try:
                 resp = await with_connect_retry(lambda: client.post(req.url, json=req.json, headers=headers))
@@ -252,9 +295,14 @@ class RightAPIImageClient:
                 raise ImageAPIError(f"提交画图任务失败：{type(e).__name__}") from e
             body = self._json(resp)
             if resp.status_code >= 400:
-                raise ImageAPIError(f"提交画图任务失败：HTTP {resp.status_code} {_error_text(body)}")
+                msg = f"提交画图任务失败：HTTP {resp.status_code} {_error_text(body)}"
+                # 429 / 503 与明确的「繁忙」提示：服务端没有创建任务，重新提交安全
+                if resp.status_code in (429, 503) or is_busy_error(_error_text(body)):
+                    raise UpstreamBusyError(msg)
+                raise ImageAPIError(msg)
             if str(body.get("status", "")).lower() in TERMINAL_FAILED:
-                raise ImageAPIError(f"画图任务提交即失败：{_error_text(body)}")
+                err = _error_text(body)
+                raise (UpstreamBusyError if is_busy_error(err) else ImageAPIError)(f"画图任务提交即失败：{err}")
 
             urls = extract_result_urls(body)
             if urls is None:
@@ -300,7 +348,8 @@ class RightAPIImageClient:
                 return urls
             status = str(body.get("status", "")).lower()
             if status in TERMINAL_FAILED:
-                raise ImageAPIError(f"画图任务{status}：{_error_text(body)}")
+                err = _error_text(body)
+                raise (UpstreamBusyError if is_busy_error(err) else ImageAPIError)(f"画图任务{status}：{err}")
             progress = body.get("progress")
             if progress is not None and progress != last_progress:
                 last_progress = progress
