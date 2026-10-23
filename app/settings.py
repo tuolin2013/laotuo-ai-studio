@@ -28,6 +28,8 @@ EDITABLE_ENV_KEYS = (
     "RIGHTAPI_BASE_URL",
     "MODAL_H3_APP",
     "MODAL_H3_CLASS",
+    "MODAL_VOXCPM_APP",
+    "MODAL_VOXCPM_CLASS",
     "RIGHTAPI_LLM_API_FORMAT",
     "DEMO_MODE",
 )
@@ -93,6 +95,10 @@ class Settings:
     modal_h3_class: str = "H3BatchRunner"
     modal_h3_steps: int = 30
     modal_h3_timeout: float = 2400
+    # VoxCPM2 配音：同样通过 Modal SDK 调用（modal/voxcpm_service.py），单段合成上限秒数含冷启动
+    modal_voxcpm_app: str = "voxcpm2-tts-service"
+    modal_voxcpm_class: str = "VoxCPM2Service"
+    modal_voxcpm_timeout: float = 600
     fal_key: str = field(default="", repr=False)
     fal_video_model: str = ""
     # 剪映草稿文件夹：导出剪映草稿时直接写进这里（重新打开剪映即可在「本地草稿」看到）；
@@ -114,6 +120,7 @@ class Settings:
                 "image": self.image_key,
                 "image_std": self.image_std_key,
                 "modal_h3": bool(self.modal_h3_app and self.modal_h3_class) and _modal_logged_in(),
+                "modal_voxcpm": bool(self.modal_voxcpm_app and self.modal_voxcpm_class) and _modal_logged_in(),
                 "fal_ai": self.fal_key,
             }[channel]
         )
@@ -188,6 +195,9 @@ def load_settings(env_file: Path | None = None, override: bool = False) -> Setti
         modal_h3_class=e("MODAL_H3_CLASS", "H3BatchRunner").strip(),
         modal_h3_steps=max(1, int(e("MODAL_H3_STEPS", "30"))),
         modal_h3_timeout=float(e("MODAL_H3_TIMEOUT_SECONDS", "2400")),
+        modal_voxcpm_app=e("MODAL_VOXCPM_APP", "voxcpm2-tts-service").strip(),
+        modal_voxcpm_class=e("MODAL_VOXCPM_CLASS", "VoxCPM2Service").strip(),
+        modal_voxcpm_timeout=float(e("MODAL_VOXCPM_TIMEOUT_SECONDS", "600")),
         fal_key=e("FAL_KEY", ""),
         fal_video_model=e("FAL_VIDEO_MODEL", ""),
         jianying_draft_dir=_jianying_dir(e("JIANYING_DRAFT_DIR", "")),

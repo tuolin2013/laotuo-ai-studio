@@ -10,6 +10,7 @@ from app.schemas.common import new_id, utc_now
 from app.schemas.edit import EditPlan
 from app.schemas.plan import ImagePlan
 from app.schemas.video import ConceptOutline, ReferenceVideoSource, StoryScript, VideoScript
+from app.schemas.voice import VoiceStudio
 
 
 class Project(BaseModel):
@@ -35,6 +36,8 @@ class Project(BaseModel):
     video_reference: ReferenceVideoSource | None = None
     # 视频 Step 4：剪辑大师生成的剪辑方案（一键成片 / 导出剪映、达芬奇草稿）
     video_edit: EditPlan | None = None
+    # 【配音】选项卡：VoxCPM2 配音文案、音色与逐段配音（独立成品，不写入视频分镜）
+    voice_studio: VoiceStudio | None = None
 
     # 当前会话的 Skill 选择（卡槽 -> skill_id）
     selected_skills: dict[str, str] = Field(default_factory=dict)

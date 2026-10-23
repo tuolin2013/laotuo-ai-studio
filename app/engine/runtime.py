@@ -15,6 +15,7 @@ from app.providers.video import (
     ModalMiniMaxH3Provider,
     VideoProvider,
 )
+from app.providers.voice import DemoVoiceProvider, ModalVoxCPMProvider, VoiceProvider
 from app.schemas.config import CategoryConfig, PlatformConfig
 from app.settings import Settings
 from app.storage.project_store import ProjectStore
@@ -34,6 +35,7 @@ class EngineRuntime:
     # 测试注入：替换真实客户端
     llm_override: Any = None
     image_client_override: Any = None
+    voice_provider_override: Any = None
 
     def __post_init__(self) -> None:
         if self.store is None:
@@ -53,7 +55,7 @@ class EngineRuntime:
 
         return (
             f"LLM：{tag('llm')}　｜　画图 image 高质量：{tag('image')}　｜　image 普通：{tag('image_std')}　｜　"
-            f"Modal H3：{tag('modal_h3')}"
+            f"Modal H3：{tag('modal_h3')}　｜　配音 VoxCPM2：{tag('modal_voxcpm')}"
         )
 
     # ---------- 客户端 ----------
@@ -82,6 +84,15 @@ class EngineRuntime:
         if provider_id == "modal_minimax_h3" and self.is_live("modal_h3"):
             return ModalMiniMaxH3Provider(s.modal_h3_app, s.modal_h3_class, s.modal_h3_steps, s.modal_h3_timeout)
         return DemoVideoProvider(step_delay=self.demo_delay)
+
+    def voice_provider(self) -> VoiceProvider:
+        """配音后端：已登录 Modal 时用 VoxCPM2，否则（或演示模式）用本地演示后端。"""
+        if self.voice_provider_override is not None:
+            return self.voice_provider_override
+        s = self.settings
+        if self.is_live("modal_voxcpm"):
+            return ModalVoxCPMProvider(s.modal_voxcpm_app, s.modal_voxcpm_class, s.modal_voxcpm_timeout)
+        return DemoVoiceProvider(step_delay=self.demo_delay)
 
     # ---------- 配置 ----------
 

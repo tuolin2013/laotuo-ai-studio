@@ -17,6 +17,7 @@ EXPECTED = {
     "image_prompt": {"gpt_image_2", "gemini_nano_banana"},
     "video_prompt": {"official_h3_prompt_writing", "minimax_h3_prompt"},
     "video_editor": {"default_video_editor"},
+    "voice_writer": {"default_voice_writer"},
 }
 
 

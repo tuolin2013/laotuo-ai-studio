@@ -4,11 +4,12 @@
 
 ## 1. 产品定位
 
-面向电商运营的一体化 AIGC 内容生产工具，产出三类素材：
+面向电商运营的一体化 AIGC 内容生产工具，产出四类素材：
 
 - 主图（Main Images）
 - 详情页（Detail Pages，按屏规划）
 - 带货短视频（MiniMax H3 原生音画一体，含首帧锁定防变形）
+- 配音（VoxCPM2 口播配音，独立成品：wav / mp3 / srt）
 
 产品负责人不写代码，所有命令由工程师（或 AI 工程师）执行。
 
@@ -36,13 +37,13 @@ python -m venv .venv
 
 ## 3. 系统架构
 
-### 3.1 三路独立并发
+### 3.1 多路独立并发
 
-- 界面使用 `gr.Tabs` 分为【主图】【详情页】【视频】三个选项卡。
+- 界面使用 `gr.Tabs` 分为【主图】【详情页】【视频】【配音】四个选项卡。
 - 每个选项卡的长任务都写成 `async def` + `yield` 的异步生成器，持续推送：
   1. 运行日志（Running Logs，实时滚动）
   2. 已完成的图片 / 视频（生成一张回显一张，不等全部完成）
-- `demo.queue(default_concurrency_limit=...)` 开启队列；三个选项卡的事件使用不同的 `concurrency_id`，互不阻塞。
+- `demo.queue(default_concurrency_limit=...)` 开启队列；各选项卡的事件使用不同的 `concurrency_id`，互不阻塞。
 - 切换选项卡不得中断任务。禁止在事件处理函数中使用阻塞 IO（`time.sleep`、同步 `requests` 等），统一使用 `asyncio` / `httpx.AsyncClient`。
 
 ### 3.2 本地自动持久化
@@ -59,11 +60,13 @@ workspace/projects/{project_id}/
 ├── videos/{shot_id}/       # 生成或回传绑定的视频
 ├── prompts/                # 编译后的生图 / H3 提示词
 ├── edits/{edit_id}/        # 一键成片 mp4 与字幕 ASS；edits/ 下另存上传的背景音乐
+├── voices/                 # 配音：references/ 参考音频（16kHz）、previews/ 试听、{segment_id}/ 逐段配音、{mix_id}/ 完整配音成品
 └── exports/                # 定稿 zip、剪映草稿 zip、达芬奇工程文件夹与 zip
 ```
 
 - 写 JSON 先写临时文件再原子替换，避免崩溃时损坏。
 - 启动时可从 `workspace/projects/` 列出并恢复历史项目。
+- 音色库跨项目共用：`workspace/voice_library/library.json` + `{voice_id}/sample.wav`（`app/storage/voice_library.py`）。
 - `workspace/` 内容不入 git。
 
 ### 3.3 目录结构
@@ -80,14 +83,15 @@ workspace/projects/{project_id}/
 │   │   ├── video_scriptwriter/
 │   │   ├── image_prompt/
 │   │   ├── video_prompt/
-│   │   └── video_editor/
+│   │   ├── video_editor/
+│   │   └── voice_writer/
 │   └── skills_pro/      # 商业 Pro 卡带包（可选，不入 git，结构同 skills/）
 ├── app/
 │   ├── main.py          # Gradio 启动入口
 │   ├── settings.py      # 读取 .env
 │   ├── schemas/         # Pydantic 数据模型
 │   ├── engine/          # 配置加载、Skill 加载器、编译器、生图路由
-│   ├── providers/       # llm.py / image.py / video/
+│   ├── providers/       # llm.py / image.py / video/ / voice/
 │   ├── storage/         # 项目落盘
 │   └── ui/              # Gradio 组件
 ├── workspace/
@@ -97,7 +101,7 @@ workspace/projects/{project_id}/
 ## 4. 插卡式 Skill 系统
 
 - 所有 AI 能力（电商策划、视频编剧、生图提示词、H3 视频提示词）都由 `config/skills/{slot}/*.md` 卡带驱动，代码里不写死提示词。
-- 卡槽（`app/schemas/skill.py` 的 `SKILL_SLOTS`）：`concept_writer` / `story_scriptwriter` / `ecommerce_planner` / `video_scriptwriter` / `image_prompt` / `video_prompt` / `video_editor`。卡槽由所在文件夹决定。
+- 卡槽（`app/schemas/skill.py` 的 `SKILL_SLOTS`）：`concept_writer` / `story_scriptwriter` / `ecommerce_planner` / `video_scriptwriter` / `image_prompt` / `video_prompt` / `video_editor` / `voice_writer`。卡槽由所在文件夹决定。
 - 卡带格式：顶部 YAML front matter + Markdown 正文模板。
 
 ```markdown
@@ -216,6 +220,38 @@ RightAPI 的 Key 绑定渠道，一把 Key 只能调用所绑渠道的模型，�
 - 达芬奇工程（`draft_export.export_resolve()`）：手写 FCPXML 1.10（Resolve 18 起都能导入）+ OTIO JSON（`Clip.1`，Resolve 18.5+）+ 台词字幕 / 卖点花字 SRT（UTF-8 BOM）+ `media/` 素材（ASCII 文件名）+ 中文导入说明。不依赖 `opentimelineio` 包（没有 Python 3.14 wheel），也不用 Resolve 脚本 API（免费版自 19.1 起不支持外部脚本）。时间线 `tcStart="0s"`，与 SRT 时间对齐。
 - 已验证：真实 H3 片段的成片渲染、草稿文件结构与时间值。**未在真实的剪映 / DaVinci Resolve 中打开验证**（开发机未安装），首次使用时需要人工确认能正常导入。
 
+### 5.4.2 【配音】选项卡：VoxCPM2 口播配音
+
+- 配音是**独立成品**（wav / mp3 / srt / zip），不写入视频分镜、不进剪辑时间线：§5.4 的「不设画外音」约束不变，`StoryboardShot` 仍然没有 voiceover 字段。运营可把 mp3 拖进剪映 / 达芬奇自行使用。
+- 写法依据 VoxCPM2 官方《最佳实践》（https://voxcpm.readthedocs.io/zh-cn/latest/cookbook.html ），整理在 `config/skills/voice_writer/references/voxcpm2_best_practices.md`，由 `voice_writer` 卡带附带：
+  - 风格指令写在正文前的括号里，服务端拼成 `(指令)正文`，所以指令里的括号一律去掉（`clean_control()`）；方言只在指令前加方言名（`LANGUAGES` 第二列），正文要用地道方言书写；外语不加语言标签。
+  - 非语言标签只用官方推荐的 11 个（`RECOMMENDED_TAGS`，大小写照抄）；多音字写成「重{chong2}」，`tts_text()` 发给模型时换成 `{chong2}`，`display_text()` 给字幕时保留原字。
+  - 正文里的「（笑）」这类括号会被读出来：段首括号自动搬进「本段风格」（`split_leading_note()`），其他位置的括号由 `segment_warnings()` 提醒。
+- 四步：① 文案（AI 撰写 / 粘贴按句分段 `split_script()` / 导入视频剧本台词 `spoken_text()`，表格逐段编辑）→ ② 音色 → ③ 逐段生成 → ④ 合成完整配音。
+- 分段：官方建议长文切短段分别合成再拼接。每段约 8~40「字」，按 `spoken_len()` 计算：汉字 1、数字 1.5、外文单词 1.7。太短的句子并入相邻句。
+- 音色一致：不给参考音频时 VoxCPM2 每次随机一个声音。
+  - 声音设计：先试听，再「锁定」样音，之后每段都以样音为参考音频（默认高保真克隆）。没锁定就开始生成时，自动先生成一段样音并锁定。
+  - 克隆：参考音频转成 16kHz 单声道，最长截取 30 秒；逐字文本可自动识别，但要人工核对（实测 SenseVoice 把「莓茶」识别成「梅茶」）。
+  - 音色库：跨项目共用。
+  - 已生成的段落记录 `voice_key`，换了音色或改了文案，「生成未完成的段落」会自动重做。
+- 版本：每段重复生成时追加 `takes`（文件名带时间戳），绝不覆盖，可在版本间切换（`active_take_id`）；同一段重做时种子自动 +1，否则结果完全相同。完整配音每次新建 `VoiceMix`。
+- 拼接（`voice_engine.mix()`）：每段去首尾静音，再加「段后停顿」；ffmpeg loudnorm 统一到 -16 LUFS（口播常用值，后期叠背景音乐有余量），导出 wav、mp3（libmp3lame 192k）、srt（UTF-8 BOM，每段字幕在该段的有声时间内按字数分配），zip 里含分段音频与配音文案。
+- 数字读法：VoxCPM 自带的整句规范化有两个问题（2026-10-23 实测）：会跨逗号把数字连起来（「买2送1，24小时」→「买二送一百二十四小时」），也会改坏拼音（「{chong2}」→「{chong二}」）。所以服务端 `normalize_text()` 按小句分别规范化，原样保留 `{…}` 与 `[标签]`，参考文本也一起规范化；「🔢 预览读法」调用服务端只用 CPU 的 `preview_normalize`，不启动 GPU。
+
+### 5.4.3 VoiceProvider 与 Modal VoxCPM2 服务
+
+- 统一接口 `app/providers/voice/base.py`：`synthesize(VoiceRequest) -> wav bytes`、`transcribe(audio) -> str`、`warmup()`（只查找，不启动 GPU）、`normalize_preview()`。
+- 实现：`ModalVoxCPMProvider` 与 `DemoVoiceProvider`。后者本地纯 Python 合成「按字发声」的提示音，不是真实人声；同一音色描述 / 参考音频得到同一音高。
+- 服务端 `modal/voxcpm_service.py`（属于 `modal/`，不入 git）：
+  - 应用 `voxcpm2-tts-service`，类 `VoxCPM2Service`；A10G，权重在卷 `voxcpm2-weights` 上（VoxCPM2 + ZipEnhancer 降噪 + SenseVoice 识别），VoxCPM 源码固定到某个 commit。
+  - 开启 torch.compile。不开 `@modal.concurrent`：模型是 batch=1 的静态 KV 缓存，而且 CUDA Graph 要求在 `@modal.enter` 的同一线程执行。
+  - 实测：冷启动约 2 分钟，热态约 1 倍实时（2~3 秒音频用 2.5~3.5 秒）。
+- 调用约定：
+  - `reference_audio` 是参考音频字节，`prompt_text` 非空时走高保真克隆（同一段音频同时作 prompt 与 reference），此时风格指令不生效。
+  - 返回 48kHz 单声道 16-bit wav。
+  - 配置项：`MODAL_VOXCPM_APP` / `MODAL_VOXCPM_CLASS` / `MODAL_VOXCPM_TIMEOUT_SECONDS`。
+- 已验证：真实服务的声音设计、高保真克隆、识别、读法预览。演示模式下跑通了端到端全流程。**真实服务的整条配音拼接还没有人工试听验收。**
+
 ### 5.5 可扩展 VideoProvider
 
 - 统一接口位于 `app/providers/video/base.py`：`warmup()`（Serverless 冷启动预热）、`generate()`、默认 600 秒超时。
@@ -230,7 +266,7 @@ RightAPI 的 Key 绑定渠道，一把 Key 只能调用所绑渠道的模型，�
 
 ### 5.6 真实 API / 零 Key 演示双模式
 
-- 每个通道（`llm` / `image` / `image_std` / `modal_h3`）独立判定：填写了 Key / 地址 → 真实接口；未填写 → 演示兜底。判定入口统一为 `EngineRuntime.is_live(channel)`。
+- 每个通道（`llm` / `image` / `image_std` / `modal_h3` / `modal_voxcpm`）独立判定：填写了 Key / 地址 → 真实接口；未填写 → 演示兜底。判定入口统一为 `EngineRuntime.is_live(channel)`。
 - `DEMO_MODE=true` 或界面「本地演示测试模式」开关可强制全部走演示。
 - 演示模式输出的 JSON 结构与真实 Skill 输出**完全一致**（`app/providers/demo/content.py`），后续编辑 / 确认 / 渲染流程无差别；演示图由 PIL 绘制真实中文排版并合成参考图缩略图，右上角带「DEMO 演示预览」角标。
 - LLM 同时兼容 `/v1/messages`（Anthropic 原生）与 `/v1/chat/completions`（OpenAI 兼容），`RIGHTAPI_LLM_API_FORMAT=auto` 时自动探测。
@@ -249,12 +285,14 @@ RightAPI 的 Key 绑定渠道，一把 Key 只能调用所绑渠道的模型，�
 | `edit_engine.py` | 分析分镜视频（时长、画面、有声段落）→ 执行 `video_editor` Skill → 纠正为合法的 `EditPlan` |
 | `edit_render.py` | 按剪辑方案用 ffmpeg 合成成片 mp4（转场、ASS 字幕 / 花字、背景音乐避让、响度统一），实时产出进度事件 |
 | `draft_export.py` | 导出剪映草稿（pyJianYingDraft）与达芬奇工程（FCPXML 1.10 / OTIO / SRT），同步 IO，UI 用 `asyncio.to_thread` 调用 |
+| `voice_engine.py` | 执行 `voice_writer` Skill → 配音文案；参考音频处理、试听 / 锁定音色、音色库；逐段调用 VoiceProvider（串行、带心跳日志）；拼接完整配音并导出 wav / mp3 / srt / zip |
 
 ## 5.8 界面（`app/ui/`）
 
 - `header.py`：项目管理、类目/平台联动、类目专属商品信息表单 + 实时合规检查、Skill 管理、API 配置（写回 `.env`，白名单键）。
 - `image_tab.py`：主图与详情页共用的三步式工作流。`video_tab.py`：视频剧本 → 首帧锁定 → Modal H3 生成视频（逐个 / 选分镜，每个分镜独立播放器），H3 提示词折叠在可选的查看 / 微调区。
 - `edit_panel.py`：视频 Step 4（剪辑方案表格、成片选项、一键成片、导出剪映 / 达芬奇）。布局在 Step 3 之后，事件在运行日志创建后绑定；刷新输出独立于 `video_tab` 的 `refresh_outputs`，不改变其位置顺序（端到端测试按位置读取）。成片与导出都使用剪辑方案快照，处理过程中继续改表格不影响本次结果。
+- `voice_tab.py`：【配音】四步。刷新输出的顺序由 `REFRESH_KEYS` 定义，端到端测试按名字取位置。音色设定改动后立即保存。生成类事件的 `concurrency_id` 为 `voice_gen`，`concurrency_limit=1`，与服务端单容器一致；试听、识别也走这条队列。
 - `theme.py`：界面主题与 CSS 唯一来源（`THEME` / `CSS`，由 `app/main.py` 传给 `launch()`）。界面代码只用 `elem_classes`（`step-card`、`terminal-log`、`info-grid`、`plan-table` 等）引用样式，不写内联样式；步骤标题用 `step_header()`。
 - `pro_panel.py`：品牌栏右侧「👑 老庹 AI 工坊 · 定制行业专属卡带 / 商业版」小徽章（`pro-badge`），点开才显示面板（`pro-panel`，默认隐藏）：按卡槽统计开源 / Pro 卡带、列出已加载的 Pro 卡带与加载错误，以及三档版本与商务联系方式（`CONTACTS`，与 README「📬 商务合作」同步）。
 - 浏览器端 `gr.State` 只存 `project_id`；`Project` 对象由服务端 `Workspace` 缓存并按项目加锁。

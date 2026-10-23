@@ -76,8 +76,63 @@ def test_app_builds_with_all_tabs(server):
                 "/detail_page_generate", "/detail_page_reuse", "/detail_page_render", "/video_generate",
                 "/video_confirm", "/video_first_frames", "/video_lock_all", "/video_h3", "/video_render",
                 "/video_edit_plan", "/video_edit_save", "/video_edit_render", "/video_export_jianying",
-                "/video_export_resolve"}
+                "/video_export_resolve", "/voice_write", "/voice_split", "/voice_save", "/voice_preview",
+                "/voice_lock", "/voice_render", "/voice_mix", "/voice_transcribe", "/voice_library_save"}
     assert expected <= names
+
+
+def _voice(out, key: str):
+    """配音选项卡输出：[运行日志, *刷新输出]，按 REFRESH_KEYS 的名字取位置。"""
+    from app.ui.voice_tab import REFRESH_KEYS
+
+    return out[1 + REFRESH_KEYS.index(key)]
+
+
+def test_voice_workflow_through_ui(server):
+    """【配音】AI 撰写文案 → 表格微调 → 试听 → 逐段生成（自动锁定音色）→ 改一段只重做这一段 → 合成完整配音。"""
+    from app.engine.video_cloner import ffmpeg_exe
+
+    client, rt, _ = server
+    client.predict("配音验收", TEA, "taobao", *INFO, api_name="/new_project")
+    pid = next(p.project_id for p in rt.store.list_projects() if p.name == "配音验收")
+
+    out = client.predict("mandarin", "live_selling", 30, "开头用反问", "default_voice_writer", "",
+                         api_name="/voice_write")
+    st = rt.store.load(pid).voice_studio
+    assert "配音文案完成" in out[0] and len(st.segments) >= 3
+    assert st.source.description and out[-1] == st.source.description  # AI 建议的音色填进 Step 2
+    table = _voice(out, "table")
+    assert len(table["data"]) == len(st.segments)
+
+    table["data"][0][1] = "（放慢语速）" + table["data"][0][1]
+    out = client.predict(table, None, out[0], api_name="/voice_save")
+    first = rt.store.load(pid).voice_studio.segments[0]
+    assert "已保存表格修改（1 段" in _last(out[0]) and first.control == "放慢语速" and "（" not in first.text
+
+    src = ("design", st.source.description, "", True, False, "", None)
+    params = (2.0, 10, True, 42, True)
+    log = client.predict("", *src, *params, out[0], api_name="/voice_preview")[0]
+    assert "试听已生成" in _last(log)
+
+    table = _voice(out, "table")
+    out = client.predict(table, "pending", [], *src, *params, log, api_name="/voice_render")
+    st = rt.store.load(pid).voice_studio
+    n = len(st.segments)
+    assert f"成功 {n}/{n}" in _last(out[0]) and "自动锁定" in out[0]
+    assert st.source.design_locked and not st.missing_segments()
+
+    # 改一段文案：「生成未完成的段落」只重做这一段
+    table["data"][1][1] = "改过的第二段：表面这层天然白霜，懂茶的人一看就知道。"
+    out = client.predict(table, "pending", [], *src, *params, out[0], api_name="/voice_render")
+    st = rt.store.load(pid).voice_studio
+    assert "成功 1/1" in _last(out[0]) and [len(s.takes) for s in st.segments] == [1, 2, *[1] * (n - 2)]
+
+    if ffmpeg_exe():
+        out = client.predict(out[0], api_name="/voice_mix")
+        mix = rt.store.load(pid).voice_studio.latest_mix
+        assert "完整配音已生成" in _last(out[0]) and mix.segment_count == n
+        assert {p.suffix for p in mix.files} == {".wav", ".mp3", ".srt", ".zip"}
+        assert "改过的第二段" in mix.srt_path.read_text(encoding="utf-8-sig")
 
 
 def test_full_workflow_through_ui(server, tmp_path):

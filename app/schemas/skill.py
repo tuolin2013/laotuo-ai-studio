@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 
 SkillSlot = Literal[
     "concept_writer", "story_scriptwriter", "ecommerce_planner", "video_scriptwriter", "image_prompt", "video_prompt",
-    "video_editor",
+    "video_editor", "voice_writer",
 ]
 SKILL_SLOTS: tuple[SkillSlot, ...] = (
     "concept_writer",
@@ -20,6 +20,7 @@ SKILL_SLOTS: tuple[SkillSlot, ...] = (
     "image_prompt",
     "video_prompt",
     "video_editor",
+    "voice_writer",
 )
 
 _VAR_PATTERN = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
