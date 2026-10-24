@@ -4,12 +4,13 @@
 
 ## 1. 产品定位
 
-面向电商运营的一体化 AIGC 内容生产工具，产出四类素材：
+面向电商运营的一体化 AIGC 内容生产工具，产出五类素材：
 
 - 主图（Main Images）
 - 详情页（Detail Pages，按屏规划）
 - 带货短视频（MiniMax H3 原生音画一体，含首帧锁定防变形）
 - 配音（VoxCPM2 口播配音，独立成品：wav / mp3 / srt）
+- 动效广告（零成本代码动效：用项目已有素材按节拍编排，本机渲染画面、配乐与音效，不调用生图 / 生视频接口）
 
 产品负责人不写代码，所有命令由工程师（或 AI 工程师）执行。
 
@@ -42,7 +43,7 @@ python -m venv .venv
 
 ### 3.1 多路独立并发
 
-- 界面使用 `gr.Tabs` 分为【主图】【详情页】【视频】【配音】四个选项卡。
+- 界面使用 `gr.Tabs` 分为【主图】【详情页】【视频】【配音】【动效广告】五个选项卡。
 - 每个选项卡的长任务都写成 `async def` + `yield` 的异步生成器，持续推送：
   1. 运行日志（Running Logs，实时滚动）
   2. 已完成的图片 / 视频（生成一张回显一张，不等全部完成）
@@ -64,6 +65,7 @@ workspace/projects/{project_id}/
 ├── prompts/                # 编译后的生图 / H3 提示词
 ├── edits/{edit_id}/        # 一键成片 mp4 与字幕 ASS；edits/ 下另存上传的背景音乐
 ├── voices/                 # 配音：references/ 参考音频（16kHz）、previews/ 试听、{segment_id}/ 逐段配音、{mix_id}/ 完整配音成品
+├── motion/                 # 动效广告：upload_* 上传素材、detail_long_* 详情页拼接长图、stills/ 单屏预览、render_{时间}_{档位}/ 成片 + 联系表 + 自检报告
 └── exports/                # 定稿 zip、剪映草稿 zip、达芬奇工程文件夹与 zip
 ```
 
@@ -87,7 +89,8 @@ workspace/projects/{project_id}/
 │   │   ├── image_prompt/
 │   │   ├── video_prompt/
 │   │   ├── video_editor/
-│   │   └── voice_writer/
+│   │   ├── voice_writer/
+│   │   └── motion_director/
 │   └── skills_pro/      # 商业 Pro 卡带包（可选，不入 git，结构同 skills/）
 ├── app/
 │   ├── main.py          # Gradio 启动入口
@@ -104,7 +107,7 @@ workspace/projects/{project_id}/
 ## 4. 插卡式 Skill 系统
 
 - 所有 AI 能力（电商策划、视频编剧、生图提示词、H3 视频提示词）都由 `config/skills/{slot}/*.md` 卡带驱动，代码里不写死提示词。
-- 卡槽（`app/schemas/skill.py` 的 `SKILL_SLOTS`）：`concept_writer` / `story_scriptwriter` / `ecommerce_planner` / `video_scriptwriter` / `image_prompt` / `video_prompt` / `video_editor` / `voice_writer`。卡槽由所在文件夹决定。
+- 卡槽（`app/schemas/skill.py` 的 `SKILL_SLOTS`）：`concept_writer` / `story_scriptwriter` / `ecommerce_planner` / `video_scriptwriter` / `image_prompt` / `video_prompt` / `video_editor` / `voice_writer` / `motion_director`。卡槽由所在文件夹决定。
 - 卡带格式：顶部 YAML front matter + Markdown 正文模板。
 
 ```markdown
@@ -255,6 +258,18 @@ RightAPI 的 Key 绑定渠道，一把 Key 只能调用所绑渠道的模型，�
   - 配置项：`MODAL_VOXCPM_APP` / `MODAL_VOXCPM_CLASS` / `MODAL_VOXCPM_TIMEOUT_SECONDS`。
 - 已验证：真实服务的声音设计、高保真克隆、识别、读法预览。演示模式下跑通了端到端全流程。**真实服务的整条配音拼接还没有人工试听验收。**
 
+### 5.4.4 【动效广告】选项卡：零成本代码动效（Motion Graphics）
+
+- 定位：用项目里已经产出的素材做一条按节拍剪辑的带货动效广告。**只有「编排」调用 LLM**（`motion_director` 卡带，未填 Key 走演示 `app/providers/demo/motion.py`）；画面、配乐、音效全部由本机代码渲染（Pillow 逐帧 + numpy 合成音频 + ffmpeg 编码），不调用任何生图 / 生视频接口。
+- 动效法则：整理自 LottieFiles/motion-design-skill、heygen-com/hyperframes、whaleyxbt/claude-motion、haidrrrry/claude-remotion-skill、howseen-ai/claude-motion-design、charlie947/motion-graphics-skills（MIT / Apache-2.0），只引用规则与数值，写在 `config/skills/motion_director/references/motion_design_principles.md`。引擎自动执行，卡带只决定结构、文案、素材、拍数、镜头与转场。
+- 数据模型 `app/schemas/motion.py`：`MotionAd`（比例 / BPM / 主题 / 分镜 / 素材 / 渲染记录）、`MotionScene`（7 类：hook 钩子大字、hero 商品主视觉、features 卖点清单、stat 数据冲击、gallery 图集、showcase 长图滚动、cta 收尾行动）。分镜长度是**整数拍**（1 拍 = 60 / BPM 秒），所以每个剪辑点都落在拍点上。文字上限：主标题 ≤16、副标题 ≤28、条目 ≤14、按钮 ≤8、数字 / 胶囊 ≤12；强调词必须是主标题原文的一部分。阅读时间按每秒 8 个字（外文单词 / 数字算 1.5 字，副标题按一半）+ 0.6 秒入场。
+- 素材（`MotionEngine.collect_assets()`）：主图 / 详情页定稿图（未勾选取最新）、详情页前 10 屏拼接长图（`stitch_long_image()`，按内容哈希缓存）、视频锁定首帧、分镜最新一版视频、参考图、本页上传（可标为界面截图，放进浏览器外框）。编号 A1、A2…；重新编排 / 重新收集时已有素材编号不变（`refresh_assets()`），新素材追加。发给 Skill 的素材清单只有编号、来源、形状，不含本机路径。
+- 商品信息：表单没改动时保存的是占位示例（如「如：买二送一」），`real_product_info()` 把这类值过滤掉，绝不当成事实写进广告。
+- Skill 输出纠正（`motion_engine.assemble_plan()`）：未知类型丢弃；文案去违禁词并截到上限；不存在的素材编号剔除，缺素材时补一个没用过的（showcase 优先长图）；拍数限制在类型范围内且至少能读完文字；钩子 ≤3 秒排第一、收尾行动 ≥3 秒排最后（缺了自动补）；未知转场（含叠化）改动势推移，色块擦除全片最多一次，转场种类 ≤3 种，最后一屏硬切。
+- 渲染（`app/engine/motion/`）：`easing.py` 缓动与弹簧（入场 (0.16,1,0.3,1)、退场 (0.7,0,0.84,0)、移动 (0.65,0,0.35,1)，弹簧 ζ≥0.72，回弹全片只用一次）；`typeset.py` 中文断行（空格优先、各行尽量等宽、「·」分隔符落在断行处省略、行首不放标点）与逐字遮罩上升；`scenes.py` 七类版式（三层运动，文字落定后静止）；`renderer.py` 连续背景 + 动势衔接转场（push / zoom / wipe / cut，矢量方向一致，快速位移加运动模糊、不跨剪辑点）+ 暗角颗粒，入场略早于剪辑点；`audio.py` 按 BPM 与主题调式本机合成配乐（钩子后起势进鼓点、侧链呼吸）与音效（呼啸峰值对准剪辑点、一次起势接重击、逐条提示音按音阶升高）；`encode.py` 多线程逐帧 → ffmpeg（H.264 CRF 17、BT.709、loudnorm -14 LUFS）；`review.py` 联系表 + 11 项自检（节拍、黄金 3 秒、收尾 ≥3 秒、阅读时间、落定停留、安全区、遮挡、转场种类、第 0 帧、突跳 / 单帧闪烁、响度）。
+- 档位：快速预览 540P（无颗粒、CRF 23）与 1080P 成片。每次渲染写进新的 `render_{时间}_{档位}/`，追加到 `MotionAd.renders`，绝不覆盖。渲染使用方案快照，渲染中继续改表格不影响本次结果。
+- 实测（开发机 2 核）：1080P 30fps 约 6 帧 / 秒（55 秒成片约 5 分钟）；540P 预览约 30 帧 / 秒。
+
 ### 5.5 可扩展 VideoProvider
 
 - 统一接口位于 `app/providers/video/base.py`：`warmup()`（Serverless 冷启动预热）、`generate()`、默认 600 秒超时。
@@ -288,6 +303,7 @@ RightAPI 的 Key 绑定渠道，一把 Key 只能调用所绑渠道的模型，�
 | `edit_engine.py` | 分析分镜视频（时长、画面、有声段落）→ 执行 `video_editor` Skill → 纠正为合法的 `EditPlan` |
 | `edit_render.py` | 按剪辑方案用 ffmpeg 合成成片 mp4（转场、ASS 字幕 / 花字、背景音乐避让、响度统一），实时产出进度事件 |
 | `draft_export.py` | 导出剪映草稿（pyJianYingDraft）与达芬奇工程（FCPXML 1.10 / OTIO / SRT），同步 IO，UI 用 `asyncio.to_thread` 调用 |
+| `motion_engine.py` | 收集项目素材 → 执行 `motion_director` Skill → 纠正为合法的 `MotionAd`；调用 `app/engine/motion/` 本机渲染动效广告（成片 + 联系表 + 自检报告） |
 | `voice_engine.py` | 执行 `voice_writer` Skill → 配音文案；参考音频处理、试听 / 锁定音色、音色库；逐段调用 VoiceProvider（串行、带心跳日志）；拼接完整配音并导出 wav / mp3 / srt / zip |
 
 ## 5.8 界面（`app/ui/`）
@@ -296,6 +312,7 @@ RightAPI 的 Key 绑定渠道，一把 Key 只能调用所绑渠道的模型，�
 - `image_tab.py`：主图与详情页共用的三步式工作流。`video_tab.py`：视频剧本 → 首帧锁定 → Modal H3 生成视频（逐个 / 选分镜，每个分镜独立播放器），H3 提示词折叠在可选的查看 / 微调区。
 - `edit_panel.py`：视频 Step 4（剪辑方案表格、成片选项、一键成片、导出剪映 / 达芬奇）。布局在 Step 3 之后，事件在运行日志创建后绑定；刷新输出独立于 `video_tab` 的 `refresh_outputs`，不改变其位置顺序（端到端测试按位置读取）。成片与导出都使用剪辑方案快照，处理过程中继续改表格不影响本次结果。
 - `voice_tab.py`：【配音】四步。刷新输出的顺序由 `REFRESH_KEYS` 定义，端到端测试按名字取位置。音色设定改动后立即保存。生成类事件的 `concurrency_id` 为 `voice_gen`，`concurrency_limit=1`，与服务端单容器一致；试听、识别也走这条队列。
+- `motion_tab.py`：【动效广告】三步（编排方案 / 素材 / 渲染）。刷新输出顺序由 `REFRESH_KEYS` 定义，端到端测试按名字取位置。渲染事件 `concurrency_id` 为 `motion_render`，`concurrency_limit=1`（渲染很吃 CPU）；比例、节拍、主题在保存 / 渲染时直接生效，不必重新编排。
 - `theme.py`：界面主题与 CSS 唯一来源（`THEME` / `CSS`，由 `app/main.py` 传给 `launch()`）。界面代码只用 `elem_classes`（`step-card`、`terminal-log`、`info-grid`、`plan-table` 等）引用样式，不写内联样式；步骤标题用 `step_header()`。
 - `pro_panel.py`：品牌栏右侧「👑 老庹 AI 工坊 · 定制行业专属卡带 / 商业版」小徽章（`pro-badge`），点开才显示面板（`pro-panel`，默认隐藏）：按卡槽统计开源 / Pro 卡带、列出已加载的 Pro 卡带与加载错误，以及三档版本与商务联系方式（`CONTACTS`，与 README「📬 商务合作」同步）。
 - 浏览器端 `gr.State` 只存 `project_id`；`Project` 对象由服务端 `Workspace` 缓存并按项目加锁。

@@ -77,7 +77,9 @@ def test_app_builds_with_all_tabs(server):
                 "/video_confirm", "/video_first_frames", "/video_lock_all", "/video_h3", "/video_render",
                 "/video_edit_plan", "/video_edit_save", "/video_edit_render", "/video_export_jianying",
                 "/video_export_resolve", "/voice_write", "/voice_split", "/voice_save", "/voice_preview",
-                "/voice_lock", "/voice_render", "/voice_mix", "/voice_transcribe", "/voice_library_save"}
+                "/voice_lock", "/voice_render", "/voice_mix", "/voice_transcribe", "/voice_library_save",
+                "/motion_plan", "/motion_save", "/motion_upload", "/motion_assets", "/motion_preview",
+                "/motion_render"}
     assert expected <= names
 
 
@@ -133,6 +135,45 @@ def test_voice_workflow_through_ui(server):
         assert "完整配音已生成" in _last(out[0]) and mix.segment_count == n
         assert {p.suffix for p in mix.files} == {".wav", ".mp3", ".srt", ".zip"}
         assert "改过的第二段" in mix.srt_path.read_text(encoding="utf-8-sig")
+
+
+def _motion(out, key: str):
+    """动效广告选项卡输出：[运行日志, *刷新输出]，按 REFRESH_KEYS 的名字取位置。"""
+    from app.ui.motion_tab import REFRESH_KEYS
+
+    return out[1 + REFRESH_KEYS.index(key)]
+
+
+def test_motion_workflow_through_ui(server, tmp_path):
+    """【动效广告】上传素材 → AI 编排（演示模式）→ 表格改标题 → 快速预览渲染（本机，不调用生图 / 生视频接口）。"""
+    from app.engine.video_cloner import ffmpeg_exe
+
+    client, rt, _ = server
+    client.predict("动效验收", TEA, "taobao", *INFO, api_name="/new_project")
+    pid = next(p.project_id for p in rt.store.list_projects() if p.name == "动效验收")
+
+    files = [handle_file(_png(tmp_path / f"m{i}.png", (60 + 50 * i, 120, 90))) for i in range(3)]
+    out = client.predict(files, False, "", api_name="/motion_upload")
+    assert "已添加素材 A3" in _last(out[0]) and len(_motion(out, "assets")) == 3
+
+    out = client.predict("1:1", 10, 100, "keynote_dark", "开头问一句饭后油腻吗", "default_motion_director", out[0],
+                         api_name="/motion_plan")
+    ad = rt.store.load(pid).motion_ad
+    assert "动效方案完成（演示模式）" in out[0] and ad.scenes[0].kind == "hook" and ad.scenes[-1].kind == "cta"
+    table = _motion(out, "table")
+    assert len(table["data"]) == len(ad.scenes)
+
+    table["data"][-1][4] = "今天就带回家"
+    opts = ("1:1", 10, 100, "keynote_dark", True, True, False)
+    out = client.predict(table, *opts, out[0], api_name="/motion_save")
+    assert "已保存修改（1 屏有变化）" in _last(out[0])
+    assert rt.store.load(pid).motion_ad.scenes[-1].headline == "今天就带回家"
+
+    if ffmpeg_exe():
+        out = client.predict(_motion(out, "table"), *opts, out[0], api_name="/motion_preview")
+        last = rt.store.load(pid).motion_ad.latest_render
+        assert "快速预览完成" in _last(out[0]) and last.quality == "preview" and last.video_path.exists()
+        assert _motion(out, "video") and "自检报告" in _motion(out, "report")
 
 
 def test_full_workflow_through_ui(server, tmp_path):

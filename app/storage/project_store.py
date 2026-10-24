@@ -13,7 +13,7 @@ from app.schemas.project import Project
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_\-]+$")
 SUBDIRS = ("references", "candidates", "first_frames", "videos", "prompts", "reference_video_frames", "edits",
-           "voices")
+           "voices", "motion")
 
 
 class ProjectStore:

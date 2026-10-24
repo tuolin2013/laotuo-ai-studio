@@ -22,7 +22,7 @@ def _classes(block) -> list[str]:
 
 def test_running_logs_use_terminal_style(blocks):
     logs = [b for b in blocks if isinstance(b, gr.Textbox) and b.label == "📜 运行日志 Running Logs"]
-    assert len(logs) == 4  # 主图 / 详情页 / 视频 / 配音
+    assert len(logs) == 5  # 主图 / 详情页 / 视频 / 配音 / 动效广告
     assert all("terminal-log" in _classes(b) for b in logs)
     assert ".terminal-log textarea" in CSS
 
@@ -35,7 +35,8 @@ def test_product_info_fields_are_single_line(blocks):
 
 def test_each_tab_has_step_cards(blocks):
     cards = [b for b in blocks if isinstance(b, gr.Column) and "step-card" in _classes(b)]
-    assert len(cards) == 14  # 主图 / 详情页各 Step 1~3，视频 Step 1~4（Step 4 剪辑大师一键成片），配音 Step 1~4
+    # 主图 / 详情页各 Step 1~3，视频 Step 1~4（Step 4 剪辑大师一键成片），配音 Step 1~4，动效广告 Step 1~3
+    assert len(cards) == 17
 
 
 def test_theme_labels_plain_and_primary_buttons_teal():

@@ -1,4 +1,4 @@
-"""Gradio 主界面：顶部全局控制栏 + 【主图】【详情页】【视频】【配音】四个独立选项卡。
+"""Gradio 主界面：顶部全局控制栏 + 【主图】【详情页】【视频】【配音】【动效广告】五个独立选项卡。
 
 每个选项卡的长任务都是 async 生成器，使用独立 concurrency_id，互不阻塞，切换选项卡不中断。
 """
@@ -11,6 +11,7 @@ from app.engine.runtime import EngineRuntime
 from app.settings import Settings
 from app.ui.header import build_header
 from app.ui.image_tab import DETAIL_SPEC, MAIN_SPEC, build_image_tab
+from app.ui.motion_tab import build_motion_tab
 from app.ui.state import Workspace
 from app.ui.theme import CSS, THEME
 from app.ui.video_tab import build_video_tab
@@ -33,5 +34,7 @@ def build_app(settings: Settings, runtime: EngineRuntime | None = None) -> gr.Bl
                 build_video_tab(ws, header)
             with gr.Tab("🎙️ 配音"):
                 build_voice_tab(ws, header)
+            with gr.Tab("✨ 动效广告"):
+                build_motion_tab(ws, header)
     demo.rt = rt  # 便于测试访问
     return demo

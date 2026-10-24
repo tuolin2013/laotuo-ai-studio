@@ -24,6 +24,7 @@ SLOT_LABELS = {
     "video_prompt": "视频提示词（H3）",
     "video_editor": "剪辑大师（一键成片）",
     "voice_writer": "配音文案（VoxCPM2）",
+    "motion_director": "动效导演（代码动效广告）",
 }
 
 

@@ -157,6 +157,36 @@ def compile_video_editor(
     return f"{text}\n\n# 附属指南\n\n{guide}" if guide else text
 
 
+def compile_motion_director(
+    skill: SkillCard,
+    *,
+    aspect_ratio: str,
+    target_seconds: int,
+    bpm: int,
+    theme_label: str,
+    assets: list[dict[str, Any]],
+    category: CategoryConfig,
+    platform: PlatformConfig,
+    product_info: dict[str, str] | None = None,
+    user_motion_idea: str | None = None,
+) -> str:
+    """动效导演：可用素材清单（只有编号、来源、形状，不含本机路径）+ 类目、平台、商品信息。"""
+    text = _render(
+        skill,
+        aspect_ratio=aspect_ratio,
+        target_seconds=target_seconds,
+        bpm=bpm,
+        theme_label=theme_label,
+        assets_json=_json(assets),
+        category_json=_dump(category),
+        platform_json=_dump(platform),
+        product_info_json=_json(product_info or {}),
+        user_motion_idea=_idea(user_motion_idea),
+    )
+    guide = skill.reference_context()
+    return f"{text}\n\n# 附属指南\n\n{guide}" if guide else text
+
+
 # 本草性状生图指南：只在画面提到类目原料时附上，其余附属指南（如电商美学指南）始终附上
 HERB_GUIDE = "tcm_herb_visual_guide.md"
 

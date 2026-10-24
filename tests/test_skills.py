@@ -18,6 +18,7 @@ EXPECTED = {
     "video_prompt": {"official_h3_prompt_writing", "minimax_h3_prompt"},
     "video_editor": {"default_video_editor"},
     "voice_writer": {"default_voice_writer"},
+    "motion_director": {"default_motion_director"},
 }
 
 
