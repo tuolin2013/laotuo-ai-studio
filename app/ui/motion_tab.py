@@ -1,9 +1,11 @@
-"""【动效广告】选项卡：零成本代码动效广告（Motion Graphics）。
+"""【动效广告】选项卡：代码动效广告（Motion Graphics）。
 
 三步：① 动效方案（AI 编排分镜：结构、文案、素材、拍数、镜头、转场，表格逐屏微调）→ ② 素材（自动收集本项目的
-主图、详情页、视频首帧、分镜视频与参考图，也可另外上传）→ ③ 渲染（快速预览 540P / 1080P 成片 + 联系表与自检报告）。
+主图、详情页、视频首帧、分镜视频与参考图，也可另外上传；「AI 生图」方式在这里为分镜生成专属画面）→
+③ 渲染（快速预览 540P / 1080P 成片 + 联系表与自检报告）。
 
-只有「编排」会调用 LLM（未填 Key 时走演示模式）；画面、配乐、音效全部由本机代码渲染，不调用任何生图 / 生视频接口。
+两种素材方式：「项目素材」只用项目里已有的图，不调用生图接口；「AI 生图」时动效导演给分镜写 AI 画面描述，
+用户确认后点「🎨 生成 AI 画面」才调用生图接口（每屏 1 张）。配乐、音效与渲染全部在本机完成。
 长任务都是 async 生成器，使用独立 concurrency_id，与其他选项卡互不阻塞。
 """
 
@@ -15,13 +17,25 @@ from typing import Any
 
 import gradio as gr
 
-from app.engine.motion_engine import MotionEngine, MotionError, default_scene, describe_scene, preflight
+from app.engine.motion_engine import (
+    DEFAULT_MAX_VISUALS,
+    MotionEngine,
+    MotionError,
+    default_scene,
+    describe_scene,
+    preflight,
+)
+from app.engine.prompt_compiler import image_skill_for_model
+from app.engine.render_engine import RenderEngine
+from app.providers.image_models import choices as model_choices
 from app.schemas.edit import OUTPUT_SIZES
 from app.schemas.motion import (
+    ASSET_MODE_LABELS,
     BPM_RANGE,
     CAMERA_LABELS,
     DEFAULT_BPM,
     DEFAULT_THEME,
+    MAX_VISUALS,
     MOTION_TRANSITION_LABELS,
     SCENE_LABELS,
     SOURCE_LABELS,
@@ -31,16 +45,21 @@ from app.schemas.motion import (
     label_code,
 )
 from app.schemas.project import Project
+from app.settings import IMAGE_QUALITIES, IMAGE_RESOLUTIONS
 from app.ui.header import Header, require_project
 from app.ui.state import UIError, Workspace, _rows, friendly, log_line
 from app.ui.theme import step_header
 
 SCENE_HEADERS = ["屏", "类型", "拍数", "秒数", "主标题", "强调词", "副标题", "条目（｜分隔）", "数字 / 胶囊", "素材",
-                 "镜头", "转场到下一屏"]
+                 "镜头", "转场到下一屏", "AI 画面（选填，调用生图）", "生图参考", "画面状态"]
+# 只读列：秒数、画面状态
+STATIC_COLUMNS = [3, 14]
 ASPECT_CHOICES = [("9:16 竖屏（抖音 / 视频号 / 小红书）", "9:16"), ("16:9 横屏（发布会 / B 站 / 详情页视频）", "16:9"),
                   ("1:1 方形（主图视频）", "1:1"), ("3:4 竖版（淘宝主图视频）", "3:4")]
 THEME_CHOICES = [(v, k) for k, v in THEME_LABELS.items()]
 KIND_CHOICES = [(v, k) for k, v in SCENE_LABELS.items()]
+MODE_CHOICES = [("项目素材（只用项目里已有的图，零成本）", "project"),
+                ("AI 生图（AI 为分镜写画面描述，确认后调用生图接口生成）", "generate")]
 # 刷新输出的顺序（运行日志之后）；端到端测试按名字取位置
 REFRESH_KEYS = ["status", "table", "scene_pick", "assets", "video", "sheet", "report", "files"]
 
@@ -50,14 +69,24 @@ GUIDE_MD = """
 
 - **卡点**：每屏都是整数拍，每一刀都落在节拍上；钩子之后的第一屏是「起势点」，配乐在这里进鼓点
 - **缓动**：入场快进慢停、退场慢起快走，没有线性运动；回弹整支片子只用一次（收尾的价格胶囊）
-- **文字**：主标题逐字遮罩上升，落定后完全静止供阅读（每秒最多 8 个字）；每屏只强调一个词
+- **文字**：主标题逐字遮罩上升，落定后完全静止供阅读（每秒最多 8 个字）；每屏只强调一个词。
+  第一屏开场就完整显示，第 0 帧可以直接当视频封面
 - **转场**：动势推移 / 穿梭缩放 / 色块擦除 / 卡点硬切，下一屏接住上一屏的速度；**不用叠化**
 - **质感**：缓慢漂移的柔光背景、暗角、胶片颗粒、圆角卡片投影；竖屏文字避开平台按钮区
 - **声音**：本机合成配乐与音效（呼啸声峰值对准剪辑点、一次起势接重击），响度统一到 -14 LUFS
 
-**表格怎么改**：「类型」可填 钩子大字 / 商品主视觉 / 卖点清单 / 数据冲击 / 图集 / 长图滚动 / 收尾行动；
-「素材」填 Step 2 里的编号（如 `A1, A3`）；「条目」用 ｜ 分隔；「镜头」可填 缓推 / 缓拉 / 横移 / 静止；
+**表格怎么改**：「类型」可填 钩子大字 / 痛点对比 / 商品主视觉 / 卖点清单 / 步骤流程 / 数据冲击 / 图集 / 长图滚动 /
+收尾行动；「素材」填 Step 2 里的编号（如 `A1, A3`）；「条目」用 ｜ 分隔；「镜头」可填 缓推 / 缓拉 / 横移 / 静止；
 「转场」可填 动势推移 / 穿梭缩放 / 色块擦除 / 卡点硬切。改「屏」的数字可以调换顺序。
+
+- **痛点对比**：「条目」写两条，第 1 条是之前（如 `药片硬塞 它扭头就跑`），第 2 条是之后；「之前」先停一下，
+  「之后」卡在拍点上落地。素材填 0 个或 2 个（之前、之后各一张）。
+- **步骤流程**：「条目」写 2~4 步（如 `按体重取片｜直接喂或拌粮｜看它吃干净`），每步按节拍依次点亮；可配 1 张图。
+
+**AI 画面**（「AI 生图」方式）：「AI 画面」写这一屏要生成的画面（主体、场景、光线、色调；不写上图文字，
+标题由动效引擎叠加）；「生图参考」填商品图的素材编号（最多 3 个，保持包装不走样）。生成的画面排在该屏素材的第一位，
+商品主视觉 / 收尾行动写了 AI 画面时「素材」可以留空。数据冲击、长图滚动不能写 AI 画面。
+清空「AI 画面」就回到只用项目素材，不调用生图接口。
 """
 
 
@@ -72,8 +101,13 @@ def scenes_to_rows(ad: MotionAd | None) -> list[list[Any]]:
         s = sp.scene
         rows.append([sp.index + 1, SCENE_LABELS[s.kind], s.beats, round(sp.seconds, 2), s.headline, s.accent,
                      s.subline, "｜".join(s.items), s.stat_value, ", ".join(s.images), CAMERA_LABELS[s.camera],
-                     MOTION_TRANSITION_LABELS[s.transition_out]])
+                     MOTION_TRANSITION_LABELS[s.transition_out], s.visual, ", ".join(s.visual_refs),
+                     ad.visual_label(s)])
     return rows
+
+
+def _keys(value: Any) -> list[str]:
+    return list(dict.fromkeys(s.upper() for s in re.split(r"[,，、|｜\s]+", str(value or "")) if s))
 
 
 def _code(value: Any, labels: dict[str, str], what: str, row: str) -> str:
@@ -106,9 +140,12 @@ def apply_scene_rows(ad: MotionAd, table: Any) -> int:
             "subline": " ".join(str(row[6] or "").split()),
             "items": [s.strip() for s in re.split(r"[|｜\n]", str(row[7] or "")) if s.strip()],
             "stat_value": " ".join(str(row[8] or "").split()),
-            "images": list(dict.fromkeys(s.upper() for s in re.split(r"[,，、|｜\s]+", str(row[9] or "")) if s)),
+            "images": _keys(row[9]),
             "camera": _code(row[10], CAMERA_LABELS, "镜头", label),
             "transition_out": _code(row[11], MOTION_TRANSITION_LABELS, "转场", label),
+            # 没有这两列的旧表格（12 列）保留原值，不把 AI 画面描述清空
+            "visual": " ".join(str(row[12] or "").split()) if len(raw) > 12 else scene.visual,
+            "visual_refs": _keys(row[13]) if len(raw) > 13 else list(scene.visual_refs),
         }
         if {k: getattr(scene, k) for k in new} != new:
             try:
@@ -136,11 +173,15 @@ def status_md(p: Project | None, rt) -> str:
         return "先在顶部新建或加载一个项目"
     ad = p.motion_ad
     if ad is None or not ad.scenes:
-        return ("还没有动效方案：选好比例、时长和节拍，点「🎬 AI 编排动效方案」。素材会自动从本项目的主图、详情页、"
-                "视频首帧和分镜视频里收集；项目里还没有图片时，先在 Step 2 上传几张商品图")
+        return ("还没有动效方案：选好素材方式、比例、时长和节拍，点「🎬 AI 编排动效方案」。素材会自动从本项目的主图、"
+                "详情页、视频首帧和分镜视频里收集；项目里还没有图片时，先在 Step 2 上传几张商品图，"
+                "或把素材方式换成「AI 生图」")
+    visuals = ad.visual_scenes
+    ready = sum(ad.visual_state(s) == "ready" for s in visuals)
+    mode = ASSET_MODE_LABELS[ad.asset_mode] + (f"（AI 画面 {ready}/{len(visuals)} 屏已生成）" if visuals else "")
     lines = [f"🎬 **{ad.title or '动效广告'}**　{len(ad.scenes)} 屏　｜　**{ad.total_seconds:g} 秒**"
              f"（目标 {ad.target_seconds} 秒）　｜　{ad.aspect_ratio} · {ad.bpm} BPM · {THEME_LABELS[ad.theme]}"
-             + (f"　｜　{ad.planner_mode}" if ad.planner_mode else "")]
+             f"　｜　{mode}" + (f"　｜　{ad.planner_mode}" if ad.planner_mode else "")]
     if ad.notes:
         lines.append(f"💬 {ad.notes}")
     tips = preflight(ad, rt.category(p.category_id), rt.platform(p.platform_id))
@@ -163,14 +204,23 @@ def asset_gallery(ad: MotionAd | None) -> list[tuple[str, str]]:
 def build_motion_tab(ws: Workspace, header: Header) -> None:
     rt = ws.rt
     engine = MotionEngine(rt)
+    renderer = RenderEngine(rt)
 
     with gr.Row(elem_classes=["workbench"]):
         with gr.Column(scale=7):
             # ========================================================== Step 1：动效方案
             with gr.Column(elem_classes=["step-card"]):
                 step_header(1, "动效方案：AI 编排分镜（结构 · 文案 · 素材 · 节拍 · 转场）")
-                gr.Markdown("用项目里已有的主图、详情页、视频首帧和分镜视频，做一条按节拍剪辑的动效广告。"
-                            "**画面、配乐、音效全部由本机代码渲染，不调用任何生图 / 生视频接口，不消耗画图额度。**")
+                gr.Markdown("做一条按节拍剪辑的动效广告，动效、配乐、音效都由本机代码渲染。两种素材方式：\n"
+                            "- **项目素材**：只用项目里已有的主图、详情页、视频首帧和分镜视频，"
+                            "**不调用生图接口，不消耗画图额度**；\n"
+                            "- **AI 生图**：动效导演另外给几屏写「AI 画面」描述，你在表格里确认或修改后，"
+                            "到 Step 2 点「🎨 生成 AI 画面」才调用生图接口（每屏 1 张，消耗画图额度）。")
+                with gr.Row():
+                    asset_mode = gr.Radio(MODE_CHOICES, value="project", label="素材方式", scale=3)
+                    max_visuals = gr.Slider(1, MAX_VISUALS, value=DEFAULT_MAX_VISUALS, step=1,
+                                            label="最多几屏用 AI 画面", info="每屏生成 1 张图，消耗画图额度",
+                                            visible=False, scale=2)
                 with gr.Row():
                     aspect = gr.Dropdown(ASPECT_CHOICES, value="9:16", label="画面比例")
                     theme = gr.Dropdown(THEME_CHOICES, value=DEFAULT_THEME, label="画面主题",
@@ -184,11 +234,12 @@ def build_motion_tab(ws: Workspace, header: Header) -> None:
                                       placeholder="例如：开头用「饭后油腻？」抓人；重点讲检测报告；结尾写买 2 发 3")
                     plan_btn = gr.Button("🎬 AI 编排动效方案", variant="primary", scale=1)
                 status = gr.Markdown(elem_classes=["status-note"])
-                table = gr.Dataframe(headers=SCENE_HEADERS, interactive=True, wrap=True, static_columns=[3],
+                table = gr.Dataframe(headers=SCENE_HEADERS, interactive=True, wrap=True, static_columns=STATIC_COLUMNS,
                                      datatype=["number", "str", "number", "number", "str", "str", "str", "str", "str",
-                                               "str", "str", "str"],
-                                     column_widths=[56, 104, 64, 64, 180, 96, 200, 220, 110, 110, 72, 104],
-                                     label="动效分镜（可编辑：每屏的拍数、文案、素材编号、镜头与转场）",
+                                               "str", "str", "str", "str", "str", "str"],
+                                     column_widths=[56, 104, 64, 64, 180, 96, 200, 220, 110, 110, 72, 104, 280, 90,
+                                                    130],
+                                     label="动效分镜（可编辑：每屏的拍数、文案、素材编号、镜头、转场与 AI 画面描述）",
                                      elem_classes=["plan-table"])
                 with gr.Row():
                     scene_pick = gr.Dropdown(label="选中分镜", scale=3)
@@ -208,9 +259,9 @@ def build_motion_tab(ws: Workspace, header: Header) -> None:
 
             # ========================================================== Step 2：素材
             with gr.Column(elem_classes=["step-card"]):
-                step_header(2, "素材：自动收集本项目素材 / 另外上传")
+                step_header(2, "素材：自动收集本项目素材 / 另外上传 / AI 生图")
                 gr.Markdown("编排时自动收集：主图与详情页的定稿图（未勾选取最新一张）、详情页拼接长图、视频锁定首帧、"
-                            "分镜最新一版视频、参考图。表格「素材」列填这里的编号。")
+                            "分镜最新一版视频、参考图。表格「素材」「生图参考」列填这里的编号。")
                 assets = gr.Gallery(label="素材库（编号 · 来源 · 说明）", columns=5, height=300, object_fit="contain")
                 with gr.Row():
                     upload = gr.File(label="上传图片（商品图、场景图、界面截图；可多选）", file_count="multiple",
@@ -218,6 +269,23 @@ def build_motion_tab(ws: Workspace, header: Header) -> None:
                     with gr.Column(scale=2):
                         as_screen = gr.Checkbox(label="作为界面截图（放进浏览器外框里展示）")
                         collect_btn = gr.Button("🔄 从项目重新收集素材")
+                with gr.Accordion("🎨 AI 画面（「AI 生图」方式：为写了 AI 画面描述的分镜生成专属画面）",
+                                  open=False) as visual_box:
+                    gr.Markdown("为表格「AI 画面」列写了描述的分镜各生成 1 张图：**调用生图接口，消耗画图额度**"
+                                "（没填画图 Key 时走演示模式）。「生图参考」里的商品图会一起传给接口，保持包装不走样。"
+                                "生成的图加进素材库（来源「AI 生图」），自动排在该屏素材的第一位；"
+                                "改了描述再生成会保存为新素材，旧图不删除。")
+                    with gr.Row():
+                        v_model = gr.Dropdown(model_choices(rt.settings.image_models),
+                                              value=rt.settings.image_models[0],
+                                              label="生图模型（【高质量】/【普通】为 RightAPI 渠道）", scale=3)
+                        v_res = gr.Dropdown(list(IMAGE_RESOLUTIONS), value=rt.settings.image_resolution,
+                                            label="分辨率")
+                        v_quality = gr.Dropdown(list(IMAGE_QUALITIES), value=rt.settings.image_quality,
+                                                label="GPT 质量档（xhigh/max 仅 2.5）")
+                    with gr.Row():
+                        visual_btn = gr.Button("🎨 生成 AI 画面（待生成 / 改过描述的屏）", variant="primary", scale=2)
+                        revisual_btn = gr.Button("🔁 重新生成选中这一屏", scale=1)
 
             # ========================================================== Step 3：渲染
             with gr.Column(elem_classes=["step-card"]):
@@ -270,15 +338,24 @@ def build_motion_tab(ws: Workspace, header: Header) -> None:
             out_files or None,
         ]
 
-    load_outputs = [aspect, target, bpm, theme, idea, music, sfx, grain]
+    load_outputs = [aspect, target, bpm, theme, idea, music, sfx, grain, asset_mode, max_visuals, visual_box]
+
+    def _mode_view(mode: str, n: int | None = None) -> list:
+        """素材方式切换：AI 生图时显示「最多几屏」并展开 Step 2 的 AI 画面区。"""
+        gen = mode == "generate"
+        cap = gr.update(visible=gen) if n is None else gr.update(visible=gen, value=n)
+        return [cap, gr.update(open=gen)]
 
     def _load_values(pid) -> list:
         p = ws.get(pid) if pid else None
         ad = p.motion_ad if p else None
         if ad is None:
-            return ["9:16", 20, DEFAULT_BPM, DEFAULT_THEME, "", True, True, True]
+            return ["9:16", 20, DEFAULT_BPM, DEFAULT_THEME, "", True, True, True, "project",
+                    *_mode_view("project", DEFAULT_MAX_VISUALS)]
         return [ad.aspect_ratio, ad.target_seconds, ad.bpm, ad.theme, ad.user_motion_idea or "", ad.music, ad.sfx,
-                ad.grain]
+                ad.grain, ad.asset_mode, *_mode_view(ad.asset_mode, ad.max_visuals)]
+
+    asset_mode.change(_mode_view, asset_mode, [max_visuals, visual_box], queue=False)
 
     def _log(prev, msg):
         return (prev + "\n" if prev else "") + log_line(msg)
@@ -300,14 +377,18 @@ def build_motion_tab(ws: Workspace, header: Header) -> None:
     opt_inputs = [aspect, target, bpm, theme, music, sfx, grain]
 
     # ================================================================ Step 1：编排
-    async def do_plan(pid, asp, tgt, b, th, idea_text, skill_id, prev):
+    async def do_plan(pid, asp, tgt, b, th, idea_text, skill_id, prev, mode_key="project", n_visuals=None):
         p = require_project(ws, pid)
-        log = _log(prev, f"🎬 动效导演开始编排（{asp} · 约 {int(tgt)} 秒 · {int(b)} BPM · {THEME_LABELS.get(th, th)}"
-                         f" · Skill {skill_id}）：先收集本项目素材…")
+        mode_key = mode_key if mode_key in ASSET_MODE_LABELS else "project"
+        n_visuals = int(n_visuals or DEFAULT_MAX_VISUALS)
+        how = (f"AI 生图 · 最多 {n_visuals} 屏 AI 画面" if mode_key == "generate" else "项目素材")
+        log = _log(prev, f"🎬 动效导演开始编排（{how} · {asp} · 约 {int(tgt)} 秒 · {int(b)} BPM · "
+                         f"{THEME_LABELS.get(th, th)} · Skill {skill_id}）：先收集本项目素材…")
         yield [log, *skips]
         try:
             ad, mode = await engine.generate(p, aspect_ratio=asp, target_seconds=int(tgt), bpm=int(b), theme=th,
-                                             skill_id=skill_id, idea=idea_text)
+                                             skill_id=skill_id, idea=idea_text, asset_mode=mode_key,
+                                             max_visuals=n_visuals)
             async with ws.lock(pid):
                 p.motion_ad = ad
                 engine.save(p)
@@ -318,10 +399,18 @@ def build_motion_tab(ws: Workspace, header: Header) -> None:
                         f"共 {ad.total_seconds:g} 秒，每一刀都落在节拍上")
         for sp in ad.timeline():
             log = _log(log, "　" + describe_scene(sp.index + 1, sp.scene, sp.seconds))
-        yield [_log(log, "可在表格里微调后点「⚡ 快速预览」或「🎞️ 渲染 1080P 成片」"), *_refresh(pid)]
+        todo = ad.visual_targets()
+        if todo:
+            nxt = (f"有 {len(todo)} 屏写了 AI 画面：先在表格「AI 画面」列确认或修改描述，再到 Step 2 点"
+                   "「🎨 生成 AI 画面」（调用生图接口，每屏 1 张），生成后再渲染")
+        elif ad.visual_scenes:
+            nxt = "AI 画面沿用了之前生成过的图，可在表格里微调后点「⚡ 快速预览」或「🎞️ 渲染 1080P 成片」"
+        else:
+            nxt = "可在表格里微调后点「⚡ 快速预览」或「🎞️ 渲染 1080P 成片」"
+        yield [_log(log, nxt), *_refresh(pid)]
 
     plan_btn.click(do_plan, [header.project_id, aspect, target, bpm, theme, idea,
-                             header.skill_dropdowns["motion_director"], logs],
+                             header.skill_dropdowns["motion_director"], logs, asset_mode, max_visuals],
                    [logs, *refresh_outputs], concurrency_id="motion_tab", api_name="motion_plan")
 
     async def do_save(pid, tbl, *args):
@@ -438,6 +527,46 @@ def build_motion_tab(ws: Workspace, header: Header) -> None:
     collect_btn.click(do_collect, [header.project_id, aspect, logs], [logs, *refresh_outputs],
                       concurrency_id="motion_assets", api_name="motion_assets")
 
+    def _gallery_only(pid) -> list:
+        """生图过程中只刷新状态与素材库，不刷新表格（避免冲掉正在编辑、还没保存的单元格）。"""
+        full = _refresh(pid)
+        keep = {"status", "assets"}
+        return [v if k in keep else gr.skip() for k, v in zip(REFRESH_KEYS, full, strict=True)]
+
+    def _visuals(selected: bool):
+        async def handler(pid, sid, tbl, *args):
+            *opts, m, r, q, prev = args
+            p, ad = _ad(pid)
+            try:
+                if selected and not sid:
+                    raise UIError("请先在「选中分镜」里选一屏")
+                async with ws.lock(pid):
+                    _apply(ad, tbl, *opts)  # 先保存表格：用户刚改的 AI 画面描述要用上
+                    engine.save(p)
+            except Exception as e:
+                yield [_log(prev, friendly(e)), *skips]
+                return
+            log = prev
+            try:
+                async for ev in renderer.render_motion_visuals(p, ad, m, image_skill_for_model(m),
+                                                               [sid] if selected else None, resolution=r, quality=q):
+                    log = _log(log, ev.message)
+                    if ev.done:
+                        yield [log, *_refresh(pid, sel=sid)]
+                    else:
+                        yield [log, *(_gallery_only(pid) if ev.image_path else skips)]
+            except Exception as e:
+                yield [_log(log, friendly(e)), *_refresh(pid, sel=sid)]
+
+        return handler
+
+    visual_in = [header.project_id, scene_pick, table, *opt_inputs, v_model, v_res, v_quality, logs]
+    # 同一时间只跑一轮生图：连点两次不会为同一屏重复花钱
+    visual_btn.click(_visuals(False), visual_in, [logs, *refresh_outputs], concurrency_id="motion_visuals",
+                     concurrency_limit=1, api_name="motion_visuals")
+    revisual_btn.click(_visuals(True), visual_in, [logs, *refresh_outputs], concurrency_id="motion_visuals",
+                       concurrency_limit=1, api_name="motion_revisual")
+
     # ================================================================ Step 3：渲染
     def _render(quality: str):
         async def handler(pid, tbl, *args):
@@ -451,7 +580,8 @@ def build_motion_tab(ws: Workspace, header: Header) -> None:
             except Exception as e:
                 yield [_log(prev, friendly(e)), *skips]
                 return
-            log = _log(prev, f"🎞️ 开始渲染{label}：{len(ad.scenes)} 屏 · {ad.total_seconds:g} 秒 · 全部在本机完成")
+            log = _log(prev, f"🎞️ 开始渲染{label}：{len(ad.scenes)} 屏 · {ad.total_seconds:g} 秒 · 全部在本机完成"
+                             "（渲染不调用生图接口）")
             yield [log, *skips]
             try:
                 async for ev in engine.render(p, ad, quality):

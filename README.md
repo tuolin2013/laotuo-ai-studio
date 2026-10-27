@@ -23,7 +23,7 @@
 - 详情页：按屏规划，生成长图序列预览。
 - 带货短视频：MiniMax H3 原生音画一体，画面和声音一次产出；先锁定首帧再生成，商品不变形。成片可一键合成 mp4，或导出剪映草稿、达芬奇工程继续精剪。
 - 配音：VoxCPM2 口播配音，逐段生成后拼接，导出 wav / mp3 / srt。
-- 动效广告：用项目里已有的主图、详情页、首帧和分镜视频，按节拍编排一条动效广告。画面、配乐、音效全部由本机代码渲染，**不调用任何生图 / 生视频接口，不消耗画图额度**。
+- 动效广告：按节拍编排一条动效广告，动效、配乐、音效全部由本机代码渲染。用项目里已有的主图、详情页、首帧和分镜视频时**不调用生图接口，不消耗画图额度**；也可以选「AI 生图」，为几屏单独生成专属画面。
 
 全部 AI 能力由 Markdown「卡带」驱动，代码里不写死提示词。**没有 API Key 也能完整体验全流程**（零 Key 演示模式）。
 
@@ -65,7 +65,7 @@
 - MiniMax H3 提示词自动编写：内置官方 `h3-prompt-writing` 技能。分镜绑定了商品参考图时用 Ref2VA，否则用 I2VA，无需手动选择。
 - 视频版本管理：每个分镜单独显示最新视频，重新生成会保存为新版本，不覆盖旧视频。
 - 剪辑大师一键成片：自动定位台词、排顺序、加转场和字幕花字，导出 mp4、剪映草稿或达芬奇工程。
-- 零成本代码动效广告：分镜按整数拍排期，每一刀都落在节拍上；逐字遮罩上升、动势衔接转场、本机合成配乐与音效；每次渲染自动出联系表和 11 项自检报告（节拍、阅读时间、安全区、响度等）。
+- 代码动效广告：分镜按整数拍排期，每一刀都落在节拍上；逐字遮罩上升、动势衔接转场、本机合成配乐与音效；9 类版式（含痛点对比、步骤流程）；每次渲染自动出联系表和 14 项自检报告（节拍、阅读时间、字号、安全区、响度等）。素材可以只用项目已有的图（零成本），也可以为部分分镜调用生图接口生成专属画面。
 - 三路并发：主图、详情页、视频三个选项卡各自排队，互不阻塞；切换选项卡不会中断任务。
 - 实时回显：运行日志实时滚动，图片生成一张显示一张。
 - 本地持久化：所有状态写入 `workspace/projects/`，重启后可恢复历史项目。
@@ -108,7 +108,7 @@ flowchart LR
 | `video_prompt` | MiniMax H3 音画提示词 |
 | `video_editor` | 剪辑大师：分镜视频 → 剪辑方案（顺序、出入点、转场、卖点花字） |
 | `voice_writer` | 配音文案（VoxCPM2 口播） |
-| `motion_director` | 动效导演：项目素材 → 动效方案（结构、文案、素材、拍数、镜头、转场） |
+| `motion_director` | 动效导演：项目素材 → 动效方案（结构、文案、素材、拍数、镜头、转场；「AI 生图」方式另写 AI 画面描述） |
 
 卡带格式为 YAML front matter + Markdown 正文：
 
@@ -371,17 +371,21 @@ Step 4　剪辑大师一键成片 · 导出剪映 / 达芬奇草稿
 
 两种草稿的时间线与成片完全一致：顺序、出入点、转场、字幕都已排好。剪映草稿和达芬奇工程目前只验证了文件结构，还没有在真实软件中打开测试，首次使用时请确认能正常导入。
 
-### 4. 动效广告（零成本代码动效）
+### 4. 动效广告（代码动效）
 
-【✨ 动效广告】选项卡用项目里已经产出的素材做动效广告，适合主图视频、详情页视频、信息流短广告。
+【✨ 动效广告】选项卡做按节拍剪辑的动效广告，适合主图视频、详情页视频、信息流短广告。素材有两种方式：
 
-1. 选画面比例（9:16 / 16:9 / 1:1 / 3:4）、目标时长、节拍速度（BPM）和画面主题（发布会暗场，或沿用主图 / 详情页的 5 大美学流派），可在「我的动效想法」里写要求，点「🎬 AI 编排动效方案」。
+- **项目素材**：只用项目里已经产出的图，不调用生图接口，不消耗画图额度。
+- **AI 生图**：动效导演另外给几屏（默认最多 4 屏，可调 1~8）写「AI 画面」描述，确认后调用生图接口为这几屏各生成 1 张专属画面。项目里还没有图片时也能用。
+
+1. 选素材方式、画面比例（9:16 / 16:9 / 1:1 / 3:4）、目标时长、节拍速度（BPM）和画面主题（发布会暗场，或沿用主图 / 详情页的 5 大美学流派），可在「我的动效想法」里写要求，点「🎬 AI 编排动效方案」。
 2. 系统先自动收集素材：主图与详情页的定稿图、详情页拼接长图、视频锁定首帧、分镜视频、参考图；也可以在 Step 2 另外上传图片。素材按 A1、A2… 编号。
-3. 动效导演卡带编排分镜：钩子大字 → 商品主视觉 → 数据冲击 / 卖点清单 / 图集 / 长图滚动 → 收尾行动。系统会纠正不合规的输出：去违禁词、拍数不够读完文字时自动加拍、钩子不超过 3 秒、收尾至少 3 秒、转场不超过 3 种。商品信息表单里没改过的占位示例（如「如：买二送一」）不会被当成事实写进广告。
+3. 动效导演卡带先从 4 种故事结构（痛点→解决 / 证据驱动 / 使用过程 / 全面展示）里选一种，再编排分镜：钩子大字 →（痛点对比）→ 商品主视觉 → 数据冲击 / 卖点清单 / 步骤流程 / 图集 / 长图滚动 → 收尾行动。「痛点对比」先让「之前」停一下，「之后」卡在拍点上落地；「步骤流程」按节拍逐步点亮。系统会纠正不合规的输出：去违禁词、拍数不够读完文字时自动加拍、钩子不超过 3 秒、收尾至少 3 秒、转场不超过 3 种。商品信息表单里没改过的占位示例（如「如：买二送一」）不会被当成事实写进广告。
 4. 在表格里逐屏微调文案、拍数、素材编号、镜头和转场，点「🖼️ 预览选中这一屏」几秒就能看到版式。
-5. 点「⚡ 快速预览（540P）」或「🎞️ 渲染 1080P 成片」。渲染完成后显示联系表（每屏内容落定后各取一帧）和自检报告。
+5. 「AI 生图」方式：在表格「AI 画面」列确认或修改描述，「生图参考」填商品图编号（保持包装不走样），然后在 Step 2 选好生图模型，点「🎨 生成 AI 画面」。生成的图进素材库（来源「AI 生图」），自动排在该屏第一位；改了描述可以再生成，旧图不删除。AI 画面没生成完时不能渲染。
+6. 点「⚡ 快速预览（540P）」或「🎞️ 渲染 1080P 成片」。渲染完成后显示联系表（每屏内容落定后各取一帧）和自检报告。
 
-动效法则整理自 LottieFiles、HeyGen HyperFrames 等开源动效 Skill（见[致谢](#致谢)），全文在 [config/skills/motion_director/references/motion_design_principles.md](config/skills/motion_director/references/motion_design_principles.md)。只有「编排」会调用 LLM，没填 Key 时走演示模式。
+动效法则整理自 LottieFiles、HeyGen HyperFrames 等开源动效 Skill（见[致谢](#致谢)），全文在 [config/skills/motion_director/references/motion_design_principles.md](config/skills/motion_director/references/motion_design_principles.md)。「编排」调用 LLM，「生成 AI 画面」调用生图接口，没填对应 Key 时都走演示模式；渲染、配乐、音效始终在本机完成。
 
 ### 5. 产出文件
 
@@ -396,7 +400,7 @@ workspace/projects/{project_id}/
 ├── prompts/                # 编译后的提示词
 ├── edits/{edit_id}/        # 一键成片 mp4（每次合成都保留为新文件）与字幕文件
 ├── voices/                 # 配音：逐段配音与完整配音成品
-├── motion/                 # 动效广告：上传素材、详情页拼接长图、每次渲染的成片 + 联系表 + 自检报告
+├── motion/                 # 动效广告：上传素材、详情页拼接长图、AI 生图画面、每次渲染的成片 + 联系表 + 自检报告
 └── exports/                # 打包导出的 zip、剪映草稿、达芬奇工程
 ```
 
@@ -443,7 +447,7 @@ flowchart LR
 | `edit_render.py` | 按剪辑方案用 ffmpeg 合成成片（转场、字幕花字、背景音乐、响度统一） |
 | `draft_export.py` | 导出剪映草稿与达芬奇工程（FCPXML / OTIO / SRT） |
 | `motion_engine.py` | 动效广告：收集项目素材，执行 `motion_director` 卡带并纠正输出 |
-| `motion/` | 动效渲染引擎：缓动与弹簧、中文动态排版、七类版式、转场、本机合成配乐音效、ffmpeg 编码、联系表与自检 |
+| `motion/` | 动效渲染引擎：缓动与弹簧、中文动态排版、九类版式、转场、本机合成配乐音效、ffmpeg 编码、联系表与自检 |
 
 ### 并发模型
 
@@ -526,4 +530,4 @@ flowchart LR
 - [Gradio](https://www.gradio.app/)、[Modal](https://modal.com/)、[Pydantic](https://docs.pydantic.dev/)、[httpx](https://www.python-httpx.org/)、[Pillow](https://python-pillow.org/)
 - [pyJianYingDraft](https://github.com/GuanYixuan/pyJianYingDraft)（Apache-2.0）：剪映草稿生成
 - [kajisho5/ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill)（MIT）：FCPXML / OTIO 时间线写法参考
-- 动效法则参考（只引用规则与数值，未复制代码）：[LottieFiles/motion-design-skill](https://github.com/LottieFiles/motion-design-skill)（MIT）、[heygen-com/hyperframes](https://github.com/heygen-com/hyperframes)（Apache-2.0）、[whaleyxbt/claude-motion](https://github.com/whaleyxbt/claude-motion)（MIT）、[haidrrrry/claude-remotion-skill](https://github.com/haidrrrry/claude-remotion-skill)（MIT）、[howseen-ai/claude-motion-design](https://github.com/howseen-ai/claude-motion-design)（MIT）、[charlie947/motion-graphics-skills](https://github.com/charlie947/motion-graphics-skills)（MIT）
+- 动效法则参考（只引用规则与数值，未复制代码）：[LottieFiles/motion-design-skill](https://github.com/LottieFiles/motion-design-skill)（MIT）、[heygen-com/hyperframes](https://github.com/heygen-com/hyperframes)（Apache-2.0）、[whaleyxbt/claude-motion](https://github.com/whaleyxbt/claude-motion)（MIT）、[haidrrrry/claude-remotion-skill](https://github.com/haidrrrry/claude-remotion-skill)（MIT）、[howseen-ai/claude-motion-design](https://github.com/howseen-ai/claude-motion-design)（MIT）、[charlie947/motion-graphics-skills](https://github.com/charlie947/motion-graphics-skills)（MIT）、[Vincentwei1021/video-shotcraft](https://github.com/Vincentwei1021/video-shotcraft)（Apache-2.0）、[EveryInc/product-launch-video](https://github.com/EveryInc/product-launch-video)（MIT）、[chandreshpv/remotion-product-videos-claude-skill](https://github.com/chandreshpv/remotion-product-videos-claude-skill)（MIT）

@@ -157,9 +157,10 @@ def test_motion_workflow_through_ui(server, tmp_path):
     assert "已添加素材 A3" in _last(out[0]) and len(_motion(out, "assets")) == 3
 
     out = client.predict("1:1", 10, 100, "keynote_dark", "开头问一句饭后油腻吗", "default_motion_director", out[0],
-                         api_name="/motion_plan")
+                         "project", 4, api_name="/motion_plan")
     ad = rt.store.load(pid).motion_ad
     assert "动效方案完成（演示模式）" in out[0] and ad.scenes[0].kind == "hook" and ad.scenes[-1].kind == "cta"
+    assert ad.asset_mode == "project" and not ad.visual_scenes  # 项目素材方式不写 AI 画面
     table = _motion(out, "table")
     assert len(table["data"]) == len(ad.scenes)
 
@@ -174,6 +175,41 @@ def test_motion_workflow_through_ui(server, tmp_path):
         last = rt.store.load(pid).motion_ad.latest_render
         assert "快速预览完成" in _last(out[0]) and last.quality == "preview" and last.video_path.exists()
         assert _motion(out, "video") and "自检报告" in _motion(out, "report")
+
+
+def test_motion_ai_visuals_through_ui(server):
+    """【动效广告】「AI 生图」方式：空项目也能编排 → 未生成时拦截渲染 → 生成 AI 画面（演示）→ 快速预览。"""
+    from app.engine.video_cloner import ffmpeg_exe
+
+    client, rt, _ = server
+    client.predict("动效生图验收", TEA, "taobao", *INFO, api_name="/new_project")
+    pid = next(p.project_id for p in rt.store.list_projects() if p.name == "动效生图验收")
+
+    out = client.predict("9:16", 10, 100, "keynote_dark", "", "default_motion_director", "", "generate", 3,
+                         api_name="/motion_plan")
+    ad = rt.store.load(pid).motion_ad
+    assert "动效方案完成（演示模式）" in out[0] and "生成 AI 画面" in _last(out[0])
+    assert ad.asset_mode == "generate" and 1 <= len(ad.visual_scenes) <= 3 and not ad.assets
+    table = _motion(out, "table")
+    assert table["data"][0][12] and table["data"][0][14] == "⏳ 待生成"
+    opts = ("9:16", 10, 100, "keynote_dark", True, True, False)
+
+    if ffmpeg_exe():  # 还没生成 AI 画面时不能渲染
+        out = client.predict(table, *opts, out[0], api_name="/motion_preview")
+        assert "还没生成" in _last(out[0]) and rt.store.load(pid).motion_ad.latest_render is None
+
+    table["data"][0][12] = "张家界峰林晨雾，茶园在画面下方，中部大片干净的雾气"  # 生成前改一屏描述
+    out = client.predict(ad.scenes[0].scene_id, table, *opts, "gpt-image-2.5-flare", "1K", "high", out[0],
+                         api_name="/motion_visuals")
+    ad = rt.store.load(pid).motion_ad
+    assert "AI 画面生成完成" in _last(out[0]) and all(ad.visual_state(s) == "ready" for s in ad.visual_scenes)
+    assert ad.scenes[0].visual.startswith("张家界峰林晨雾") and ad.asset(ad.scenes[0].visual_key).source == "generated"
+    assert all("✅ 已生成" in r[14] for r in _motion(out, "table")["data"] if r[12])
+    assert any("AI 生图" in (item.get("caption") or "") for item in _motion(out, "assets"))
+
+    if ffmpeg_exe():
+        out = client.predict(_motion(out, "table"), *opts, out[0], api_name="/motion_preview")
+        assert "快速预览完成" in _last(out[0]) and rt.store.load(pid).motion_ad.latest_render is not None
 
 
 def test_full_workflow_through_ui(server, tmp_path):

@@ -309,6 +309,130 @@ def test_renderer_frames_and_self_review(tmp_path):
     assert kinds.count("whoosh") == 4  # 每个非硬切转场一声呼啸（缩放、推移、擦除、推移）
 
 
+def test_first_scene_opens_settled_so_frame_zero_works_as_cover(tmp_path):
+    """平台默认拿第 0 帧当封面：第一屏跳过入场，第 0 帧就是落定后的完整画面（不是半个字）。"""
+    from app.engine.motion.encode import load_media
+
+    ad = _ad(tmp_path)  # 第一屏是没有背景图的钩子大字：落定后画面完全静止
+    r = MotionRenderer(ad, load_media(ad, tmp_path, ffmpeg_exe()), scale=0.25, grain=False)
+    hook = r.scenes[0]
+    assert hook.lead > 0 and hook.settled_at == 0
+    at0, later = (Image.new("RGBA", (r.W, r.H), (0, 0, 0, 0)) for _ in range(2))
+    hook.draw(at0, 0 + hook.lead)
+    hook.draw(later, 1.5 + hook.lead)
+    assert at0.tobytes() == later.tobytes()  # 第 0 帧的文字与强调线已经和落定后一样
+    assert r.scenes[1].lead == 0  # 其他分镜照常入场
+    assert r.hold_seconds(0) == pytest.approx(r.spans[0].seconds - r.exit_s[0], abs=0.01)
+    first = [e for e in r.sound_events() if e.time < r.spans[1].start_s]
+    # 钩子自己的音效：跳过的入场提示音不播，开场重击保留（转场呼啸、起势铺垫属于剪辑点，不在此列）
+    assert [e.kind for e in first if e.kind not in {"whoosh", "riser"}] == ["thump"]
+
+
+# ---------------------------------------------------------------- 痛点对比 / 步骤流程
+
+
+def test_contrast_and_steps_validate_items_and_assets():
+    with pytest.raises(ValueError, match="痛点对比需要 2 条"):
+        MotionScene(kind="contrast", beats=8, headline="对比", items=["只有之前"])
+    with pytest.raises(ValueError, match="0 个或 2 个"):
+        MotionScene(kind="contrast", beats=8, items=["之前", "之后"], images=["A1"])
+    with pytest.raises(ValueError, match="至少 2 步"):
+        MotionScene(kind="steps", beats=8, items=["只有一步"])
+    with pytest.raises(ValueError, match="最多配 1 张图"):
+        MotionScene(kind="steps", beats=8, items=["取片", "拌粮"], images=["A1", "A2"])
+    plain = MotionScene(kind="features", beats=8, items=["取片", "拌粮", "吃完"])
+    steps = MotionScene(kind="steps", beats=8, items=["取片", "拌粮", "吃完"])
+    assert steps.reading_seconds > plain.reading_seconds  # 逐拍点亮：每多一步另加时间
+    pair = MotionScene(kind="contrast", beats=8, items=["之前", "之后"])
+    assert pair.reading_seconds >= 0.6 + 0.8  # 「之前」单独停留
+
+
+def test_assemble_plan_corrects_contrast_and_steps(rt, tmp_path):
+    cat, plat = rt.category(TEA), rt.platform("taobao")
+    assets = [_asset(tmp_path, "A1"), _asset(tmp_path, "A2"), _asset(tmp_path, "A3")]
+    data = {"scenes": [
+        {"kind": "hook", "beats": 4, "headline": "饭后油腻？"},
+        {"kind": "contrast", "beats": 5, "headline": "换一杯", "items": ["饭后油腻", "一杯清爽", "多余的第三条"],
+         "images": ["A1"]},
+        {"kind": "contrast", "beats": 6, "headline": "缺一条", "items": ["只有之前"]},
+        {"kind": "hero", "beats": 6, "headline": "峰云间莓茶", "images": ["A1"]},
+        {"kind": "steps", "beats": 6, "headline": "这样泡", "items": ["热水冲泡", "看白霜溶开", "汤色黄绿"],
+         "images": ["A2", "A3"]},
+        {"kind": "cta", "beats": 6, "headline": "带回家", "items": ["立即下单"]},
+    ]}
+    ad = assemble_plan(data, assets, cat, plat, aspect_ratio="9:16", target_seconds=20, bpm=100,
+                       theme="keynote_dark", skill_id="x", idea=None)
+    assert [s.kind for s in ad.scenes] == ["hook", "contrast", "hero", "steps", "cta"]  # 只有一条的对比丢弃
+    contrast = ad.scenes[1]
+    assert contrast.items == ["饭后油腻", "一杯清爽"] and contrast.images == []  # 只给了一张图时两边都不放
+    assert contrast.beats * 0.6 >= contrast.reading_seconds  # 拍数自动加到读得完
+    assert ad.scenes[3].images == ["A2"]  # 步骤流程最多 1 张图
+
+
+def test_contrast_and_steps_land_on_beats_and_drop_after_contrast(tmp_path):
+    from app.engine.motion.encode import load_media
+
+    ad = MotionAd.sized("9:16", title="对比", bpm=100, target_seconds=20)
+    ad.assets = [_asset(tmp_path, "A1")]
+    ad.replace_scenes([
+        MotionScene(kind="hook", beats=4, headline="喂不进去？"),
+        MotionScene(kind="contrast", beats=9, headline="两种结果", items=["硬塞 扭头就跑", "拌粮 自己吃完"]),
+        MotionScene(kind="hero", beats=6, headline="重重没", images=["A1"]),
+        MotionScene(kind="steps", beats=10, headline="三步喂好", items=["按体重取片", "直接喂或拌粮", "看它吃干净"]),
+        MotionScene(kind="cta", beats=6, headline="带回家", items=["立即下单"], transition_out="cut"),
+    ])
+    r = MotionRenderer(ad, load_media(ad, tmp_path, ffmpeg_exe()), scale=0.25, grain=False)
+    beat = 0.6
+    on_beat = lambda t: abs(t / beat - round(t / beat)) < 1e-6  # noqa: E731
+    contrast, steps = r.scenes[1], r.scenes[3]
+    assert on_beat(contrast.t_hit) and contrast.t_hit - contrast.t_before >= 0.6 + 0.8  # 之前先停够再落地
+    assert all(on_beat(t) for t in steps.t_steps) and len(steps.t_steps) == 3
+    assert steps.t_steps == sorted(steps.t_steps)
+    # 痛点对比是「问题」段：起势点推迟到商品登场的那一刀
+    assert r.drop_time() == pytest.approx(r.spans[2].start_s)
+    # 「之前」落定、「之后」还没出来时，画面上只有一张卡片
+    mid = Image.new("RGBA", (r.W, r.H), (0, 0, 0, 0))
+    contrast.draw(mid, contrast.t_after - 0.05)
+    full = Image.new("RGBA", (r.W, r.H), (0, 0, 0, 0))
+    contrast.draw(full, contrast.settle + 0.1)
+    assert np.asarray(full)[..., 3].astype(int).sum() > np.asarray(mid)[..., 3].astype(int).sum() * 1.3
+    rv = {c.title: c for c in review(r).checks}
+    assert rv["每屏文字都有足够的阅读时间"].ok and rv["文字都在安全区内"].ok and rv["文字互不遮挡"].ok
+
+
+def test_review_flags_tiny_text_idle_screens_and_repeated_layouts(tmp_path):
+    from app.engine.motion.encode import load_media
+
+    ad = MotionAd.sized("9:16", title="检查", bpm=72, target_seconds=24)
+    ad.replace_scenes([
+        MotionScene(kind="hook", beats=3, headline="开场"),
+        MotionScene(kind="stat", beats=8, headline="总黄酮", stat_value="39.3%"),  # 6.7 秒只有一个数字
+        MotionScene(kind="features", beats=6, headline="讲究", items=["芽头嫩叶", "白霜满披"]),
+        MotionScene(kind="features", beats=6, headline="还有", items=["回甘明显", "冷泡也行"]),
+        MotionScene(kind="cta", beats=6, headline="带回家", items=["立即下单"], transition_out="cut"),
+    ])
+    r = MotionRenderer(ad, load_media(ad, tmp_path, ffmpeg_exe()), scale=0.5, grain=False)
+    checks = {c.title: c for c in review(r).checks}
+    assert checks["文字在手机上看得清"].ok
+    assert not checks["读完就走，不干等"].ok and "2. 数据冲击" in checks["读完就走，不干等"].detail
+    assert not checks["相邻两屏版式不重复"].ok and "3、4" in checks["相邻两屏版式不重复"].detail
+    r.scenes[2].font_px.append(6)  # 模拟缩到看不清的小字
+    assert not {c.title: c for c in review(r).checks}["文字在手机上看得清"].ok
+    rt_ = EngineRuntime(settings=Settings(workspace_dir=tmp_path), force_demo=True)
+    assert any("同一种版式" in t for t in preflight(ad, rt_.category(TEA), rt_.platform("taobao")))
+
+
+def test_demo_motion_adds_contrast_from_category_facts(rt, tmp_path):
+    cat, plat = rt.category(TEA), rt.platform("taobao")
+    assets = [_asset(tmp_path, f"A{i}").payload() for i in range(1, 4)]
+    data = demo_motion(assets, cat, plat, {}, 24, 100)
+    contrast = next(s for s in data["scenes"] if s["kind"] == "contrast")
+    before, after = contrast["items"]
+    assert any(before in p for p in cat.pain_points) and any(after in p for p in cat.core_selling_points)
+    assert data["scenes"][0]["headline"].rstrip("？") not in before  # 不和钩子说同一句话
+    assert all(s["kind"] != "contrast" for s in demo_motion(assets, cat, plat, {}, 12, 100)["scenes"])  # 短片不排
+
+
 def test_pop_detection_flags_single_frame_flash():
     thumbs = [np.full((48, 48), 40.0) for _ in range(30)]
     thumbs[15] = np.full((48, 48), 200.0)

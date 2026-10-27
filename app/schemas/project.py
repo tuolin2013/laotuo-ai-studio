@@ -39,7 +39,7 @@ class Project(BaseModel):
     video_edit: EditPlan | None = None
     # 【配音】选项卡：VoxCPM2 配音文案、音色与逐段配音（独立成品，不写入视频分镜）
     voice_studio: VoiceStudio | None = None
-    # 【动效广告】选项卡：用项目素材编排、本机渲染的代码动效广告（不调用生图 / 生视频接口）
+    # 【动效广告】选项卡：本机渲染的代码动效广告（素材用项目已有的图，或为部分分镜调用生图接口生成）
     motion_ad: MotionAd | None = None
 
     # 当前会话的 Skill 选择（卡槽 -> skill_id）

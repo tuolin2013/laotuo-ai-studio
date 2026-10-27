@@ -87,13 +87,18 @@ class MotionRenderer:
         self.W, self.H = even(ad.width * scale), even(ad.height * scale)
         self.fps = ad.fps
         self.theme = get_theme(ad.theme)
-        self.ctx = Ctx(self.W, self.H, self.fps, self.theme, media)
+        self.ctx = Ctx(self.W, self.H, self.fps, self.theme, media, beat=60.0 / ad.bpm)
         self.spans = ad.timeline()
         if not self.spans:
             raise ValueError("还没有动效分镜")
         n = len(self.spans)
         self.scenes: list[SceneRenderer] = [RENDERERS[sp.scene.kind](self.ctx, sp.scene, sp.seconds, sp.index, n)
                                             for sp in self.spans]
+        # 第一屏从落定状态开场：平台和播放器默认拿第 0 帧当封面，逐字入场的第 0 帧只露出半个字。
+        # 跳过第一屏的入场（时间整体后移），镜头运动按后移后的时长继续，文字从第 0 帧起完整可读
+        first = self.scenes[0]
+        first.lead = max(0.0, first.settle) + 1e-3
+        first.D += first.lead
         self.starts = [sp.start for sp in self.spans]
         self.total = self.spans[-1].end
         self.bg = Background(self.ctx)
@@ -120,7 +125,7 @@ class MotionRenderer:
         """分镜内容全部落定之后、退场开始之前的静止阅读时间。"""
         sc = self.scenes[i]
         end = self.spans[i].seconds - (self.exit_s[i] if i < len(self.spans) - 1 else OUTRO_SECONDS)
-        return round(end - sc.settle, 2)
+        return round(end - sc.settled_at, 2)
 
     def transition_frames(self) -> set[int]:
         """转场与片尾收回占用的帧（自检时这些帧的画面突变是预期之内的）。"""
@@ -208,16 +213,17 @@ class MotionRenderer:
         sp, sc = self.spans[i], self.scenes[i]
         lt = (f - sp.start) / self.fps
         tr = self._transform(i, lt)
+        st = lt + sc.lead  # 分镜自己的时间（第一屏跳过了入场）
         if tr is None:
-            sc.draw(frame, lt)
+            sc.draw(frame, st)
         else:
             kind, phase, p = tr
             if kind == "wipe":
-                sc.draw(frame, lt)
+                sc.draw(frame, st)
                 self._wipe_block(frame, phase, p)
             else:
                 layer = Image.new("RGBA", (self.W, self.H), (0, 0, 0, 0))
-                sc.draw(layer, lt)
+                sc.draw(layer, st)
                 span_s = EXIT_SECONDS.get(kind, 0) if phase == "out" else ENTRY_SECONDS.get(kind, 0)
                 dt = 1 / (self.fps * span_s) if span_s > 0 else 0
                 layer, op = self._apply(layer, kind, phase, p, dt)
@@ -233,9 +239,15 @@ class MotionRenderer:
         """分镜音效提示点 + 转场呼啸声 + 钩子之后唯一一次「起势 → 重击」。"""
         events: list[SoundEvent] = []
         for i, (sp, sc) in enumerate(zip(self.spans, self.scenes, strict=True)):
+            opened = False
             for cue in sc.cues:
-                if cue.time < sp.seconds:
-                    events.append(SoundEvent(sp.start_s + cue.time, cue.kind, cue.gain, cue.pan, cue.step))
+                t = cue.time - sc.lead
+                if t < 0:  # 跳过的入场动画：提示音不播，只留一记开场重击
+                    if cue.kind != "thump" or opened:
+                        continue
+                    t, opened = 0.02, True
+                if t < sp.seconds:
+                    events.append(SoundEvent(sp.start_s + t, cue.kind, cue.gain, cue.pan, cue.step))
             if i == len(self.spans) - 1:
                 continue
             kind = self.trans_out[i]
@@ -253,9 +265,14 @@ class MotionRenderer:
         return sorted(events, key=lambda e: e.time)
 
     def drop_time(self) -> float | None:
-        """音乐起势点：钩子之后的第一个剪辑点（主视觉登场）。"""
+        """音乐起势点：钩子（和紧跟在后面的痛点对比）之后的第一个剪辑点，也就是商品登场的那一刀。
+
+        痛点对比是「问题」段，配乐保持留白；解决方案登场时才进鼓点。
+        """
         if len(self.spans) > 1 and self.spans[0].scene.kind == "hook":
-            return self.spans[1].start_s
+            for sp in self.spans[1:]:
+                if sp.scene.kind != "contrast":
+                    return sp.start_s
         return None
 
     def outro_time(self) -> float:

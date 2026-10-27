@@ -11,10 +11,13 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import re
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
+
+from PIL import Image
 
 from app.engine.image_router import image_key, route_image_request
 from app.engine.prompt_compiler import DEFAULT_H3_SKILL, PromptCompiler, h3_mode_label
@@ -25,7 +28,9 @@ from app.providers.image import gpt_image_size, gpt_quality_for, is_experimental
 from app.providers.image_models import CHANNEL_LABELS, get_model, live_channel_of, protocol_of
 from app.providers.video import VideoProviderError, VideoRequest
 from app.schemas.common import mode_for_reference_count
-from app.schemas.plan import CandidateImage, ImagePlan, ImageSlot
+from app.schemas.editable import ReferenceAsset
+from app.schemas.motion import VISUAL_USAGE, MotionAd, MotionAsset, MotionScene, visual_ratio
+from app.schemas.plan import AESTHETIC_STYLE_NAMES, CandidateImage, ImagePlan, ImageSlot
 from app.schemas.project import Project
 from app.schemas.video import StoryboardShot, VideoScript
 
@@ -45,6 +50,33 @@ class RenderEvent:
 
 def _ts() -> str:
     return str(int(time.time() * 1000))
+
+
+_REF_ROLE = re.compile(r"^参考图 ([A-Za-z0-9_]+)")
+# 动效素材作为生图参考时的角色名（参考图沿用上传时登记的角色，如 product_package）
+MOTION_REF_ROLES = {"main_image": "product_main_image", "detail_page": "product_detail_page",
+                    "first_frame": "product_scene_frame", "upload": "product_photo", "screen": "screenshot",
+                    "generated": "ai_scene", "reference": "product_reference"}
+
+
+def motion_reference(asset: MotionAsset) -> ReferenceAsset:
+    """动效素材 → 生图参考图（角色名会写进生图指令：图1=product_package …）。"""
+    m = _REF_ROLE.match(asset.label) if asset.source == "reference" else None
+    role = m.group(1) if m else MOTION_REF_ROLES.get(asset.source, "product_photo")
+    return ReferenceAsset(role=role, file_path=asset.path)
+
+
+def motion_visual_data(scene: MotionScene, aspect_ratio: str, theme: str) -> dict:
+    """动效 AI 画面的生图输入：只有画面，不排版文字（标题、卖点由动效引擎另外叠加）。"""
+    return {
+        "title": "",
+        "copy_text": "",
+        "visual_description": f"{scene.visual}。（用途：动效广告「{scene.label}」屏的{VISUAL_USAGE[scene.kind]}）"
+                              "标题与卖点由动效引擎另外叠加，画面中不要出现任何文字、logo 或水印。",
+        "aspect_ratio": aspect_ratio,
+        "aesthetic_style": theme if theme in AESTHETIC_STYLE_NAMES else "auto",
+        "composition_mode": "auto",
+    }
 
 
 class RenderEngine:
@@ -287,6 +319,90 @@ class RenderEngine:
         ):
             yield ev
         yield RenderEvent("🎉 首帧生成完成，请逐镜检查商品包装与文字无变形后锁定", done=True)
+
+    # ------------------------------------------------------------ 动效广告 AI 画面
+
+    async def render_motion_visuals(
+        self, project: Project, ad: MotionAd, model: str, skill_id: str, scene_ids: list[str] | None = None,
+        resolution: str | None = None, quality: str | None = None,
+    ) -> AsyncIterator[RenderEvent]:
+        """为写了「AI 画面」的动效分镜各生成 1 张画面（scene_ids 为空时只生成待生成 / 描述改过的分镜）。
+
+        每完成一张就加进素材库并绑定到该屏（MotionAd.bind_visual），旧画面留在素材库里不删除。
+        出图比例按该屏版式的图片框选择（钩子是全屏背景，与成片同比例）。
+        """
+        protocol_of(model)  # 未登记协议的模型直接报错，绝不调用错误的接口
+        if scene_ids is None:
+            reused = ad.reuse_visuals()  # 描述与之前生成过的画面一字不差的屏直接沿用，不重复花钱
+            if reused:
+                self._save(project)
+                yield RenderEvent(f"♻️ {reused} 屏的描述与之前生成过的画面相同，直接沿用")
+        try:
+            targets = ad.visual_targets(scene_ids)
+        except ValueError as e:
+            yield RenderEvent(f"⚠️ {e}", error=True, done=True)
+            return
+        if scene_ids is None and ad.draft_visuals:
+            yield RenderEvent(f"⚠️ 第 {'、'.join(map(str, ad.draft_visuals))} 屏的「AI 画面」还是占位文字，本轮跳过："
+                              "改成真实的画面描述后再点一次")
+        if not targets:
+            yield RenderEvent("没有需要生成的 AI 画面：表格「AI 画面」列写了描述、还没生成或改过描述的分镜才会生成",
+                              done=True)
+            return
+        cat = self.rt.category(project.category_id)
+        res = (resolution or self.rt.settings.image_resolution).upper()
+        cost = "，消耗画图额度" if self.rt.is_live(live_channel_of(model)) else ""
+        yield RenderEvent(f"🎨 开始生成 {len(targets)} 屏 AI 画面（每屏 1 张 · {model} · {res} · "
+                          f"{self._mode_label(model)}{cost}）")
+        prompt_dir = self.rt.store.asset_dir(project.project_id, "prompts")
+        ratios = {s.scene_id: visual_ratio(s.kind, ad.aspect_ratio) for s in targets}
+        refs = {s.scene_id: [motion_reference(a) for a in ad.visual_references(s)] for s in targets}
+        ok: list[str] = []
+
+        def on_prompt(scene: MotionScene, prompt: str) -> None:
+            (prompt_dir / f"motion_{scene.scene_id}.txt").write_text(prompt, encoding="utf-8")
+
+        def art_of(index, scene: MotionScene, rs, i, n) -> DemoArt:
+            return DemoArt(
+                title=f"第 {index + 1} 屏 · AI 画面", subtitle=scene.label, description=scene.visual,
+                mode=mode_for_reference_count(len(rs)), model=model, palette=cat.visual_style.palette,
+                references=[a.file_path for a in rs], reference_labels=[a.role for a in rs],
+                seed=f"{scene.scene_id}-{_ts()}", badge=f"{res} · {ratios[scene.scene_id]}",
+                aesthetic=ad.theme if ad.theme in AESTHETIC_STYLE_NAMES else "auto",
+            )
+
+        def on_image(scene: MotionScene, path: Path, prompt: str) -> None:
+            with Image.open(path) as im:
+                w, h = im.size
+            # 生成期间重新编排过方案时，挂到当前方案上（描述相同的分镜直接用上）
+            (project.motion_ad or ad).bind_visual(scene.scene_id, path, visual=scene.visual, model=model,
+                                                  width=w, height=h)
+            ok.append(scene.scene_id)
+
+        async for ev in self._render_items(
+            project=project,
+            items=[(i, s) for i, s in enumerate(ad.scenes) if s in targets],
+            label_of=lambda i, s: f"第 {i + 1} 屏「{s.label}」",
+            compile_prompt=lambda s, rs: self.compiler.image_prompt(
+                motion_visual_data(s, ratios[s.scene_id], ad.theme), rs, project.category_id, project.platform_id,
+                ratios[s.scene_id], skill_id),
+            on_prompt=on_prompt,
+            count_of=lambda s: 1,
+            refs_of=lambda s: refs[s.scene_id],
+            ratio_of=lambda s: ratios[s.scene_id],
+            art_of=art_of,
+            out_dir_of=lambda s: self.rt.store.asset_dir(project.project_id, "motion", "visuals"),
+            on_image=on_image,
+            model=model, resolution=res, quality=quality, noun="画面",
+        ):
+            yield ev
+        failed = len(targets) - len(ok)
+        if failed:
+            msg = (f"⚠️ AI 画面完成 {len(ok)}/{len(targets)} 屏，{failed} 屏失败：再点一次「🎨 生成 AI 画面」"
+                   "只重做没完成的")
+        else:
+            msg = f"🎉 AI 画面生成完成：{len(ok)}/{len(targets)} 屏，可以渲染了"
+        yield RenderEvent(msg, done=True, error=bool(failed))
 
     # ------------------------------------------------------------ 视频
 

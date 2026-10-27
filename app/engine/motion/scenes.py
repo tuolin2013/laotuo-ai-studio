@@ -1,4 +1,5 @@
-"""七类动效分镜的版式与动画：钩子大字 / 商品主视觉 / 卖点清单 / 数据冲击 / 图集 / 长图滚动 / 收尾行动。
+"""九类动效分镜的版式与动画：钩子大字 / 痛点对比 / 商品主视觉 / 卖点清单 / 步骤流程 / 数据冲击 / 图集 /
+长图滚动 / 收尾行动。
 
 每个分镜三层运动（主体 / 跟随 / 环境）：主体元素入场后静止供阅读，跟随元素滞后 100~300 毫秒入场，
 环境层（背景光斑、图片里的缓推缓拉）持续缓慢运动；文字在被阅读时绝不移动。
@@ -36,7 +37,7 @@ from app.engine.motion.typeset import (
     horizontal_gradient,
     text_width,
 )
-from app.schemas.motion import MotionScene
+from app.schemas.motion import CONTRAST_HOLD_SECONDS, STEP_SECONDS, MotionScene
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,8 @@ class Ctx:
     fps: int
     theme: Theme
     media: dict[str, Media]
+    # 一拍的秒数（60 / BPM）：需要卡点的动作（数字落定、步骤点亮、对比落地）按拍点排期
+    beat: float = 0.6
     u: float = 1.0
     portrait: bool = False
     landscape: bool = False
@@ -100,6 +103,10 @@ class Ctx:
 
     def px(self, v: float) -> int:
         return max(1, round(v * self.u))
+
+    def next_beat(self, t: float) -> float:
+        """分镜内时间 t 之后（含 t）的第一个拍点。分镜从剪辑点开始，剪辑点本身就在拍点上。"""
+        return math.ceil(t / self.beat - 1e-6) * self.beat
 
 
 # ---------------------------------------------------------------- 可复用的画面元素
@@ -296,6 +303,45 @@ def check_badge(d: int, colors: tuple[str, str], ink: str) -> Image.Image:
     return big.resize((d, d), Image.Resampling.LANCZOS)
 
 
+def cross_badge(d: int, color: tuple[int, int, int], ink: str) -> Image.Image:
+    """灰色圆形徽标 + ✕（痛点对比的「之前」，3 倍超采样）。"""
+    k = 3
+    s = d * k
+    big = pill(s, s, color, color).copy()
+    draw = ImageDraw.Draw(big)
+    w = max(2, round(s * 0.085))
+    a, b = s * 0.34, s * 0.66
+    draw.line([(a, a), (b, b)], fill=ink, width=w)
+    draw.line([(a, b), (b, a)], fill=ink, width=w)
+    return big.resize((d, d), Image.Resampling.LANCZOS)
+
+
+def number_node(d: int, n: int, colors: tuple[str, str] | None, ink: str, ring: str | None = None) -> Image.Image:
+    """步骤编号圆点：colors 为渐变实心（已点亮），否则画一圈细线（还没轮到）。3 倍超采样。"""
+    k = 3
+    s = d * k
+    if colors is not None:
+        big = pill(s, s, hex_rgb(colors[0]), hex_rgb(colors[1])).copy()
+    else:
+        big = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+        ImageDraw.Draw(big).ellipse((k, k, s - k - 1, s - k - 1), outline=ring or ink, width=max(2, round(s * 0.045)))
+    with TEXT_LOCK:
+        ImageDraw.Draw(big).text((s / 2, s / 2), str(n), font=font(round(s * 0.5), "bold", "numeric"), fill=ink,
+                                 anchor="mm")
+    return big.resize((d, d), Image.Resampling.LANCZOS)
+
+
+def place(layer: Image.Image, img: Image.Image, x: float, y: float, *, scale: float = 1.0, dy: float = 0.0,
+          opacity: float = 1.0) -> None:
+    """以图片中心缩放后贴到 (x, y)（缩放为 1 时不做重采样）。"""
+    if abs(scale - 1) > 1e-3:
+        w, h = img.size
+        im = img.resize((max(2, round(w * scale)), max(2, round(h * scale))), Image.Resampling.BILINEAR)
+        x, y = x + (w - im.width) / 2, y + (h - im.height) / 2
+        img = im
+    paste(layer, img, x, y + dy, opacity)
+
+
 def gradient_text(text: str, fnt, colors: tuple[str, str]) -> Image.Image:
     """整段文字填充横向渐变（数据冲击的大数字）。按字体基线对齐，计数过程中数字不会上下跳。"""
     with TEXT_LOCK:
@@ -324,9 +370,17 @@ class SceneRenderer:
         # 入场起点略早于剪辑点：剪辑点那一帧新画面已经在动（第 0 帧不是空背景，转场后也没有「加载中」的空档）
         self.t0 = -0.22 if index == 0 else -0.12
         self.text_boxes: list[tuple[int, int, int, int]] = []
+        self.font_px: list[int] = []  # 这一屏所有文字的字号（像素，自检：手机上看不看得清）
         self.cues: list[Cue] = []
         self.settle = 0.0  # 所有元素落定的时间（自检：阅读时间从这里算起）
+        # 跳过的入场时长：第一屏从落定状态开场时由渲染器设置（draw 收到的时间 = 剪辑点后的时间 + lead）
+        self.lead = 0.0
         self.build()
+
+    @property
+    def settled_at(self) -> float:
+        """剪辑点之后多久全部落定（第一屏从落定状态开场时为 0）。"""
+        return max(0.0, self.settle - self.lead)
 
     # 子类实现
     def build(self) -> None:  # pragma: no cover - 由子类覆盖
@@ -351,11 +405,33 @@ class SceneRenderer:
     def text(self, text: str, style: TextStyle, width: float, align: str = "center", accent: str = "") -> KineticText:
         return KineticText(text, style, width, align=align, accent_text=accent)
 
+    def on_grid(self, t: float, room: float = 1.2) -> float:
+        """t 之后最近的拍点（分镜内时间）：需要「打在拍子上」的动作（数字落定、对比落地、步骤点亮）用它排期。
+
+        拍点之后要留出 room 秒（落定、阅读停留与退场）；分镜剩下的时间不够时不强求卡点，原样返回 t。
+        """
+        b = self.ctx.next_beat(t)
+        return b if b <= self.D - room else t
+
     def record(self, kt: KineticText | None, x: float, y: float) -> None:
         if kt is not None and kt.text:
             w, h = kt.size
             p = kt.pad
             self.text_boxes.append((round(x + p), round(y + p), round(x + w - p), round(y + h - p)))
+            self.font_px.append(kt.font_size)
+
+    @property
+    def alive(self) -> bool:
+        """内容落定之后画面里还有东西在动（镜头缓推缓拉、长图滚动、视频播放、图集漂移、按钮扫光）。
+
+        这样的屏读完之后多停一会儿不算「干等」；纯文字、静止镜头的屏读完就该走。
+        """
+        s = self.scene
+        if any(k in self.ctx.media and self.ctx.media[k].is_video for k in s.images):
+            return True
+        if s.kind in {"showcase", "gallery"} or (s.kind == "cta" and s.items):
+            return True
+        return bool(s.images) and s.camera != "still"
 
     def head_stack(self, box: Box, align: str, *, head_size: float, sub_size: float = 42, max_lines: int = 2,
                    shadow: float = 0.0, valign: str = "center", gap: float = 0.028) -> tuple:
@@ -546,6 +622,7 @@ class FeaturesScene(SceneRenderer):
             fnt = font(fs, "bold", th.font_kind)
             asc, desc = fnt.getmetrics()
             d.text((tx, round(ch / 2 - (asc + desc) / 2)), item, font=fnt, fill=th.text)
+            self.font_px.append(fs)
             x, y = area.x0, y0 + k * (ch + gap)
             self.items.append((card, badge, x, y, x + ch * 0.3, y + (ch - bd) / 2))
             self.text_boxes.append((round(x + tx), round(y), round(x + tx + text_width(item, fnt)), round(y + ch)))
@@ -571,6 +648,267 @@ class FeaturesScene(SceneRenderer):
                 bs = max(2, round(badge.width * sp))
                 b = badge if bs == badge.width else badge.resize((bs, bs), Image.Resampling.BILINEAR)
                 paste(layer, b, bx + (badge.width - bs) / 2, by + dy + (badge.width - bs) / 2, op)
+
+
+# ---------------------------------------------------------------- 痛点对比
+
+
+def chevron(size: int, color: tuple[int, int, int], width: int, direction: str) -> Image.Image:
+    """细线箭头（right / down），3 倍超采样。"""
+    k = 3
+    s = size * k
+    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    pts = ([(s * 0.32, s * 0.16), (s * 0.68, s * 0.5), (s * 0.32, s * 0.84)] if direction == "right" else
+           [(s * 0.16, s * 0.32), (s * 0.5, s * 0.68), (s * 0.84, s * 0.32)])
+    ImageDraw.Draw(img).line(pts, fill=(*color, 255), width=max(2, width * k), joint="curve")
+    return img.resize((size, size), Image.Resampling.LANCZOS)
+
+
+class ContrastScene(SceneRenderer):
+    """痛点对比：「之前」先落定、单独停留约 0.8 秒供阅读，「之后」卡在拍点上落地，「之前」那一侧随即压暗。
+
+    条目固定 2 条（之前、之后），素材 0 张或 2 张（之前、之后各一张）。横屏或有配图时左右分栏，
+    竖屏 / 方形没有配图时上下两张宽卡片；「之后」用强调色描边与背光，箭头指向它。
+    「之前」压暗时只改透明度、不移动（文字在被阅读时绝不移动）。
+    """
+
+    def build(self) -> None:
+        c, s = self.ctx, self.scene
+        sf, th = c.safe, self.th
+        self.head, self.head_xy, self.sub, self.sub_xy, y = self.head_stack(
+            Box(sf.x0, sf.y0, sf.x1, sf.y1), "center", head_size=84, sub_size=40, valign="top")
+        top = y + c.H * 0.05 if (self.head or self.sub) else sf.y0
+        area = Box(sf.x0, top, sf.x1, sf.y1)
+        pad = c.px(30)
+        self.cards: list[Card] = []
+        self.columns = c.landscape or len(s.images) == 2
+        if self.columns:
+            mid = c.px(110 if c.landscape else 64)
+            col_w = (area.w - mid) / 2
+            xs = (area.x0, area.x1 - col_w)
+            big = c.landscape and not s.images  # 横屏没有配图：两张大卡片撑满画面，不留一大片空
+            d = c.px(92 if big else 64)
+            size = 70 if big else 46
+            kts = self._texts(col_w - 2 * pad, size, "center")
+            h = round(2 * pad + d + c.px(18) + max(kt.size[1] for kt in kts))
+            if big:
+                h = max(h, round(area.h * 0.55))
+            if s.images:
+                img_gap = c.px(24)
+                probe = [Card(c, c.media[k], Box(0, 0, col_w, max(c.px(80), area.h - h - img_gap)), s.camera)
+                         for k in s.images[:2]]
+                ih = max(p.h for p in probe)
+                y0 = area.y0 + max(0.0, (area.h - ih - img_gap - h) / 2)
+                self.cards = [Card(c, c.media[k], Box(x, y0, x + col_w, y0 + ih), s.camera, kb=0.05)
+                              for k, x in zip(s.images[:2], xs, strict=True)]
+                card_y = y0 + ih + img_gap
+            else:
+                card_y = area.y0 + max(0.0, (area.h - h) * 0.42)
+            panels = [self._panel(round(col_w), h, kt, k == 1, True, d, pad) for k, kt in enumerate(kts)]
+            self.slots = [(x, card_y) for x in xs]
+            self.arrow = chevron(c.px(54), hex_rgb(th.accent[0]), c.px(5), "right")
+            self.arrow_xy = (area.cx - self.arrow.width / 2, card_y + h / 2 - self.arrow.height / 2)
+            self.arrow_dir = (1.0, 0.0)
+        else:
+            d = c.px(100 if c.portrait else 84)
+            w = round(area.w)
+            gap_x = c.px(30)
+            kts = self._texts(w - 2 * pad - d - gap_x, 62 if c.portrait else 52, "left")
+            h = round(max(c.px(230 if c.portrait else 180), max(kt.size[1] for kt in kts) + 2 * pad))
+            gap = c.px(130 if c.portrait else 90)  # 箭头在两张卡片之间
+            y0 = area.y0 + max(0.0, (area.h - 2 * h - gap) * 0.4)
+            panels = [self._panel(w, h, kt, k == 1, False, d, pad, gap_x) for k, kt in enumerate(kts)]
+            self.slots = [(area.x0, y0), (area.x0, y0 + h + gap)]
+            self.arrow = chevron(c.px(54), hex_rgb(th.accent[0]), c.px(5), "down")
+            self.arrow_xy = (area.cx - self.arrow.width / 2, y0 + h + gap / 2 - self.arrow.height / 2)
+            self.arrow_dir = (0.0, 1.0)
+        self.panels = [p for p, _ in panels]
+        for (_, (tx, ty)), kt, (sx, sy) in zip(panels, kts, self.slots, strict=True):
+            self.record(kt, sx + tx, sy + ty)
+        pw, ph = self.panels[1].size
+        self.glow = radial_glow(round(max(pw, ph) * 1.25), th.accent_rgb, 0.5 if th.dark else 0.3)
+        # 排期：之前入场 → 落定后单独停留 → 之后卡在拍点上落地（动作比拍点早 0.15 秒开始，拍点时已基本落定）
+        self.t_before = self.t0 + 0.3
+        self.t_hit = self.on_grid(self.t_before + 0.6 + CONTRAST_HOLD_SECONDS, room=1.0)
+        self.t_after = self.t_hit - 0.15
+        self.settle = max(self.heads_settle(self.head, self.sub, self.t0), self.t_hit + 0.45)
+        self.cues.append(Cue(self.t_before + 0.12, "tick", 0.06, pan=-0.2, step=0))
+        self.cues.append(Cue(self.t_hit + 1 / c.fps, "thump", 0.16))  # 音效峰值比画面晚一帧
+
+    def _texts(self, width: float, size: float, align: str) -> list[KineticText]:
+        """之前用次要文字色，之后用主文字色；每条最多两行。"""
+        return [self.text(item, self.style(size, color=self.th.text if k else self.th.sub, max_lines=2, accent=False),
+                          width, align) for k, item in enumerate(self.scene.items[:2])]
+
+    def _panel(self, w: int, h: int, kt: KineticText, good: bool, stack: bool, d: int, pad: int,
+               gap_x: int = 0) -> tuple[Image.Image, tuple[float, float]]:
+        """一张对比卡片（静态图，入场时整体动）：徽标（✕ / ✓）+ 文字。返回 (卡片, 文字块在卡片里的位置)。"""
+        c, th = self.ctx, self.th
+        border = (*hex_rgb(th.accent[0]), 220) if good else th.card_border
+        r = c.px(28) if stack else round(h * 0.26)
+        card = glass_card(w, h, r, th.card_fill, border, c.px(3 if good else 2)).copy()
+        grey = (84, 84, 94) if th.dark else (170, 170, 178)
+        badge = check_badge(d, th.accent, th.ink_on_accent) if good else cross_badge(d, grey, "#FFFFFF")
+        if stack:  # 徽标在上、文字在下，整组在卡片里垂直居中
+            content = d + c.px(18) + kt.size[1] - 2 * kt.pad
+            bx, by = (w - d) / 2, max(pad, (h - content) / 2)
+            tx, ty = (w - kt.size[0]) / 2, by + d + c.px(18) - kt.pad
+        else:
+            bx, by = pad, (h - d) / 2
+            tx, ty = bx + d + gap_x - kt.pad, (h - kt.size[1]) / 2
+        paste(card, badge, bx, by)
+        paste(card, kt.settled(), tx, ty)
+        return card, (tx, ty)
+
+    def draw(self, layer: Image.Image, lt: float) -> None:
+        c = self.ctx
+        dim = 1 - 0.5 * ez.EASE_OUT(ez.progress(lt, self.t_hit, 0.35))
+        p, op = entrance(lt, self.t_before, 0.6)
+        if op > 0:
+            dy = (1 - p) * c.px(30)
+            if self.cards:
+                self.cards[0].draw(layer, lt, self.D, scale=0.95 + 0.05 * p, dy=dy, opacity=op * dim)
+            paste(layer, self.panels[0], self.slots[0][0], self.slots[0][1] + dy, op * dim)
+        p2, op2 = entrance(lt, self.t_after, 0.55)
+        if op2 > 0:
+            dy = (1 - p2) * c.px(44)
+            x, y = self.slots[1]
+            pw, ph = self.panels[1].size
+            flash = 1 - ez.EASE_OUT(ez.progress(lt, self.t_hit, 0.7))  # 落地瞬间背光亮一下，再回到常亮
+            breathe = 0.9 + 0.1 * math.sin(lt * 2 * math.pi / 3.2)
+            paste(layer, self.glow, x + pw / 2 - self.glow.width / 2, y + ph / 2 - self.glow.height / 2 + dy,
+                  op2 * (0.45 + 0.4 * flash) * breathe)
+            if len(self.cards) > 1:
+                self.cards[1].draw(layer, lt, self.D, scale=0.92 + 0.08 * p2, dy=dy, opacity=op2)
+            place(layer, self.panels[1], x, y, scale=0.92 + 0.08 * p2, dy=dy, opacity=op2)
+            ax, ay = self.arrow_xy
+            shift = (1 - p2) * c.px(18)
+            paste(layer, self.arrow, ax - self.arrow_dir[0] * shift, ay - self.arrow_dir[1] * shift, op2)
+        self.draw_heads(layer, lt, self.head, self.head_xy, self.sub, self.sub_xy, self.t0)
+
+
+# ---------------------------------------------------------------- 步骤流程
+
+
+class StepsScene(SceneRenderer):
+    """步骤流程：2~4 步，整条路线（空心圆点 + 轨道）先画出来，然后编号圆点逐拍点亮、连线从上一步长到下一步。
+
+    竖屏 / 方形、横屏有配图时竖排（圆点在左、文字在右）；横屏没有配图时横排（圆点一行、文字在圆点下方）。
+    可配 1 张图：竖屏放在标题下方，横屏放在左侧。
+    """
+
+    def build(self) -> None:
+        c, s = self.ctx, self.scene
+        sf, th = c.safe, self.th
+        n = len(s.items)
+        side = c.landscape and bool(s.images)
+        col = Box(sf.x0 + sf.w * 0.5, sf.y0, sf.x1, sf.y1) if side else sf
+        self.head, self.head_xy, self.sub, self.sub_xy, y = self.head_stack(
+            col, "left" if side else "center", head_size=80, sub_size=40, valign="top")
+        self.card = None
+        if side:
+            self.card = Card(c, c.media[s.images[0]], Box(sf.x0, sf.y0, sf.x0 + sf.w * 0.44, sf.y1), s.camera)
+        elif s.images:
+            img_box = Box(sf.x0, y + c.H * 0.03, sf.x1, y + c.H * 0.03 + sf.h * 0.28)
+            self.card = Card(c, c.media[s.images[0]], img_box, s.camera)
+            y = self.card.box.y1
+        area = Box(col.x0, y + c.H * 0.05, col.x1, col.y1)
+        d = c.px(100 if c.portrait else 72)
+        lw = c.px(6)
+        self.horizontal = c.landscape and not s.images
+        self.nodes: list[tuple[float, float]] = []
+        self.texts: list[tuple[KineticText, float, float]] = []
+        self.links: list[tuple[float, float, float, str]] = []  # (x, y, 长度, 方向)
+        if self.horizontal:
+            slot = area.w / n
+            kts = [self.text(it, self.style(46, max_lines=2, accent=False), slot * 0.86, "center") for it in s.items]
+            gap = c.px(28)
+            top = area.y0 + max(0.0, (area.h - d - gap - max(kt.size[1] for kt in kts)) * 0.4)
+            for k, kt in enumerate(kts):
+                cx = area.x0 + slot * (k + 0.5)
+                self.nodes.append((cx - d / 2, top))
+                self.texts.append((kt, cx - kt.size[0] / 2, top + d + gap))
+            m = c.px(16)
+            for k in range(n - 1):
+                x0, x1 = self.nodes[k][0] + d + m, self.nodes[k + 1][0] - m
+                self.links.append((x0, top + d / 2 - lw / 2, x1 - x0, "x"))
+        else:
+            gap_x = c.px(34)
+            row_gap = c.px(110 if c.portrait and not s.images else 64 if c.portrait else 40)
+            size = 62 if c.portrait else 48
+            while True:  # 步骤多、配了图时缩小字号直到放得下（不小于 30）
+                kts = [self.text(it, self.style(size, max_lines=2, accent=False), area.w - d - gap_x, "left")
+                       for it in s.items]
+                rows = [max(d, kt.size[1]) for kt in kts]
+                total = sum(rows) + row_gap * (n - 1)
+                if total <= area.h or size <= 30:
+                    break
+                size = max(30, round(size * 0.9))
+            block_w = d + gap_x + max(kt.size[0] - 2 * kt.pad for kt in kts)
+            x0 = area.x0 if side else max(area.x0, area.cx - block_w / 2)
+            ry = area.y0 + max(0.0, (area.h - total) * 0.35)
+            for kt, rh in zip(kts, rows, strict=True):
+                self.nodes.append((x0, ry + (rh - d) / 2))
+                self.texts.append((kt, x0 + d + gap_x - kt.pad, ry + (rh - kt.size[1]) / 2))
+                ry += rh + row_gap
+            m = c.px(12)
+            for k in range(n - 1):
+                y0, y1 = self.nodes[k][1] + d + m, self.nodes[k + 1][1] - m
+                self.links.append((x0 + d / 2 - lw / 2, y0, max(1.0, y1 - y0), "y"))
+        for kt, x, yy in self.texts:
+            self.record(kt, x, yy)
+        self.d, self.lw = d, lw
+        self.rings = [number_node(d, k + 1, None, th.sub, th.sub) for k in range(n)]
+        self.lit = [number_node(d, k + 1, th.accent, th.ink_on_accent) for k in range(n)]
+        self.font_px.append(round(d * 0.5))
+        track = (255, 255, 255) if th.dark else (0, 0, 0)
+        self.track_rgba = (*track, 255)
+        self.fill_rgb = hex_rgb(th.accent[0])
+        # 排期：路线先画出来；第一步卡在拍点上点亮，之后每步间隔整数拍（约 STEP_SECONDS），放不下时压缩间隔
+        self.t_track = self.t0 + 0.2
+        first = self.on_grid(self.t0 + 0.55)
+        spacing = c.beat * max(1, round(STEP_SECONDS / c.beat))
+        latest = self.D - 1.15  # 最后一步点亮后还要落定 0.6 秒、停留 0.5 秒
+        if n > 1 and first + spacing * (n - 1) > latest:
+            spacing = max(0.3, (latest - first) / (n - 1))
+        self.t_steps = [first + k * spacing for k in range(n)]
+        self.settle = max(self.heads_settle(self.head, self.sub, self.t0), self.t_steps[-1] + 0.6)
+        for k, t in enumerate(self.t_steps):
+            self.cues.append(Cue(t + 1 / c.fps, "tick", 0.09, pan=-0.2 + 0.4 * k / max(1, n - 1), step=k + 2))
+
+    def _bar(self, length: float, axis: str, rgba: tuple[int, int, int, int]) -> Image.Image | None:
+        n = round(length)
+        if n < 1:
+            return None
+        size = (n, self.lw) if axis == "x" else (self.lw, n)
+        return Image.new("RGBA", size, rgba)
+
+    def draw(self, layer: Image.Image, lt: float) -> None:
+        c = self.ctx
+        if self.card is not None:
+            p, op = entrance(lt, self.t0 + 0.1, 0.9)
+            self.card.draw(layer, lt, self.D, scale=0.94 + 0.06 * p, dy=(1 - p) * c.px(40), opacity=op)
+        self.draw_heads(layer, lt, self.head, self.head_xy, self.sub, self.sub_xy, self.t0)
+        _, route = entrance(lt, self.t_track, 0.6)
+        if route <= 0:
+            return
+        for k, (x, y, length, axis) in enumerate(self.links):
+            track = self._bar(length, axis, self.track_rgba)
+            if track is not None:
+                paste(layer, track, x, y, route * (0.14 if self.th.dark else 0.1))
+            t_a, t_b = self.t_steps[k] + 0.12, self.t_steps[k + 1]
+            grow = ez.EASE_IN_OUT(ez.progress(lt, t_a, max(0.2, t_b - t_a)))
+            fill = self._bar(length * grow, axis, (*self.fill_rgb, 255))
+            if fill is not None:
+                paste(layer, fill, x, y)
+        for k, ((x, y), (kt, tx, ty)) in enumerate(zip(self.nodes, self.texts, strict=True)):
+            t = self.t_steps[k]
+            sp = ez.spring(lt - (t - 0.06), *ez.SPRING_SNAPPY)
+            if sp < 0.999:
+                paste(layer, self.rings[k], x, y, route * 0.8)
+            if sp > 0.01:
+                place(layer, self.lit[k], x, y, scale=max(0.05, sp), opacity=ez.clamp(sp * 3))
+            kt.draw(layer, tx, ty, lt, start=t + 0.04, dur=0.5, mode="fade")
 
 
 # ---------------------------------------------------------------- 数据冲击
@@ -605,6 +943,7 @@ class StatScene(SceneRenderer):
             size = round(size * 0.92)
         self.big, self.small = font(size, "bold", big_kind), font(round(size * 0.5), "bold", small_kind)
         self.size = size
+        self.font_px.append(round(size * 0.5) if self.suffix else size)
         final = gradient_text(self.prefix + self.number, self.big, th.accent)
         self.num_h = final.height
         suf = gradient_text(self.suffix, self.small, th.accent) if self.suffix else None
@@ -638,8 +977,9 @@ class StatScene(SceneRenderer):
         self.record(label, *self.label_xy)
         self.record(sub, *self.sub_xy)
         self.t_num = self.t0 + 0.15
-        self.count_dur = min(1.4, max(0.8, self.D * 0.4))
-        self.t_land = self.t_num + self.count_dur
+        # 计数滚动约 0.8~1.4 秒，落定（顶一下 + 低音）卡在拍点上
+        self.t_land = self.on_grid(self.t_num + 0.8)
+        self.count_dur = max(0.5, self.t_land - self.t_num)
         self.settle = max(self.t_land + 0.4, self.heads_settle(label, None, self.t0))
         self.cues.append(Cue(self.t_land, "thump", 0.22))
 
@@ -799,6 +1139,7 @@ class CtaScene(SceneRenderer):
         self.pill_img = None
         if s.stat_value:
             ps = c.px(58)
+            self.font_px.append(ps)
             fnt = font(ps, "bold", "sans")
             tw = text_width(s.stat_value, fnt)
             pw, ph = round(tw + ps * 1.3), round(ps * 1.7)
@@ -810,6 +1151,7 @@ class CtaScene(SceneRenderer):
         self.btn = None
         if s.items:
             bs = c.px(44)
+            self.font_px.append(bs)
             fnt = font(bs, "bold", "sans")
             tw = text_width(s.items[0], fnt)
             bw, bh = round(tw + bs * 2.2), round(bs * 2.1)
@@ -889,6 +1231,6 @@ class CtaScene(SceneRenderer):
 
 
 RENDERERS: dict[str, type[SceneRenderer]] = {
-    "hook": HookScene, "hero": HeroScene, "features": FeaturesScene, "stat": StatScene, "gallery": GalleryScene,
-    "showcase": ShowcaseScene, "cta": CtaScene,
+    "hook": HookScene, "contrast": ContrastScene, "hero": HeroScene, "features": FeaturesScene, "steps": StepsScene,
+    "stat": StatScene, "gallery": GalleryScene, "showcase": ShowcaseScene, "cta": CtaScene,
 }

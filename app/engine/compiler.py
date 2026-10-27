@@ -8,6 +8,7 @@ from typing import Any
 
 from app.providers.demo.content import camera_tags
 from app.schemas.config import MAX_HERBS_IN_FRAME, CategoryConfig, IngredientVisual, PlatformConfig
+from app.schemas.motion import ASSET_MODE_LABELS
 from app.schemas.plan import AESTHETIC_STYLE_NAMES
 from app.schemas.skill import SkillCard
 from app.schemas.video import ReferenceVideoSource
@@ -157,6 +158,11 @@ def compile_video_editor(
     return f"{text}\n\n# 附属指南\n\n{guide}" if guide else text
 
 
+def supports_asset_modes(skill: SkillCard) -> bool:
+    """动效导演卡带正文使用了 {{ asset_mode }} 即视为支持「AI 生图」素材方式（会写 visual 字段）。"""
+    return "asset_mode" in skill.placeholders
+
+
 def compile_motion_director(
     skill: SkillCard,
     *,
@@ -169,8 +175,10 @@ def compile_motion_director(
     platform: PlatformConfig,
     product_info: dict[str, str] | None = None,
     user_motion_idea: str | None = None,
+    asset_mode: str = "project",
+    max_visuals: int = 4,
 ) -> str:
-    """动效导演：可用素材清单（只有编号、来源、形状，不含本机路径）+ 类目、平台、商品信息。"""
+    """动效导演：可用素材清单（只有编号、来源、形状，不含本机路径）+ 类目、平台、商品信息 + 素材方式。"""
     text = _render(
         skill,
         aspect_ratio=aspect_ratio,
@@ -182,6 +190,8 @@ def compile_motion_director(
         platform_json=_dump(platform),
         product_info_json=_json(product_info or {}),
         user_motion_idea=_idea(user_motion_idea),
+        asset_mode=ASSET_MODE_LABELS[asset_mode],
+        max_visuals=max_visuals if asset_mode == "generate" else 0,
     )
     guide = skill.reference_context()
     return f"{text}\n\n# 附属指南\n\n{guide}" if guide else text

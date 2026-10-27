@@ -1,13 +1,15 @@
 """渲染自检：联系表（每个分镜落定后 0.3 秒各取一帧）+ 逐项规则检查，生成给人看的自检报告。
 
-检查项与 config/skills/motion_director/references/motion_design_principles.md 第 7 节一致：
+检查项与 config/skills/motion_director/references/motion_design_principles.md 第 10 节一致：
 节拍对齐、黄金 3 秒钩子、收尾停留、阅读时间、文字停稳、安全区、文字互相遮挡、转场种类、
-第 0 帧不黑、画面突跳 / 单帧闪烁、整片响度与真峰值。
+第 0 帧不黑、画面突跳 / 单帧闪烁、整片响度与真峰值、字号下限、读完不干等、版式不连续重复。
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
+from itertools import pairwise
 from pathlib import Path
 
 import numpy as np
@@ -27,6 +29,10 @@ POP_RATIO = 3.0
 POP_MIN = 10.0
 MIN_HOLD_SECONDS = 0.5
 TARGET_LUFS = -14.0
+# 字号下限：画面短边的 2.6%（1080P 约 28 像素，手机竖屏全屏播放时还能看清）
+TEXT_FLOOR = 0.026
+# 画面里没有东西在动的屏，读完之后最多再停这么久（再长就是「干等」，观众会划走）
+IDLE_SECONDS = 3.0
 
 
 @dataclass
@@ -60,7 +66,7 @@ def sample_frames(r: MotionRenderer) -> list[tuple[int, str]]:
     """联系表取帧：第 0 帧 + 每个分镜内容落定后 0.3 秒（不晚于退场开始）。"""
     out = [(0, "第 0 帧")]
     for i, (sp, sc) in enumerate(zip(r.spans, r.scenes, strict=True)):
-        lt = min(sc.settle + 0.3, sp.seconds - r.exit_s[i] - 1 / r.fps)
+        lt = min(sc.settled_at + 0.3, sp.seconds - r.exit_s[i] - 1 / r.fps)
         f = sp.start + max(0, round(lt * r.fps))
         out.append((min(f, sp.end - 1), f"{i + 1}. {sp.scene.label} · {sp.start_s + lt:.1f}s"))
     return out
@@ -132,7 +138,7 @@ def review(r: MotionRenderer, thumbs: list[np.ndarray] | None = None, loudness: 
     short, unsettled = [], []
     for i, (sp, sc) in enumerate(zip(spans, r.scenes, strict=True)):
         hold = r.hold_seconds(i)
-        visible = hold + sc.settle - max(0.0, sc.t0)  # 剪辑点之前的入场看不见，不算
+        visible = hold + sc.settled_at - max(0.0, sc.t0 - sc.lead)  # 剪辑点之前的入场看不见，不算
         if visible + 1e-6 < sp.scene.reading_seconds:
             short.append(f"{i + 1}. {sp.scene.label}（需要 {sp.scene.reading_seconds:.1f} 秒，实际 {visible:.1f} 秒）")
         if hold < MIN_HOLD_SECONDS:
@@ -172,4 +178,23 @@ def review(r: MotionRenderer, thumbs: list[np.ndarray] | None = None, loudness: 
         lufs, tp = loudness
         rv.add(abs(lufs - TARGET_LUFS) <= 1.5 and tp <= -0.5, "整片响度统一",
                f"{lufs:.1f} LUFS（目标 {TARGET_LUFS:g}），真峰值 {tp:.1f} dBTP")
+    # 12. 字号下限：最小的字也不低于画面短边的 2.6%
+    floor = TEXT_FLOOR * min(r.W, r.H)
+    tiny = [f"{i + 1}. {sc.scene.label}（{min(sc.font_px)} 像素）" for i, sc in enumerate(r.scenes)
+            if sc.font_px and min(sc.font_px) + 0.5 < floor]
+    rv.add(not tiny, "文字在手机上看得清",
+           "；".join(tiny) + f" 低于下限 {floor:.0f} 像素，建议删减文字" if tiny else
+           f"最小字号不低于画面短边的 {TEXT_FLOOR:.1%}（{floor:.0f} 像素）")
+    # 13. 读完不干等：画面里没有东西在动的屏（纯文字、静止镜头），读完之后不再停超过 3 秒
+    idle = []
+    for i, (sp, sc) in enumerate(zip(spans, r.scenes, strict=True)):
+        end = r.hold_seconds(i) + sc.settled_at  # 退场开始的时间
+        spare = end - max(sp.scene.reading_seconds, sc.settled_at + MIN_HOLD_SECONDS)
+        if not sc.alive and spare > IDLE_SECONDS + 1e-6:
+            idle.append(f"{i + 1}. {sp.scene.label}（读完后还停 {spare:.1f} 秒，可减 {math.floor(spare / beat)} 拍）")
+    rv.add(not idle, "读完就走，不干等", "；".join(idle) or f"静止的画面读完后最多再停 {IDLE_SECONDS:g} 秒")
+    # 14. 版式不连续重复：相邻两屏是同一类版式时，观众会以为画面卡住了
+    repeats = [f"{i + 1}、{i + 2}. {a.scene.label}" for i, (a, b) in enumerate(pairwise(spans))
+               if a.scene.kind == b.scene.kind]
+    rv.add(not repeats, "相邻两屏版式不重复", "；".join(repeats) + " 连续两屏同一版式" if repeats else "")
     return rv

@@ -10,7 +10,7 @@
 - 详情页（Detail Pages，按屏规划）
 - 带货短视频（MiniMax H3 原生音画一体，含首帧锁定防变形）
 - 配音（VoxCPM2 口播配音，独立成品：wav / mp3 / srt）
-- 动效广告（零成本代码动效：用项目已有素材按节拍编排，本机渲染画面、配乐与音效，不调用生图 / 生视频接口）
+- 动效广告（代码动效：按节拍编排，本机渲染画面、配乐与音效，不调用生视频接口。素材两种方式：「项目素材」只用项目已有的图，零成本；「AI 生图」为部分分镜调用生图接口生成专属画面）
 
 产品负责人不写代码，所有命令由工程师（或 AI 工程师）执行。
 
@@ -65,7 +65,7 @@ workspace/projects/{project_id}/
 ├── prompts/                # 编译后的生图 / H3 提示词
 ├── edits/{edit_id}/        # 一键成片 mp4 与字幕 ASS；edits/ 下另存上传的背景音乐
 ├── voices/                 # 配音：references/ 参考音频（16kHz）、previews/ 试听、{segment_id}/ 逐段配音、{mix_id}/ 完整配音成品
-├── motion/                 # 动效广告：upload_* 上传素材、detail_long_* 详情页拼接长图、stills/ 单屏预览、render_{时间}_{档位}/ 成片 + 联系表 + 自检报告
+├── motion/                 # 动效广告：upload_* 上传素材、detail_long_* 详情页拼接长图、visuals/ AI 生图画面、stills/ 单屏预览、render_{时间}_{档位}/ 成片 + 联系表 + 自检报告
 └── exports/                # 定稿 zip、剪映草稿 zip、达芬奇工程文件夹与 zip
 ```
 
@@ -259,15 +259,22 @@ RightAPI 的 Key 绑定渠道，一把 Key 只能调用所绑渠道的模型，�
   - 配置项：`MODAL_VOXCPM_APP` / `MODAL_VOXCPM_CLASS` / `MODAL_VOXCPM_TIMEOUT_SECONDS`。
 - 已验证：真实服务的声音设计、高保真克隆、识别、读法预览。演示模式下跑通了端到端全流程。**真实服务的整条配音拼接还没有人工试听验收。**
 
-### 5.4.4 【动效广告】选项卡：零成本代码动效（Motion Graphics）
+### 5.4.4 【动效广告】选项卡：代码动效（Motion Graphics）
 
-- 定位：用项目里已经产出的素材做一条按节拍剪辑的带货动效广告。**只有「编排」调用 LLM**（`motion_director` 卡带，未填 Key 走演示 `app/providers/demo/motion.py`）；画面、配乐、音效全部由本机代码渲染（Pillow 逐帧 + numpy 合成音频 + ffmpeg 编码），不调用任何生图 / 生视频接口。
-- 动效法则：整理自 LottieFiles/motion-design-skill、heygen-com/hyperframes、whaleyxbt/claude-motion、haidrrrry/claude-remotion-skill、howseen-ai/claude-motion-design、charlie947/motion-graphics-skills（MIT / Apache-2.0），只引用规则与数值，写在 `config/skills/motion_director/references/motion_design_principles.md`。引擎自动执行，卡带只决定结构、文案、素材、拍数、镜头与转场。
-- 数据模型 `app/schemas/motion.py`：`MotionAd`（比例 / BPM / 主题 / 分镜 / 素材 / 渲染记录）、`MotionScene`（7 类：hook 钩子大字、hero 商品主视觉、features 卖点清单、stat 数据冲击、gallery 图集、showcase 长图滚动、cta 收尾行动）。分镜长度是**整数拍**（1 拍 = 60 / BPM 秒），所以每个剪辑点都落在拍点上。文字上限：主标题 ≤16、副标题 ≤28、条目 ≤14、按钮 ≤8、数字 / 胶囊 ≤12；强调词必须是主标题原文的一部分。阅读时间按每秒 8 个字（外文单词 / 数字算 1.5 字，副标题按一半）+ 0.6 秒入场。
+- 定位：做一条按节拍剪辑的带货动效广告。「编排」调用 LLM（`motion_director` 卡带，未填 Key 走演示 `app/providers/demo/motion.py`）；动效、配乐、音效全部由本机代码渲染（Pillow 逐帧 + numpy 合成音频 + ffmpeg 编码），不调用生视频接口。
+- 两种素材方式（`MotionAd.asset_mode`，Step 1 单选）：
+  - `project`「项目素材」：只用项目里已有的图（下条「素材」），**不调用生图接口**，零成本。
+  - `generate`「AI 生图」：动效导演另给最多 N 屏（界面 1~8，默认 4）写中文「AI 画面」描述 `MotionScene.visual` 与生图参考 `visual_refs`（≤3 个图片素材编号，不能是视频或长图）。**编排不调用生图接口**：用户在表格里确认 / 修改描述后，Step 2 点「🎨 生成 AI 画面」才调用（`RenderEngine.render_motion_visuals()`，复用主图的并发生图流水线与 `image_prompt` 卡带，每屏 1 张；模型 / 分辨率 / 质量档与主图同一套下拉框）。只有 hook / hero / features / steps / gallery / cta 可以写（stat 不放图，showcase 要详情页长图 / 截图，contrast 要成对的之前 / 之后两张图）；出图比例按该屏版式的图片框选（`visual_ratio()`，钩子是全屏背景、与成片同比例）；生图指令说明这张图在动效里的用途，并要求画面不出现文字（标题由动效引擎叠加）。
+  - 生成的图存 `motion/visuals/`，以来源 `generated` 加进素材库（不计入 40 个上限），绑定到该屏 `visual_key`（`MotionAd.bind_visual()`），不改表格的「素材」列；渲染 / 单屏预览用 `render_copy()` 快照，把 `visual_key` 排在该屏素材第一位。写了 AI 画面的分镜生成前可以比最低素材数少 1 个。
+  - 状态 `visual_state()`：none / pending 待生成 / stale 描述改过（先用旧画面）/ ready。有 pending 时 `require_renderable()` 拦截渲染；「生成 AI 画面」只做 pending / stale，「重新生成选中这一屏」强制重做；重做追加新素材，旧图不删除。描述与之前生成过的画面一字不差时直接沿用（`reuse_visuals()`，重新编排也不重复花钱）；生成期间分镜被删，画面仍收进素材库。插入分镜时素材不够，「AI 生图」方式下填占位描述 `VISUAL_PLACEHOLDER`，改成真实描述前不生成。
+  - 卡带正文使用 `{{ asset_mode }}` 即支持两种方式（`compiler.supports_asset_modes()`）；不支持的自定义卡带选「AI 生图」时报错提示。生图事件 `concurrency_id` 为 `motion_visuals`、`concurrency_limit=1`，连点两次不会为同一屏重复花钱。
+- 动效法则：整理自 LottieFiles/motion-design-skill、heygen-com/hyperframes、whaleyxbt/claude-motion、haidrrrry/claude-remotion-skill、howseen-ai/claude-motion-design、charlie947/motion-graphics-skills，2026-10-27 补充 Vincentwei1021/video-shotcraft、EveryInc/product-launch-video、chandreshpv/remotion-product-videos-claude-skill 与 hyperframes 新增的发布片参考（均为 MIT / Apache-2.0，许可证已逐个核对），只引用规则与数值，写在 `config/skills/motion_director/references/motion_design_principles.md`。引擎自动执行，卡带只决定结构、文案、素材、拍数、镜头与转场。
+- 动效导演卡带 `default_motion_director` v1.2 按区块组织（`task`、`output_format` 为 final，可被继承）：先从 4 种故事结构（A 痛点→解决 / B 证据驱动 / C 使用过程 / D 全面展示）里选一种写进 `notes` 开头，再按指南第 9 节的时长比例排节拍表，最后输出 JSON 并逐条自检。
+- 数据模型 `app/schemas/motion.py`：`MotionAd`（比例 / BPM / 主题 / 分镜 / 素材 / 渲染记录）、`MotionScene`（9 类：hook 钩子大字、contrast 痛点对比、hero 商品主视觉、features 卖点清单、steps 步骤流程、stat 数据冲击、gallery 图集、showcase 长图滚动、cta 收尾行动）。痛点对比 `items` 固定 2 条（之前、之后），素材 0 或 2 个，阅读时间另加 0.8 秒；步骤流程 2~4 步、最多 1 张图，每多一步另加 0.65 秒。分镜长度是**整数拍**（1 拍 = 60 / BPM 秒），所以每个剪辑点都落在拍点上。文字上限：主标题 ≤16、副标题 ≤28、条目 ≤14、按钮 ≤8、数字 / 胶囊 ≤12；强调词必须是主标题原文的一部分。阅读时间按每秒 8 个字（外文单词 / 数字算 1.5 字，副标题按一半）+ 0.6 秒入场。
 - 素材（`MotionEngine.collect_assets()`）：主图 / 详情页定稿图（未勾选取最新）、详情页前 10 屏拼接长图（`stitch_long_image()`，按内容哈希缓存）、视频锁定首帧、分镜最新一版视频、参考图、本页上传（可标为界面截图，放进浏览器外框）。编号 A1、A2…；重新编排 / 重新收集时已有素材编号不变（`refresh_assets()`），新素材追加。发给 Skill 的素材清单只有编号、来源、形状，不含本机路径。
 - 商品信息：表单没改动时保存的是占位示例（如「如：买二送一」），`real_product_info()` 把这类值过滤掉，绝不当成事实写进广告。
-- Skill 输出纠正（`motion_engine.assemble_plan()`）：未知类型丢弃；文案去违禁词并截到上限；不存在的素材编号剔除，缺素材时补一个没用过的（showcase 优先长图）；拍数限制在类型范围内且至少能读完文字；钩子 ≤3 秒排第一、收尾行动 ≥3 秒排最后（缺了自动补）；未知转场（含叠化）改动势推移，色块擦除全片最多一次，转场种类 ≤3 种，最后一屏硬切。
-- 渲染（`app/engine/motion/`）：`easing.py` 缓动与弹簧（入场 (0.16,1,0.3,1)、退场 (0.7,0,0.84,0)、移动 (0.65,0,0.35,1)，弹簧 ζ≥0.72，回弹全片只用一次）；`typeset.py` 中文断行（空格优先、各行尽量等宽、「·」分隔符落在断行处省略、行首不放标点）与逐字遮罩上升；`scenes.py` 七类版式（三层运动，文字落定后静止）；`renderer.py` 连续背景 + 动势衔接转场（push / zoom / wipe / cut，矢量方向一致，快速位移加运动模糊、不跨剪辑点）+ 暗角颗粒，入场略早于剪辑点；`audio.py` 按 BPM 与主题调式本机合成配乐（钩子后起势进鼓点、侧链呼吸）与音效（呼啸峰值对准剪辑点、一次起势接重击、逐条提示音按音阶升高）；`encode.py` 多线程逐帧 → ffmpeg（H.264 CRF 17、BT.709、loudnorm -14 LUFS）；`review.py` 联系表 + 11 项自检（节拍、黄金 3 秒、收尾 ≥3 秒、阅读时间、落定停留、安全区、遮挡、转场种类、第 0 帧、突跳 / 单帧闪烁、响度）。
+- Skill 输出纠正（`motion_engine.assemble_plan()`）：未知类型丢弃；文案去违禁词并截到上限；不存在的素材编号剔除，缺素材时补一个没用过的（showcase 优先长图）；拍数限制在类型范围内且至少能读完文字；钩子 ≤3 秒排第一、收尾行动 ≥3 秒排最后（缺了自动补）；未知转场（含叠化）改动势推移，色块擦除全片最多一次，转场种类 ≤3 种，最后一屏硬切。痛点对比只留前 2 条、只有 1 张图时两边都不放图，不足 2 条丢弃；步骤流程不足 2 步丢弃、图只留 1 张。`preflight()` 另外提醒相邻两屏同一版式。演示编排在 18 秒以上的片子里加一屏痛点对比：之前取类目痛点、之后取用字最接近的卖点小句（钩子已用的痛点跳过），找不到相关卖点时不排。
+- 渲染（`app/engine/motion/`）：`easing.py` 缓动与弹簧（入场 (0.16,1,0.3,1)、退场 (0.7,0,0.84,0)、移动 (0.65,0,0.35,1)，弹簧 ζ≥0.72，回弹全片只用一次）；`typeset.py` 中文断行（空格优先、各行尽量等宽、「·」分隔符落在断行处省略、行首不放标点）与逐字遮罩上升；`scenes.py` 九类版式（三层运动，文字落定后静止；数字落定、对比的「之后」落地、步骤点亮都按 `Ctx.beat` 卡在拍点上，`on_grid()` 在拍点之后留不出时间时不强求，配套音效晚一帧）；第一屏开场即落定（`SceneRenderer.lead` 跳过入场，第 0 帧就是完整画面，平台默认拿它当封面），跳过的入场提示音不播、开场重击保留；`renderer.py` 连续背景 + 动势衔接转场（push / zoom / wipe / cut，矢量方向一致，快速位移加运动模糊、不跨剪辑点）+ 暗角颗粒，入场略早于剪辑点；`audio.py` 按 BPM 与主题调式本机合成配乐（钩子后起势进鼓点，钩子后面紧跟痛点对比时推迟到商品登场的那一刀；侧链呼吸）与音效（呼啸峰值对准剪辑点、一次起势接重击、逐条提示音按音阶升高）；`encode.py` 多线程逐帧 → ffmpeg（H.264 CRF 17、BT.709、loudnorm -14 LUFS）；`review.py` 联系表 + 14 项自检（节拍、黄金 3 秒、收尾 ≥3 秒、阅读时间、落定停留、安全区、遮挡、转场种类、第 0 帧、突跳 / 单帧闪烁、响度、字号不低于短边 2.6%（`SceneRenderer.font_px`）、静止画面读完后不再停超过 3 秒（`SceneRenderer.alive` 为假的屏）、相邻两屏版式不重复）。
 - 档位：快速预览 540P（无颗粒、CRF 23）与 1080P 成片。每次渲染写进新的 `render_{时间}_{档位}/`，追加到 `MotionAd.renders`，绝不覆盖。渲染使用方案快照，渲染中继续改表格不影响本次结果。
 - 实测（开发机 2 核）：1080P 30fps 约 6 帧 / 秒（55 秒成片约 5 分钟）；540P 预览约 30 帧 / 秒。
 
@@ -304,7 +311,7 @@ RightAPI 的 Key 绑定渠道，一把 Key 只能调用所绑渠道的模型，�
 | `edit_engine.py` | 分析分镜视频（时长、画面、有声段落）→ 执行 `video_editor` Skill → 纠正为合法的 `EditPlan` |
 | `edit_render.py` | 按剪辑方案用 ffmpeg 合成成片 mp4（转场、ASS 字幕 / 花字、背景音乐避让、响度统一），实时产出进度事件 |
 | `draft_export.py` | 导出剪映草稿（pyJianYingDraft）与达芬奇工程（FCPXML 1.10 / OTIO / SRT），同步 IO，UI 用 `asyncio.to_thread` 调用 |
-| `motion_engine.py` | 收集项目素材 → 执行 `motion_director` Skill → 纠正为合法的 `MotionAd`；调用 `app/engine/motion/` 本机渲染动效广告（成片 + 联系表 + 自检报告） |
+| `motion_engine.py` | 收集项目素材 → 执行 `motion_director` Skill（项目素材 / AI 生图两种方式）→ 纠正为合法的 `MotionAd`；调用 `app/engine/motion/` 本机渲染动效广告（成片 + 联系表 + 自检报告）。AI 画面由 `render_engine.render_motion_visuals()` 生成 |
 | `voice_engine.py` | 执行 `voice_writer` Skill → 配音文案；参考音频处理、试听 / 锁定音色、音色库；逐段调用 VoiceProvider（串行、带心跳日志）；拼接完整配音并导出 wav / mp3 / srt / zip |
 
 ## 5.8 界面（`app/ui/`）
@@ -313,7 +320,7 @@ RightAPI 的 Key 绑定渠道，一把 Key 只能调用所绑渠道的模型，�
 - `image_tab.py`：主图与详情页共用的三步式工作流。`video_tab.py`：视频剧本 → 首帧锁定 → Modal H3 生成视频（逐个 / 选分镜，每个分镜独立播放器），H3 提示词折叠在可选的查看 / 微调区。
 - `edit_panel.py`：视频 Step 4（剪辑方案表格、成片选项、一键成片、导出剪映 / 达芬奇）。布局在 Step 3 之后，事件在运行日志创建后绑定；刷新输出独立于 `video_tab` 的 `refresh_outputs`，不改变其位置顺序（端到端测试按位置读取）。成片与导出都使用剪辑方案快照，处理过程中继续改表格不影响本次结果。
 - `voice_tab.py`：【配音】四步。刷新输出的顺序由 `REFRESH_KEYS` 定义，端到端测试按名字取位置。音色设定改动后立即保存。生成类事件的 `concurrency_id` 为 `voice_gen`，`concurrency_limit=1`，与服务端单容器一致；试听、识别也走这条队列。
-- `motion_tab.py`：【动效广告】三步（编排方案 / 素材 / 渲染）。刷新输出顺序由 `REFRESH_KEYS` 定义，端到端测试按名字取位置。渲染事件 `concurrency_id` 为 `motion_render`，`concurrency_limit=1`（渲染很吃 CPU）；比例、节拍、主题在保存 / 渲染时直接生效，不必重新编排。
+- `motion_tab.py`：【动效广告】三步（编排方案 / 素材 + AI 画面 / 渲染）。刷新输出顺序由 `REFRESH_KEYS` 定义，端到端测试按名字取位置。分镜表 15 列，后三列为「AI 画面」「生图参考」「画面状态」（只读）；只有 12 列的旧表格保存时保留原有 AI 画面。渲染事件 `concurrency_id` 为 `motion_render`，`concurrency_limit=1`（渲染很吃 CPU）；生图期间只刷新状态与素材库，不刷新表格，避免冲掉正在编辑的单元格。比例、节拍、主题在保存 / 渲染时直接生效，不必重新编排。
 - `theme.py`：界面主题与 CSS 唯一来源（`THEME` / `CSS`，由 `app/main.py` 传给 `launch()`）。界面代码只用 `elem_classes`（`step-card`、`terminal-log`、`info-grid`、`plan-table` 等）引用样式，不写内联样式；步骤标题用 `step_header()`。
 - `pro_panel.py`：品牌栏右侧「👑 老庹 AI 工坊 · 定制行业专属卡带 / 商业版」小徽章（`pro-badge`），点开才显示面板（`pro-panel`，默认隐藏）：按卡槽统计开源 / Pro 卡带、列出已加载的 Pro 卡带与加载错误，以及三档版本与商务联系方式（`CONTACTS`，与 README「📬 商务合作」同步）。
 - 浏览器端 `gr.State` 只存 `project_id`；`Project` 对象由服务端 `Workspace` 缓存并按项目加锁。

@@ -1,7 +1,9 @@
-"""动效广告（Motion Graphics）方案：纯代码渲染的带货动效短片，不调用任何生图 / 生视频接口。
+"""动效广告（Motion Graphics）方案：代码渲染的带货动效短片。
 
 - 分镜按「拍」计时：1 拍 = 60 / BPM 秒，每个分镜的长度都是整数拍，所以每一刀都落在节拍上；
 - 素材来自项目里已有的主图、详情页、视频首帧、分镜视频与参考图（也可另外上传），分镜用素材编号 A1、A2… 引用；
+- 两种素材方式：「项目素材」零成本，不调用生图接口；「AI 生图」由动效导演给分镜写 AI 画面描述（visual），
+  用户确认后调用生图接口为这一屏生成专属画面，生成的图作为新素材（来源 generated）绑定到该屏；
 - 渲染、配乐、音效、自检全部在本机完成（app/engine/motion/），动效法则见
   config/skills/motion_director/references/motion_design_principles.md。
 """
@@ -21,19 +23,26 @@ from app.schemas.common import AspectRatio, EditRecord, new_id, utc_now
 from app.schemas.edit import OUTPUT_SIZES, visible_len
 from app.schemas.plan import AESTHETIC_STYLE_NAMES
 
-SceneKind = Literal["hook", "hero", "features", "stat", "gallery", "showcase", "cta"]
-SCENE_KINDS: tuple[SceneKind, ...] = ("hook", "hero", "features", "stat", "gallery", "showcase", "cta")
+SceneKind = Literal["hook", "contrast", "hero", "features", "steps", "stat", "gallery", "showcase", "cta"]
+SCENE_KINDS: tuple[SceneKind, ...] = ("hook", "contrast", "hero", "features", "steps", "stat", "gallery", "showcase",
+                                      "cta")
 SCENE_LABELS: dict[str, str] = {
-    "hook": "钩子大字", "hero": "商品主视觉", "features": "卖点清单", "stat": "数据冲击",
-    "gallery": "图集", "showcase": "长图滚动", "cta": "收尾行动",
+    "hook": "钩子大字", "contrast": "痛点对比", "hero": "商品主视觉", "features": "卖点清单", "steps": "步骤流程",
+    "stat": "数据冲击", "gallery": "图集", "showcase": "长图滚动", "cta": "收尾行动",
 }
 # 每类分镜的拍数范围（1 拍 = 60 / BPM 秒）
 BEAT_RANGE: dict[str, tuple[int, int]] = {
-    "hook": (2, 6), "hero": (4, 10), "features": (5, 14), "stat": (4, 8), "gallery": (4, 10),
-    "showcase": (6, 16), "cta": (5, 10),
+    "hook": (2, 6), "contrast": (5, 12), "hero": (4, 10), "features": (5, 14), "steps": (6, 14), "stat": (4, 8),
+    "gallery": (4, 10), "showcase": (6, 16), "cta": (5, 10),
 }
 # 需要素材的分镜：hero / showcase 至少 1 个，gallery 至少 2 个
 MIN_IMAGES: dict[str, int] = {"hero": 1, "showcase": 1, "gallery": 2}
+# 痛点对比：条目固定 2 条（之前、之后），素材 0 个或 2 个（之前、之后各一张）；
+# 「之前」先停留约 0.8 秒供阅读，「之后」再落地（阅读时间里另加这一段）
+CONTRAST_HOLD_SECONDS = 0.8
+# 步骤流程：2~4 步，逐拍点亮（每步约一拍，阅读时间里每多一步另加 STEP_SECONDS），可配 1 张图
+STEP_SECONDS = 0.65
+MAX_STEPS_IMAGES = 1
 
 MotionTransition = Literal["cut", "push", "zoom", "wipe"]
 MOTION_TRANSITIONS: tuple[MotionTransition, ...] = ("cut", "push", "zoom", "wipe")
@@ -60,6 +69,7 @@ MAX_STAT_CHARS = 12
 MAX_BUTTON_CHARS = 8
 MAX_SCENE_IMAGES = 9
 MAX_SCENES = 16
+# 项目素材 / 上传最多 40 个；AI 生图另计（每张都花了额度，生成后一律收进素材库，不因数量上限丢弃）
 MAX_ASSETS = 40
 # 中文阅读速度：每秒 8 个字（Netflix 简体中文字幕上限为 9 字 / 秒），每屏另加入场时间。钩子 ≤3 秒，收尾行动 ≥3 秒
 READING_CHARS_PER_SECOND = 8.0
@@ -69,13 +79,54 @@ HOOK_MAX_SECONDS = 3.0
 CTA_MIN_SECONDS = 3.0
 
 AssetSource = Literal["main_image", "detail_page", "detail_long", "first_frame", "shot_video", "reference", "upload",
-                      "screen"]
+                      "screen", "generated"]
 SOURCE_LABELS: dict[str, str] = {
     "main_image": "主图", "detail_page": "详情页", "detail_long": "详情页长图", "first_frame": "视频首帧",
-    "shot_video": "分镜视频", "reference": "参考图", "upload": "上传", "screen": "界面截图",
+    "shot_video": "分镜视频", "reference": "参考图", "upload": "上传", "screen": "界面截图", "generated": "AI 生图",
 }
 # 高 / 宽超过这个值算「长图」：放进手机 / 浏览器外框里滚动
 LONG_RATIO = 2.2
+
+# 素材方式：项目素材（零成本）/ AI 生图（调用生图接口，为写了画面描述的分镜生成专属画面）
+AssetMode = Literal["project", "generate"]
+ASSET_MODE_LABELS: dict[str, str] = {"project": "项目素材", "generate": "AI 生图"}
+MAX_VISUALS = 8  # 动效导演一次最多给几屏写 AI 画面（控制画图花费）
+MAX_VISUAL_REFS = 3  # 与生图接口一致：单次最多 3 张参考图
+MAX_VISUAL_CHARS = 200
+# 「插入分镜」时素材不够、改由 AI 生图补上的占位描述：生成前必须改成真实描述
+VISUAL_PLACEHOLDER = "请填写这一屏的 AI 画面描述"
+VISUAL_STATE_LABELS: dict[str, str] = {"none": "", "pending": "⏳ 待生成", "stale": "🔄 描述已改，待重新生成",
+                                       "ready": "✅ 已生成"}
+# AI 画面的出图比例：按各类版式在不同画幅里的图片框，取最接近的接口比例；钩子是全屏背景，与成片同比例
+VISUAL_RATIOS: dict[str, dict[str, str]] = {
+    "9:16": {"hero": "3:4", "features": "16:9", "steps": "16:9", "gallery": "2:3", "cta": "4:3"},
+    "3:4": {"hero": "1:1", "features": "16:9", "steps": "16:9", "gallery": "2:3", "cta": "3:2"},
+    "1:1": {"hero": "3:2", "features": "16:9", "steps": "16:9", "gallery": "2:3", "cta": "16:9"},
+    "16:9": {"hero": "1:1", "features": "3:4", "steps": "3:4", "gallery": "1:1", "cta": "3:4"},
+}
+# 可以写 AI 画面的分镜：数据冲击不放图；长图滚动要的是详情页长图 / 界面截图，生图接口画不了；
+# 痛点对比要成对的「之前 / 之后」两张图，一次生成一张对不上
+VISUAL_KINDS: tuple[str, ...] = ("hook", "hero", "features", "steps", "gallery", "cta")
+# 生图时告诉模型这张图在动效里怎么用（版式事实，不是创意要求）
+VISUAL_USAGE: dict[str, str] = {
+    "hook": "全屏背景，会被压暗并在画面中部叠加大字标题，主体放在下方或边缘，中部保持简洁",
+    "hero": "商品主视觉卡片，主体完整居中，背景干净",
+    "features": "卖点清单旁的配图，主体清晰，构图简洁",
+    "steps": "步骤流程旁的配图（使用过程或使用场景），主体清晰，构图简洁",
+    "gallery": "图集里的一张，主体清晰",
+    "cta": "收尾行动的商品卡片，主体完整，背景干净",
+}
+
+
+def visual_ratio(kind: str, aspect_ratio: str) -> str:
+    """某类分镜的 AI 画面用什么比例出图（不在表里的成片比例按横竖归到最接近的一档）。"""
+    if kind == "hook":
+        return aspect_ratio
+    table = VISUAL_RATIOS.get(aspect_ratio)
+    if table is None:
+        w, h = (int(x) for x in aspect_ratio.split(":"))
+        table = VISUAL_RATIOS["9:16" if h > w * 1.15 else "16:9" if w > h * 1.15 else "1:1"]
+    return table.get(kind, "1:1")
 
 
 _LATIN_WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9.\-_/]*")
@@ -109,6 +160,10 @@ class MotionAsset(BaseModel):
     width: int = 0
     height: int = 0
     duration_seconds: float = 0.0
+    # AI 生图素材：为哪一屏生成、按哪段画面描述生成、用的哪个模型
+    scene_id: str = ""
+    visual: str = ""
+    model: str = ""
 
     @property
     def exists(self) -> bool:
@@ -131,6 +186,8 @@ class MotionAsset(BaseModel):
                 "source": SOURCE_LABELS[self.source], "label": self.label, "shape": shape}
         if self.kind == "video":
             data["seconds"] = round(self.duration_seconds, 1)
+        if self.source == "generated" and self.visual:
+            data["visual"] = self.visual  # 之前生成过的 AI 画面：说明画的是什么，便于 Skill 复用
         return data
 
 
@@ -155,8 +212,13 @@ class MotionScene(BaseModel):
     images: list[str] = Field(default_factory=list)
     camera: CameraMove = "push_in"
     transition_out: MotionTransition = "push"
+    # AI 生图方式：这一屏的 AI 画面描述与生图参考图编号（保持商品包装一致）。
+    # 生成的画面记在 visual_key（由 MotionAd.bind_visual 设置，表格不直接改），渲染时放在该屏第一个素材的位置
+    visual: str = ""
+    visual_refs: list[str] = Field(default_factory=list)
+    visual_key: str = ""
 
-    @field_validator("headline", "subline", "accent", "stat_value", mode="before")
+    @field_validator("headline", "subline", "accent", "stat_value", "visual", mode="before")
     @classmethod
     def _strip(cls, v: Any) -> str:
         return _clean(v)
@@ -169,7 +231,7 @@ class MotionScene(BaseModel):
             v = re.split(r"[|｜\n]", v)
         return [s for s in (_clean(x) for x in (v or [])) if s]
 
-    @field_validator("images", mode="before")
+    @field_validator("images", "visual_refs", mode="before")
     @classmethod
     def _split_images(cls, v: Any) -> list[str]:
         if isinstance(v, str):
@@ -197,13 +259,31 @@ class MotionScene(BaseModel):
                 raise ValueError(f"{label}的条目「{item}」最多 {limit} 个字")
         if self.kind == "features" and len(self.items) < 2:
             raise ValueError("卖点清单至少 2 条")
+        if self.kind == "contrast":
+            if len(self.items) != 2:
+                raise ValueError("痛点对比需要 2 条：第 1 条写「之前」的状态，第 2 条写「之后」的状态")
+            if len(self.images) not in (0, 2):
+                raise ValueError("痛点对比的素材填 0 个或 2 个（之前、之后各一张）")
+        if self.kind == "steps":
+            if len(self.items) < 2:
+                raise ValueError("步骤流程至少 2 步")
+            if len(self.images) > MAX_STEPS_IMAGES:
+                raise ValueError(f"步骤流程最多配 {MAX_STEPS_IMAGES} 张图")
         if self.kind == "stat" and not self.stat_value:
             raise ValueError("数据冲击需要填写数字（如 39.3%）")
         if not self.headline and self.kind in {"hook", "cta"}:
             raise ValueError(f"{label}需要主标题")
         if len(self.images) > MAX_SCENE_IMAGES:
             raise ValueError(f"每个分镜最多 {MAX_SCENE_IMAGES} 个素材")
-        need = MIN_IMAGES.get(self.kind, 0)
+        if self.visual and self.kind not in VISUAL_KINDS:
+            raise ValueError(f"{label}不需要 AI 画面描述（可以写的分镜："
+                             f"{' / '.join(SCENE_LABELS[k] for k in VISUAL_KINDS)}）")
+        if len(self.visual) > MAX_VISUAL_CHARS:
+            raise ValueError(f"AI 画面描述最多 {MAX_VISUAL_CHARS} 个字（当前 {len(self.visual)} 个）")
+        if len(self.visual_refs) > MAX_VISUAL_REFS:
+            raise ValueError(f"生图参考图最多 {MAX_VISUAL_REFS} 张")
+        # 写了 AI 画面描述的分镜，生成的画面会补上第一个素材，所以生成之前可以少 1 个
+        need = MIN_IMAGES.get(self.kind, 0) - (1 if self.visual else 0)
         if len(self.images) < need:
             raise ValueError(f"{label}至少需要 {need} 个素材（填素材编号，如 A1）")
         return self
@@ -211,6 +291,11 @@ class MotionScene(BaseModel):
     @property
     def label(self) -> str:
         return SCENE_LABELS[self.kind]
+
+    @property
+    def item_id(self) -> str:
+        """与主图槽位 / 视频分镜同名的标识，供并发生图引擎使用。"""
+        return self.scene_id
 
     @property
     def text_chars(self) -> float:
@@ -224,6 +309,10 @@ class MotionScene(BaseModel):
         need = self.text_chars / READING_CHARS_PER_SECOND + ENTRANCE_SECONDS
         if self.kind == "features":
             need += 0.2 * len(self.items)  # 逐条错峰入场
+        if self.kind == "contrast":
+            need += CONTRAST_HOLD_SECONDS  # 「之前」先单独停留，「之后」才落地
+        if self.kind == "steps":
+            need += STEP_SECONDS * (len(self.items) - 1)  # 逐拍点亮
         if self.kind == "cta":
             need = max(need, CTA_MIN_SECONDS)
         return round(max(need, 1.2), 2)
@@ -289,6 +378,9 @@ class MotionAd(BaseModel):
     music: bool = True
     sfx: bool = True
     grain: bool = True
+    asset_mode: AssetMode = "project"
+    # AI 生图方式：编排时最多几屏写 AI 画面（界面回填用）
+    max_visuals: int = Field(default=4, ge=1, le=MAX_VISUALS)
     director_skill_id: str = ""
     planner_mode: str = ""
     notes: str = ""
@@ -345,25 +437,131 @@ class MotionAd(BaseModel):
                 return a
         raise KeyError(f"素材 {key} 不存在")
 
+    @property
+    def project_asset_count(self) -> int:
+        """计入 40 个上限的素材数（AI 生图不计）。"""
+        return sum(a.source != "generated" for a in self.assets)
+
     def next_asset_key(self) -> str:
         used = {int(a.key[1:]) for a in self.assets if a.key[1:].isdigit()}
         return f"A{max(used, default=0) + 1}"
 
     def add_asset(self, path: Path, *, kind: str = "image", label: str = "", source: str = "upload",
-                  width: int = 0, height: int = 0, duration_seconds: float = 0.0) -> MotionAsset:
-        if len(self.assets) >= MAX_ASSETS:
+                  width: int = 0, height: int = 0, duration_seconds: float = 0.0, scene_id: str = "",
+                  visual: str = "", model: str = "") -> MotionAsset:
+        if source != "generated" and self.project_asset_count >= MAX_ASSETS:
             raise ValueError(f"素材最多 {MAX_ASSETS} 个")
         asset = MotionAsset(key=self.next_asset_key(), kind=kind, path=Path(path), label=label, source=source,
-                            width=width, height=height, duration_seconds=duration_seconds)
+                            width=width, height=height, duration_seconds=duration_seconds, scene_id=scene_id,
+                            visual=visual, model=model)
         self.assets.append(asset)
         self._log("add_asset", asset.key, label=label, source=source)
         return asset
 
     def _check_images(self, scene: MotionScene) -> None:
-        keys = {a.key for a in self.assets}
-        missing = [k for k in scene.images if k not in keys]
+        by_key = {a.key: a for a in self.assets}
+        missing = [k for k in [*scene.images, *scene.visual_refs] if k not in by_key]
         if missing:
-            raise ValueError(f"素材 {'、'.join(missing)} 不存在（可用：{'、'.join(sorted(keys)) or '无'}）")
+            raise ValueError(f"素材 {'、'.join(dict.fromkeys(missing))} 不存在"
+                             f"（可用：{'、'.join(sorted(by_key)) or '无'}）")
+        bad = [k for k in scene.visual_refs if by_key[k].kind != "image" or by_key[k].shape == "长图"]
+        if bad:
+            raise ValueError(f"生图参考只能用普通图片素材（{'、'.join(bad)} 是视频或长图）")
+
+    # ---------------------------------------------------------------- AI 画面（AI 生图方式）
+
+    def visual_asset(self, scene: MotionScene) -> MotionAsset | None:
+        """该屏当前绑定的 AI 画面（文件已不存在时视为没有）。"""
+        for a in self.assets:
+            if scene.visual_key and a.key == scene.visual_key:
+                return a if a.exists else None
+        return None
+
+    def visual_state(self, scene: MotionScene) -> str:
+        """none 没写 AI 画面 / pending 待生成 / stale 描述改过、当前还是旧画面 / ready 已生成。"""
+        if not scene.visual:
+            return "none"
+        a = self.visual_asset(scene)
+        if a is None:
+            return "pending"
+        return "ready" if a.visual == scene.visual else "stale"
+
+    def visual_label(self, scene: MotionScene) -> str:
+        """表格「画面状态」列。"""
+        state = self.visual_state(scene)
+        if state == "pending" and scene.visual == VISUAL_PLACEHOLDER:
+            return "✏️ 请先填写描述"
+        if state in {"ready", "stale"}:
+            return f"{VISUAL_STATE_LABELS[state]}（{scene.visual_key}）"
+        return VISUAL_STATE_LABELS[state]
+
+    def visual_references(self, scene: MotionScene) -> list[MotionAsset]:
+        """该屏生图时传给接口的参考图（文件还在的图片素材，按填写顺序）。"""
+        by_key = {a.key: a for a in self.assets}
+        refs = [by_key[k] for k in scene.visual_refs if k in by_key]
+        return [a for a in refs if a.kind == "image" and a.exists][:MAX_VISUAL_REFS]
+
+    def bind_visual(self, scene_id: str, path: Path, *, visual: str, model: str, width: int,
+                    height: int) -> MotionAsset:
+        """把生成的画面加进素材库并绑定到该屏（替换上一版 AI 画面；旧图留在素材库里，不删除）。
+
+        分镜在生成期间被删掉时，画面仍然留在素材库里，不浪费已经花掉的额度。
+        """
+        index = next((i for i, s in enumerate(self.scenes) if s.scene_id == scene_id), None)
+        where = f"第 {index + 1} 屏" if index is not None else "已删除的分镜"
+        asset = self.add_asset(path, kind="image", label=f"{where} AI 画面：{visual[:18]}", source="generated",
+                               width=width, height=height, scene_id=scene_id, visual=visual, model=model)
+        if index is not None:
+            self.scenes[index] = self.scenes[index].model_copy(update={"visual_key": asset.key})
+            self._log("bind_visual", scene_id, asset=asset.key)
+        else:  # 生成期间重新编排过：新方案里描述相同的分镜直接用上这张
+            self.reuse_visuals()
+        return asset
+
+    def reuse_visuals(self) -> int:
+        """描述与之前某次生成完全相同的分镜直接沿用那张画面（重新编排时不重复花钱）。返回沿用的屏数。"""
+        latest = {a.visual: a.key for a in self.assets if a.source == "generated" and a.visual and a.exists}
+        n = 0
+        for i, s in enumerate(self.scenes):
+            if self.visual_state(s) != "ready" and s.visual in latest:
+                self.scenes[i] = s.model_copy(update={"visual_key": latest[s.visual]})
+                n += 1
+        return n
+
+    @property
+    def draft_visuals(self) -> list[int]:
+        """「AI 画面」还是占位文字的屏号（从 1 开始）：生成前必须改成真实描述。"""
+        return [i + 1 for i, s in enumerate(self.scenes) if s.visual == VISUAL_PLACEHOLDER]
+
+    def visual_targets(self, scene_ids: list[str] | None = None) -> list[MotionScene]:
+        """要生成 AI 画面的分镜。
+
+        指定 scene_ids 时重新生成这几屏（没写描述或还是占位文字时报错）；
+        不指定时取待生成 / 描述改过的分镜，跳过还是占位文字的（见 draft_visuals）。
+        """
+        if scene_ids is None:
+            return [s for s in self.scenes
+                    if self.visual_state(s) in {"pending", "stale"} and s.visual != VISUAL_PLACEHOLDER]
+        todo = [s for s in self.scenes if s.scene_id in scene_ids]
+        bare = [self.scenes.index(s) + 1 for s in todo if not s.visual]
+        if bare:
+            raise ValueError(f"第 {'、'.join(map(str, bare))} 屏没有填写「AI 画面」描述，先在表格里写好再生成")
+        draft = [self.scenes.index(s) + 1 for s in todo if s.visual == VISUAL_PLACEHOLDER]
+        if draft:
+            raise ValueError(f"第 {'、'.join(map(str, draft))} 屏的「AI 画面」还是占位文字，请改成真实的画面描述再生成")
+        return todo
+
+    def render_keys(self, scene: MotionScene) -> list[str]:
+        """渲染用的素材编号：写了 AI 画面且已生成时，生成的画面排第一（描述改过还没重新生成时先用旧画面）。"""
+        if scene.visual and self.visual_asset(scene) is not None:
+            return [scene.visual_key, *[k for k in scene.images if k != scene.visual_key]][:MAX_SCENE_IMAGES]
+        return list(scene.images)
+
+    def render_copy(self) -> MotionAd:
+        """渲染用的方案快照：每屏的素材换成 render_keys（渲染器只认 images）。"""
+        snap = self.model_copy(deep=True)
+        snap.scenes = [s.model_copy(update={"images": self.render_keys(s)}) for s in snap.scenes]
+        return snap
 
     # ---------------------------------------------------------------- 编辑
 
@@ -443,6 +641,11 @@ class MotionAd(BaseModel):
         if changes:
             self._log("set_options", None, **changes)
 
+    @property
+    def visual_scenes(self) -> list[MotionScene]:
+        """写了 AI 画面描述的分镜。"""
+        return [s for s in self.scenes if s.visual]
+
     def add_render(self, render: MotionRender) -> None:
         self.renders.append(render)
         self._log("render", render.render_id, quality=render.quality, seconds=render.seconds)
@@ -455,9 +658,14 @@ class MotionAd(BaseModel):
     def require_renderable(self) -> None:
         if not self.scenes:
             raise ValueError("还没有动效分镜，请先生成动效方案")
+        pending = [str(i + 1) for i, s in enumerate(self.scenes) if self.visual_state(s) == "pending"]
+        if pending:
+            raise ValueError(f"第 {'、'.join(pending)} 屏写了「AI 画面」但还没生成：请在 Step 2 点「🎨 生成 AI 画面」；"
+                             "不想调用生图接口的话，清空这几屏的「AI 画面」列并填上素材编号，"
+                             "或换成「项目素材」方式重新编排")
         for s in self.scenes:
             self._check_images(s)
-            for k in s.images:
+            for k in self.render_keys(s):
                 if not self.asset(k).exists:
                     raise ValueError(f"素材 {k} 的文件已不存在，请重新生成方案或换一个素材")
 
