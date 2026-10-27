@@ -19,6 +19,7 @@ import base64
 import io
 import math
 import random
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -199,6 +200,19 @@ def extract_result_urls(body: dict[str, Any]) -> list[str] | None:
     return None
 
 
+_HTML_TITLE = re.compile(r"<title[^>]*>(.*?)</title>", re.I | re.S)
+
+
+def non_json_message(resp: httpx.Response) -> str:
+    """接口没有返回 JSON 时的说明。网关 / CDN 的 HTML 错误页只留标题，不把整页 HTML 写进日志。"""
+    text = resp.text.strip()
+    if text.startswith("<") or "html" in resp.headers.get("content-type", "").lower():
+        m = _HTML_TITLE.search(text)
+        title = " ".join(m.group(1).split())[:80] if m else ""
+        return "网关返回了错误页" + (f"「{title}」" if title else "") + "，不是画图接口的应答"
+    return text[:200]
+
+
 def _error_text(body: dict[str, Any]) -> str:
     err = body.get("error")
     if isinstance(err, dict):
@@ -299,6 +313,9 @@ class RightAPIImageClient:
                 # 429 / 503 与明确的「繁忙」提示：服务端没有创建任务，重新提交安全
                 if resp.status_code in (429, 503) or is_busy_error(_error_text(body)):
                     raise UpstreamBusyError(msg)
+                # 500 / 502 / 504：说不清任务是否已经创建，自动重新提交可能重复扣费，所以只提示、不重试
+                if resp.status_code in (500, 502, 504):
+                    msg += "。RightAPI 服务端临时故障，请稍后再试；连续失败可换一个画图模型"
                 raise ImageAPIError(msg)
             if str(body.get("status", "")).lower() in TERMINAL_FAILED:
                 err = _error_text(body)
@@ -324,7 +341,7 @@ class RightAPIImageClient:
         try:
             data = resp.json()
         except ValueError:
-            return {"message": resp.text[:200]}
+            return {"message": non_json_message(resp)}
         return data if isinstance(data, dict) else {"message": str(data)[:200]}
 
     async def _poll(self, client: httpx.AsyncClient, task_id: str, headers: dict, emit) -> list[str]:

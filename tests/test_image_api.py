@@ -267,6 +267,27 @@ async def test_http_errors_and_timeout():
         await slow.send(req, "")
 
 
+async def test_gateway_html_error_page_is_summarized_and_not_resubmitted():
+    """网关 502 返回整页 HTML：日志只留一句说明；说不清任务是否已创建，不自动重新提交（避免重复扣费）。"""
+    posts = []
+
+    def handler(r: httpx.Request):
+        posts.append(r)
+        page = ("<!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\"> <![endif]-->\n"
+                "<html><head><title>www.rightapi.ai | 502: Bad gateway</title></head><body>…</body></html>")
+        return httpx.Response(502, text=page, headers={"content-type": "text/html; charset=UTF-8"})
+
+    client = RightAPIImageClient(base_url=BASE, poll_interval=0, busy_backoff=0,
+                                 transport=httpx.MockTransport(handler))
+    req = route_image_request(S, "gpt-image-2.5-flare", "p", "9:16", [])
+    with pytest.raises(ImageAPIError) as info:
+        await client.send(req, "sk-draw")
+    msg = str(info.value)
+    assert "HTTP 502" in msg and "502: Bad gateway" in msg and "服务端临时故障" in msg
+    assert "<!DOCTYPE" not in msg and "<html" not in msg
+    assert not isinstance(info.value, UpstreamBusyError) and len(posts) == 1
+
+
 async def test_connect_errors_are_retried_without_duplicate_submit():
     """本机代理偶发断连（请求没发出去）会自动重试；服务端已收到的请求不会重复提交。"""
     attempts = {"post": 0}
