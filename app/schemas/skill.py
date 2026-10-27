@@ -34,6 +34,22 @@ class SkillRenderError(ValueError):
     """渲染 Skill 时缺少变量。"""
 
 
+class SkillBlock(BaseModel):
+    """卡带正文中的一个区块：`# 标题 {#block_id 标记...}` 到下一个区块标题之间的内容。
+
+    block_id 为 `_preamble` 时表示第一个区块标题之前的正文（渲染时不输出标题）。
+    """
+
+    block_id: str
+    title: str = ""
+    content: str = ""
+    # final：子卡带不能替换 / 删除（仍可 append / prepend 扩展）；abstract：子卡带必须实现
+    final: bool = False
+    abstract: bool = False
+    # 该区块的来源，如 "default_planner" 或 "default_planner + laotuo_xxx(append)"，供 --resolve 查看
+    origin: str = ""
+
+
 class SkillCard(BaseModel):
     skill_id: str
     name: str
@@ -48,9 +64,16 @@ class SkillCard(BaseModel):
     # 适用类目 category_id 列表；为空表示通用卡带（适用所有类目）。类目专属卡带只在对应类目下出现并优先选中
     categories: list[str] = Field(default_factory=list)
     source_url: str = ""
+    # 继承：父卡带的 skill_id（同一卡槽）。子卡带获得父卡带全部区块，可按区块 id 替换 / 追加 / 删除
+    extends: str | None = None
+    # 抽象卡带只供继承，不出现在界面下拉框、不能直接运行
+    abstract: bool = False
     slot: SkillSlot
     body: str
     source_path: Path | None = None
+    # 继承解析后的区块列表与继承链（[根卡带, ..., 本卡带]），由加载器填充
+    blocks: list[SkillBlock] = Field(default_factory=list)
+    inheritance_chain: list[str] = Field(default_factory=list)
     # 加载时读入的附属指南全文：{相对路径: 内容}
     reference_texts: dict[str, str] = Field(default_factory=dict)
     # 附属指南的实际文件（Pro 卡带可复用开源卡槽 references/ 下的同名指南，所以不一定在卡带同目录）
@@ -65,6 +88,13 @@ class SkillCard(BaseModel):
     def _check_id(cls, v: str) -> str:
         if not _SKILL_ID_PATTERN.match(v):
             raise ValueError(f"skill_id 只能包含小写字母、数字、下划线：{v!r}")
+        return v
+
+    @field_validator("extends")
+    @classmethod
+    def _check_extends(cls, v: str | None) -> str | None:
+        if v is not None and not _SKILL_ID_PATTERN.match(v):
+            raise ValueError(f"extends 必须是合法的 skill_id：{v!r}")
         return v
 
     def applies_to(self, category_id: str | None) -> bool:

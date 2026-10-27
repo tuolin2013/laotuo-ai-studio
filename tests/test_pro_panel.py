@@ -62,3 +62,14 @@ def test_commercial_copy_has_three_tiers_and_contact_placeholders():
         assert tier in COMMERCIAL_MD
     assert "微信" in COMMERCIAL_MD and "邮箱" in COMMERCIAL_MD and "公众号" in COMMERCIAL_MD
     assert "老庹 AI 工作室" in COMMERCIAL_MD and "老拓" not in COMMERCIAL_MD
+
+
+def test_status_shows_inheritance_chain_and_changed_blocks(skills_copy):
+    pro = skills_copy.with_name("skills_pro") / "ecommerce_planner"
+    pro.mkdir(parents=True)
+    (pro / "child.md").write_text(
+        "---\nskill_id: pro_child_planner\nname: 继承版行业包\nextends: default_planner\n---\n"
+        "# 角色 {#role}\n\n行业角色\n\n# {#anti_duplicate remove}\n", encoding="utf-8")
+    md = skill_status_md(SkillRegistry(skills_copy), SLOT_LABELS)
+    assert "[👑 Pro] 继承版行业包（电商策划）" in md
+    assert "  - 继承：default_planner" in md and "  - 改写：角色" in md and "  - 删除：防雷同规则" in md

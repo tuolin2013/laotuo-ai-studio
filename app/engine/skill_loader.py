@@ -2,6 +2,9 @@
 
 同时扫描可选的本地 Pro 卡带包 config/skills_pro/{slot}/*.md（付费发放、不入开源仓库），目录存在才加载，
 界面上名称前标记「[👑 Pro]」。
+
+卡带可以用 `extends:` 继承同卡槽的另一张卡带（区块语法见 app/engine/skill_inherit.py）。
+查看展开后的最终提示词：python -m app.engine.skill_loader --resolve <skill_id>
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ import yaml
 from pydantic import ValidationError
 
 from app.engine.config_loader import CONFIG_DIR
+from app.engine.skill_inherit import PREAMBLE, block_changes, resolve_slot
 from app.schemas.skill import SKILL_SLOTS, SkillCard, SkillSlot
 
 logger = logging.getLogger(__name__)
@@ -96,17 +100,23 @@ def _signature(path: Path, fallback_dir: Path | None = None) -> tuple[float, flo
 
 
 class SkillRegistry:
-    """线程安全的 Skill 注册表。refresh() 只重新解析修改过的文件。
+    """线程安全的 Skill 注册表。refresh() 只重新解析修改过的文件，然后重新展开继承关系。
 
     pro_dir 默认为 skills_dir 同级的 skills_pro/；目录不存在时只加载开源卡带。
+    继承规则见 app/engine/skill_inherit.py：开源卡带不能继承 Pro 卡带；抽象卡带（abstract: true）
+    只供继承，不出现在 list() / choices() 中。
     """
 
     def __init__(self, skills_dir: Path = SKILLS_DIR, pro_dir: Path | None = None):
         self.skills_dir = Path(skills_dir)
         self.pro_dir = Path(pro_dir) if pro_dir is not None else self.skills_dir.with_name(PRO_DIR_NAME)
+        # 原始卡带（未展开继承，按文件 mtime 缓存）与展开后的卡带
+        self._raw: dict[SkillSlot, dict[str, SkillCard]] = {s: {} for s in SKILL_SLOTS}
         self._cards: dict[SkillSlot, dict[str, SkillCard]] = {s: {} for s in SKILL_SLOTS}
+        self._abstract: dict[SkillSlot, dict[str, SkillCard]] = {s: {} for s in SKILL_SLOTS}
         self._mtimes: dict[Path, tuple[float, float]] = {}
         self._overrides: dict[tuple[SkillSlot, str], str] = {}
+        self._inherit_errors: set[Path] = set()
         self.errors: dict[Path, str] = {}
         self._lock = threading.RLock()
         self.refresh()
@@ -116,7 +126,7 @@ class SkillRegistry:
         with self._lock:
             seen: set[Path] = set()
             changed = False
-            new_cards: dict[SkillSlot, dict[str, SkillCard]] = {s: {} for s in SKILL_SLOTS}
+            new_raw: dict[SkillSlot, dict[str, SkillCard]] = {s: {} for s in SKILL_SLOTS}
             roots = [(self.skills_dir, False)]
             if self.pro_dir.is_dir():
                 roots.append((self.pro_dir, True))
@@ -144,24 +154,59 @@ class SkillRegistry:
                                 logger.warning("跳过无法解析的 Skill：%s", e)
                                 continue
                             self.errors.pop(path, None)
-                        if card.skill_id in new_cards[slot]:
-                            other = new_cards[slot][card.skill_id].source_path
+                        if card.skill_id in new_raw[slot]:
+                            other = new_raw[slot][card.skill_id].source_path
                             self.errors[path] = f"{path.name}：skill_id {card.skill_id!r} 与 {other.name} 重复"
                             continue
-                        new_cards[slot][card.skill_id] = card
+                        new_raw[slot][card.skill_id] = card
             removed = set(self._mtimes) - seen
             for path in removed:
                 self._mtimes.pop(path, None)
                 self.errors.pop(path, None)
                 changed = True
-            self._cards = new_cards
+            self._raw = new_raw
+            self._resolve_all()
             return changed
 
+    def _resolve_all(self) -> None:
+        """展开所有卡带的继承关系；失败的卡带（及其子卡带）记入 errors 并跳过。
+
+        每次 refresh() 都整体重新展开（只有解析 .md 按 mtime 缓存），所以父卡带改动后子卡带同步更新。
+        """
+        for path in self._inherit_errors:
+            self.errors.pop(path, None)
+        self._inherit_errors = set()
+        for slot in SKILL_SLOTS:
+            raw = self._raw[slot]
+            resolved, failed = resolve_slot(raw)
+            for sid, reason in failed.items():
+                path = raw[sid].source_path
+                self.errors[path] = f"{path.name}：{reason}"
+                self._inherit_errors.add(path)
+                logger.warning("跳过继承关系无效的 Skill：%s", self.errors[path])
+            self._cards[slot] = {k: v for k, v in resolved.items() if not v.abstract}
+            self._abstract[slot] = {k: v for k, v in resolved.items() if v.abstract}
+
     def _find_cached(self, slot: SkillSlot, path: Path) -> SkillCard | None:
-        for card in self._cards[slot].values():
+        for card in self._raw[slot].values():
             if card.source_path == path:
                 return card
         return None
+
+    def resolved(self, skill_id: str, slot: SkillSlot | None = None) -> SkillCard:
+        """按 skill_id 查找展开后的卡带（含抽象卡带），供 --resolve 与 Pro 面板查看；slot 为 None 时查所有卡槽。"""
+        with self._lock:
+            for s in (slot,) if slot else SKILL_SLOTS:
+                for pool in (self._cards[s], self._abstract[s]):
+                    if skill_id in pool:
+                        return pool[skill_id]
+        raise KeyError(f"找不到 Skill：{skill_id}")
+
+    def changes(self, card: SkillCard) -> dict[str, list[str]]:
+        """本卡带相对父卡带新增 / 改写 / 追加 / 删除了哪些区块；没有 extends 时为空。"""
+        if card.extends is None:
+            return {}
+        return block_changes(card, self.resolved(card.extends, card.slot))
 
     def list(self, slot: SkillSlot, category_id: str | None = None) -> list[SkillCard]:
         """按类目过滤：类目专属卡带 + 通用卡带；类目专属排最前，其次 default: true（界面下拉框默认选中）。
@@ -195,3 +240,43 @@ class SkillRegistry:
     def clear_override(self, slot: SkillSlot, skill_id: str) -> None:
         with self._lock:
             self._overrides.pop((slot, skill_id), None)
+
+
+def describe_resolution(card: SkillCard, changes: dict[str, list[str]] | None = None) -> str:
+    """继承链 + 每个区块的来源 + 本卡改动 + 最终正文（类似浏览器的"计算样式"）。"""
+    lines = [f"# 卡带：{card.skill_id}（{card.slot}）",
+             f"# 继承链：{' → '.join(card.inheritance_chain)}",
+             f"# 附属指南：{', '.join(card.references) or '无'}",
+             "# 区块来源："]
+    for b in card.blocks:
+        flags = "".join(f" [{f}]" for f in ("final", "abstract") if getattr(b, f))
+        title = "（正文开头）" if b.block_id == PREAMBLE else b.title
+        lines.append(f"#   {b.block_id:<20} ← {b.origin}{flags}  {title}")
+    for kind, titles in (changes or {}).items():
+        lines.append(f"# 本卡{kind}：{'、'.join(titles)}")
+    return "\n".join(lines) + "\n\n" + "=" * 80 + "\n\n" + card.body
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(description="查看 Skill 卡带展开继承后的最终提示词")
+    parser.add_argument("--resolve", metavar="SKILL_ID", help="展开指定卡带并标注每个区块的来源")
+    parser.add_argument("--check", action="store_true", help="列出所有加载错误（含继承错误）")
+    args = parser.parse_args(argv)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    reg = SkillRegistry()
+    if args.resolve:
+        card = reg.resolved(args.resolve)
+        print(describe_resolution(card, reg.changes(card)))
+    if args.check or not args.resolve:
+        for path, msg in reg.errors.items():
+            print(f"[错误] {path}: {msg}")
+        print(f"共 {len(reg.errors)} 个错误")
+    return 1 if reg.errors else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

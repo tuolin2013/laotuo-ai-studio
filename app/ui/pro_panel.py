@@ -8,7 +8,7 @@ from __future__ import annotations
 import gradio as gr
 
 from app.engine.skill_loader import SkillRegistry
-from app.schemas.skill import SKILL_SLOTS
+from app.schemas.skill import SKILL_SLOTS, SkillCard
 
 BADGE_LABEL = "👑 老庹 AI 工坊 · 定制行业专属卡带 / 商业版"
 # 商务联系方式：填入真实信息时，README.md「📬 商务合作」一节同步修改
@@ -40,7 +40,9 @@ def skill_status_md(skills: SkillRegistry, labels: dict[str, str]) -> str:
         n_pro += len(pro)
         label = labels.get(slot, slot)
         rows.append(f"| {label} | {len(cards) - len(pro)} | {len(pro) or '—'} |")
-        pro_lines += [f"- {c.display_name}（{label}）" for c in pro]
+        for c in pro:
+            pro_lines.append(f"- {c.display_name}（{label}）")
+            pro_lines += inheritance_lines(skills, c)
     table = "| 卡槽 | 🌱 开源 | 👑 Pro |\n|---|---|---|\n" + "\n".join(rows)
     if pro_lines:
         head = f"#### 卡带状态\n\n🌱 开源卡带 {n_open} 张　·　👑 Pro 卡带 {n_pro} 张（`config/skills_pro/`）"
@@ -53,6 +55,16 @@ def skill_status_md(skills: SkillRegistry, labels: dict[str, str]) -> str:
     if errors:
         detail += "\n\n" + "\n".join(f"- ⚠️ 无法加载：{e}" for e in errors)
     return f"{head}\n\n{table}\n\n{detail}"
+
+
+def inheritance_lines(skills: SkillRegistry, card: SkillCard) -> list[str]:
+    """继承了别的卡带时：继承链 + 本卡改写 / 删除 / 新增 / 追加了哪些区块（缩进的子列表）。"""
+    if card.extends is None:
+        return []
+    lines = [f"  - 继承：{' → '.join(card.inheritance_chain[:-1])}"]
+    for kind, titles in skills.changes(card).items():
+        lines.append(f"  - {kind}：{'、'.join(t.split('（')[0] for t in titles)}")
+    return lines
 
 
 def panel_updates(open_now: bool, skills: SkillRegistry, labels: dict[str, str]) -> tuple:

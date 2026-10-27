@@ -132,6 +132,35 @@ references: [references/guide.md]    # 选填，附属指南，加载时自动�
 - 界面「🔌 插卡式 Skill 管理与在线微调」可预览正文，并临时覆盖当前会话的指令，覆盖内容不写回文件。
 - 附属指南只允许放在卡带同目录的 `references/` 下，单文件不超过 200KB。
 
+### 🧬 卡带继承
+
+行业卡带不必把通用规则整份复制一遍，可以继承同卡槽的另一张卡带，只写不一样的部分：
+
+```markdown
+---
+skill_id: my_tea_planner
+name: 我的茶叶策划
+extends: default_planner         # 继承默认策划卡带的全部区块
+categories: [zhangjiajie_berry_tea]
+---
+# 角色 {#role}
+……整块替换父卡带的「角色」……
+
+# 合规红线 {#compliance after=task}
+……新增区块，插在「本次任务」之后……
+
+# {#copywriting append}
+……追加到父卡带「文案规则」末尾……
+
+# {#anti_duplicate remove}
+```
+
+- 区块用一级标题尾标 `{#区块id}` 标出，发给模型前会去掉标记。`default_planner` 的区块：`role`、`task`、`planning_rhythm`、`generation_mode`、`anti_duplicate`、`visual_system`、`copywriting`、`output_format`、`self_check`。
+- 标为 `final` 的区块（`task`、`output_format`）只能追加不能替换，保证所有策划卡带输出同一种 JSON。
+- `variables`、`references` 自动合并；`categories`、`default` 不继承。
+- 只能继承同一卡槽的卡带，最多 3 层；开源卡带不能继承 Pro 卡带。
+- 查看展开后的完整提示词和每个区块的来源：`python -m app.engine.skill_loader --resolve my_tea_planner`。
+
 ### 👑 Pro 卡带包
 
 `config/skills_pro/` 是商业 Pro 卡带包的安装位置，目录结构与 `config/skills/` 相同（`{卡槽}/*.md`，可带 `references/`）。
