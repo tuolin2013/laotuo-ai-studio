@@ -21,11 +21,14 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from app.engine.motion.compose import paste, with_opacity
 from app.engine.motion.easing import EASE_OUT, progress
+from app.providers.demo.fonts import ttc_index
 
 _FONT_FILES: dict[tuple[str, str], list[str]] = {
     ("sans", "light"): ["C:/Windows/Fonts/msyhl.ttc", "C:/Windows/Fonts/Dengl.ttf",
                         "/System/Library/Fonts/PingFang.ttc",
-                        "/usr/share/fonts/opentype/noto/NotoSansCJK-Light.ttc"],
+                        "/usr/share/fonts/opentype/noto/NotoSansCJK-Light.ttc",
+                        # Debian / Ubuntu 的 fonts-noto-cjk 不带 Light，退回 Regular（不退回 Bold）
+                        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"],
     ("sans", "regular"): ["C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/Deng.ttf",
                           "/System/Library/Fonts/PingFang.ttc",
                           "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
@@ -46,6 +49,7 @@ _FONT_FILES: dict[tuple[str, str], list[str]] = {
     ("numeric", "regular"): ["C:/Windows/Fonts/bahnschrift.ttf"],
 }
 _VARIATION = {"bold": b"SemiBold", "regular": b"Regular", "light": b"Light"}
+# Noto CJK 的 .ttc 里第 0 个字形是日文（JP），简体中文（SC）是第 2 个：不指定时 Linux 上会用日文字形
 # 渲染是多线程逐帧进行的：同一个 FreeType 字体对象不能被两个线程同时用来画字
 TEXT_LOCK = threading.Lock()
 # 不能出现在行首的标点
@@ -60,7 +64,7 @@ def font(size: int, weight: str = "bold", kind: str = "sans") -> ImageFont.FreeT
         for path in _FONT_FILES.get((k, w), []):
             if not Path(path).exists():
                 continue
-            f = ImageFont.truetype(path, size)
+            f = ImageFont.truetype(path, size, index=ttc_index(path))
             if k == "numeric":
                 with contextlib.suppress(OSError, ValueError, AttributeError):
                     f.set_variation_by_name(_VARIATION.get(w, b"Regular"))

@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.engine.runtime import EngineRuntime
 from app.schemas.common import MODE_REFERENCE_RANGE, PlanStateError, PlanValidationError
@@ -17,6 +17,9 @@ from app.schemas.editable import ReferenceRequirement
 from app.schemas.plan import AESTHETIC_STYLE_NAMES, COMPOSITION_MODE_NAMES, ImagePlan, ImageSlot, design_code
 from app.schemas.project import Project
 from app.schemas.video import StoryboardShot, VideoScript
+
+if TYPE_CHECKING:
+    from app.engine.public_demo import PublicDemo
 
 MODE_CHOICES = ["text_to_image", "single_image_edit", "multi_image_fusion"]
 AUDIO_CHOICES = ["native_dialogue", "ambient_sfx", "dialogue_and_ambient", "silent"]
@@ -53,13 +56,24 @@ class Workspace:
         self.rt = rt
         self._projects: dict[str, Project] = {}
         self._locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        # 公共免 Key 在线演示（LAOTUO_PUBLIC_DEMO=1）时由 build_app 设置，见 app/engine/public_demo.py
+        self.public: PublicDemo | None = None
 
     def get(self, project_id: str | None) -> Project:
         if not project_id:
             raise UIError("请先在顶部「项目」区新建或加载一个项目")
         if project_id not in self._projects:
-            self._projects[project_id] = self.rt.store.load(project_id)
+            try:
+                self._projects[project_id] = self.rt.store.load(project_id)
+            except FileNotFoundError as e:
+                raise UIError("找不到这个项目，可能已被删除（公共在线演示里超过 1 小时没有操作的项目会自动清理），"
+                              "请刷新页面或新建项目") from e
         return self._projects[project_id]
+
+    def forget(self, project_id: str) -> None:
+        """项目目录被删除后（公共演示的过期清理）丢掉内存缓存。"""
+        self._projects.pop(project_id, None)
+        self._locks.pop(project_id, None)
 
     def put(self, project: Project) -> Project:
         self._projects[project.project_id] = project
@@ -72,6 +86,8 @@ class Workspace:
         return self._locks[project_id]
 
     def project_choices(self) -> list[tuple[str, str]]:
+        if self.public is not None:
+            return []  # 公共在线演示：访客之间互相看不到项目
         out = []
         for p in self.rt.store.list_projects():
             cat = self.rt.categories.get(p.category_id)

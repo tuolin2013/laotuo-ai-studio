@@ -15,6 +15,10 @@
 
 [快速启动](#-3-分钟快速启动) · [插卡式架构](#-任天堂插卡式-skill-架构) · [商业版与定制](#-商业版本与定制服务) · [商务合作](#-商务合作)
 
+[![🎬 官方宣传片（1080P，62 秒）](deploy/vercel-landing/promo-poster.jpg)](deploy/vercel-landing/promo.mp4)
+
+🎬 官方宣传片（1080P，62 秒，8.7MB）：点图片打开视频文件，再点「View raw」下载观看
+
 </div>
 
 选好类目和平台、填好商品信息，在一个本地 Web 界面里产出五类素材：
@@ -207,6 +211,12 @@ cp .env.example .env          # 不填任何 Key 也能启动（演示模式）
 - 演示模式不联网调用任何付费接口，不消耗额度。
 
 体验满意后，再按[配置说明](#配置说明)填入 Key，切换到真实生成。
+
+### 部署一个免 Key 公共在线演示
+
+`LAOTUO_PUBLIC_DEMO=1` 启动即为公共演示模式：一律走演示、不读取任何 Key、不显示 API 配置，每位访客打开页面自动得到一份张家界莓茶示例项目（主图 4 张 + 详情页 4 屏），直接点「🎬 AI 编排动效方案」→「⚡ 快速预览」就能走完动效广告全流程；单条动效最长 30 秒，1 小时没有操作的项目自动清理。
+
+后端推荐跑在 Modal 的 CPU 容器上（闲置 5 分钟自动缩到 0，按秒计费），一条 `modal deploy` 得到 HTTPS 网址；部署脚本属于自有部署脚本，不在开源仓库里，备用方案是 [`deploy/hf_space/`](deploy/hf_space/) 的 Hugging Face Space Dockerfile（含 ffmpeg 与思源中文字体，新建 Docker Space 需要 HF PRO）。门面页 [`deploy/vercel-landing/`](deploy/vercel-landing/) 是 Vercel 纯静态页（宣传片 + 内嵌在线体验）。上线步骤见 [deploy/README_FREE_DEMO.md](deploy/README_FREE_DEMO.md)。
 
 ## 💼 商业版本与定制服务
 
@@ -491,7 +501,7 @@ flowchart LR
 
 - `.env` 与 `.env.*`（`.env.example` 除外）已被 `.gitignore` 忽略，请勿提交。日志与诊断结果中的 Key 均已打码。
 - `modal/`（自有 GPU 部署脚本）、`config/skills_pro/`（Pro 卡带包）、`workspace/`（项目素材）同样不入库。
-- 界面默认只监听 `127.0.0.1`，且没有登录鉴权。如果把 `GRADIO_SERVER_NAME` 改为 `0.0.0.0`，同一网络内任何人都能访问界面并使用你的 Key。
+- 界面默认只监听 `127.0.0.1`，且没有登录鉴权。如果把 `GRADIO_SERVER_NAME` 改为 `0.0.0.0`，同一网络内任何人都能访问界面并使用你的 Key。要公开给别人体验，请用 `LAOTUO_PUBLIC_DEMO=1` 公共演示模式（不读取任何 Key），不要把填了 Key 的实例放到公网。
 - 开启了系统代理（如 `127.0.0.1:7890`）时，启动程序会自动把本机地址加入 `NO_PROXY`，避免 Gradio 自检返回 502。
 - 合规检查基于关键词匹配，只作提示，不构成法律意见。AI 生成的文案与画面在发布前请人工审核。
 

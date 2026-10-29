@@ -1,7 +1,8 @@
 """一键同步公开仓库与私人全量备份仓库。
 
 公开仓库 origin 的 main 只放开源底座；私人仓库 private 的 main 在同一份代码之上，
-再多备份公开仓 .gitignore 屏蔽的私有目录（PRIVATE_DIRS：modal/、config/skills_pro/、tests/pro/、promo-film/）。
+再多备份公开仓 .gitignore 屏蔽的私有目录（PRIVATE_DIRS：modal/、config/skills_pro/、tests/pro/、promo-film/）
+与私有文件（PRIVATE_FILES：config/categories/pet_herbal_otc.json）。
 
 用法（项目根目录，Windows Git Bash）：
     .venv/Scripts/python scripts/sync_private_backup.py                 # 公开仓 + 私人全量备份
@@ -17,7 +18,7 @@
 - 提交前检查，任何一项命中都中止、不推送：.env / .env.*（.env.example 除外）、.venv / __pycache__ /
   node_modules / workspace 等缓存产物、.env 与 ~/.modal.toml 中密钥的原文、常见 Key 格式。
 - 安装 .git/hooks/pre-push：任何 git push（包括在 VS Code 里点推送）发出前都做同样的检查，
-  并且私有目录只允许推到 private 远端，推到公开仓 origin 一律拦截。
+  并且私有目录与私有文件只允许推到 private 远端，推到公开仓 origin 一律拦截。
 - 访问 github.com 时，本机代理 127.0.0.1:7890 能连上就走代理（环境变量 LAOTUO_GIT_PROXY 可改，写 off 关闭）。
 """
 
@@ -51,6 +52,10 @@ PRIVATE_DIRS = {
     "config/skills_pro": "商业 Pro 卡带包",
     "tests/pro": "依赖 Pro 卡带的测试",
     "promo-film": "宣传片生成脚本",
+}
+# 公开仓 .gitignore 屏蔽、只进私人仓的单个文件
+PRIVATE_FILES = {
+    "config/categories/pet_herbal_otc.json": "本机自用的类目配置",
 }
 # 私有目录里也不备份的子目录：宣传片渲染输出体积大，可以随时重新生成
 SKIP_SUBDIRS = {"promo-film/out"}
@@ -197,6 +202,8 @@ def path_problem(path: str, *, allow_private: bool) -> str | None:
         return "运行产物"
     if not allow_private and any(path.startswith(d + "/") for d in PRIVATE_DIRS):
         return "私有目录"
+    if not allow_private and path in PRIVATE_FILES:
+        return "私有文件"
     return None
 
 
@@ -272,6 +279,14 @@ def collect_private_files(root: Path) -> tuple[list[str], list[str]]:
                     skipped.append(f"{path}（超过 50MB）")
                 else:
                     files.append(path)
+    for path in PRIVATE_FILES:
+        full = root / path
+        if not full.is_file() or full.is_symlink():
+            continue
+        if full.stat().st_size > MAX_FILE_BYTES:
+            skipped.append(f"{path}（超过 50MB）")
+        else:
+            files.append(path)
     return files, skipped
 
 
@@ -292,14 +307,15 @@ def build_tree(root: Path, base: str, files: list[str]) -> str:
 
 def private_counts(files: list[str]) -> list[str]:
     counts = {d: sum(f.startswith(d + "/") for f in files) for d in PRIVATE_DIRS}
-    return [f"{d}/：{n} 个文件（{PRIVATE_DIRS[d]}）" for d, n in counts.items() if n]
+    lines = [f"{d}/：{n} 个文件（{PRIVATE_DIRS[d]}）" for d, n in counts.items() if n]
+    return lines + [f"{f}（{PRIVATE_FILES[f]}）" for f in PRIVATE_FILES if f in files]
 
 
 def backup_message(master: str, files: list[str]) -> str:
     lines = [
         f"backup: 私人全量备份 {datetime.now():%Y-%m-%d %H:%M}（公开代码 {PUBLIC_BRANCH} {master[:7]}）",
         "",
-        "在公开代码之上多备份的私有目录：",
+        "在公开代码之上多备份的私有目录与文件：",
     ]
     lines += [f"- {c}" for c in private_counts(files)] or ["- （无）"]
     return "\n".join(lines) + "\n"
@@ -347,8 +363,9 @@ def pre_push(root: Path, remote: str, url: str, lines: Iterable[str]) -> int:
         return 0
     where = f"私人仓库 {remote}" if allow_private else f"{remote}（它不是私人仓库 {PRIVATE_REMOTE}）"
     print(f"\n[pre-push] 已拦截推送到 {where}，以下文件不能上传：\n{_bullets(problems)}", file=sys.stderr)
-    if not allow_private and any("（私有目录）" in p for p in problems):
-        print("[pre-push] 私有目录只能用 python scripts/sync_private_backup.py 备份到私人仓库。", file=sys.stderr)
+    if not allow_private and any(p.endswith(("（私有目录）", "（私有文件）")) for p in problems):
+        print("[pre-push] 私有目录与私有文件只能用 python scripts/sync_private_backup.py 备份到私人仓库。",
+              file=sys.stderr)
     return 1
 
 
@@ -359,9 +376,11 @@ def _warn_local_state(root: Path) -> None:
     dirty = [line for line in _text(git(root, "status", "--porcelain").stdout).splitlines() if line]
     if dirty:
         print(f"提示：有 {len(dirty)} 个文件改动还没提交，这次的公开代码部分只包含已提交的版本。")
-    probe = [d for d in PRIVATE_DIRS if git(root, "check-ignore", "-q", "--no-index", f"{d}/x", check=False).returncode]
+    paths = [*(f"{d}/x" for d in PRIVATE_DIRS), *PRIVATE_FILES]
+    probe = [p.removesuffix("x") if p.endswith("/x") else p for p in paths
+             if git(root, "check-ignore", "-q", "--no-index", p, check=False).returncode]
     if probe:
-        print(f"警告：.gitignore 没有屏蔽 {'、'.join(d + '/' for d in probe)}，git add 时可能被误加进公开代码"
+        print(f"警告：.gitignore 没有屏蔽 {'、'.join(probe)}，git add 时可能被误加进公开代码"
               "（推送时 pre-push 检查仍会拦截）。")
 
 
@@ -440,7 +459,7 @@ def sync(root: Path, *, public: bool = True, dry_run: bool = False) -> None:
     problems = find_problems(root, [tree], allow_private=True)
     if problems:
         raise SyncError(f"备份内容里有不能上传的文件，已中止，什么都没推送：\n{_bullets(problems)}")
-    print(f"比公开仓多备份：\n{_bullets(private_counts(files) or ['（磁盘上没有私有目录）'])}")
+    print(f"比公开仓多备份：\n{_bullets(private_counts(files) or ['（磁盘上没有私有目录和私有文件）'])}")
     if skipped:
         print(f"跳过：\n{_bullets(skipped)}")
     if dry_run:

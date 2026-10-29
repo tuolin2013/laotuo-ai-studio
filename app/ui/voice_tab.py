@@ -215,6 +215,9 @@ def mix_md(st: VoiceStudio | None, workspace_root: Path) -> str:
 def build_voice_tab(ws: Workspace, header: Header) -> None:
     rt = ws.rt
     engine = VoiceEngine(rt)
+    # 公共免 Key 在线演示：音色库是所有项目共用的，访客之间会互相看到（甚至是克隆的真人声音），所以不提供
+    public = ws.public is not None
+    mode_choices = [c for c in MODE_CHOICES if c[1] != "library"] if public else MODE_CHOICES
 
     with gr.Row(elem_classes=["workbench"]):
         with gr.Column(scale=7):
@@ -259,7 +262,7 @@ def build_voice_tab(ws: Workspace, header: Header) -> None:
             # ========================================================== Step 2：音色
             with gr.Column(elem_classes=["step-card"]):
                 step_header(2, "音色：声音设计 / 声音克隆 / 音色库")
-                mode = gr.Radio(MODE_CHOICES, value="design", label="音色来源")
+                mode = gr.Radio(mode_choices, value="design", label="音色来源")
                 with gr.Column(visible=True) as design_box, gr.Row():
                     preset = gr.Dropdown(list(VOICE_PRESETS), value=None, label="快速预设", scale=1)
                     description = gr.Textbox(
@@ -300,8 +303,9 @@ def build_voice_tab(ws: Workspace, header: Header) -> None:
                 preview_audio = gr.Audio(label="试听结果", type="filepath", interactive=False)
                 with gr.Row():
                     lock_btn = gr.Button("🔒 锁定这个音色（声音设计）", scale=2)
-                    lib_name = gr.Textbox(label="存入音色库的名称", placeholder="例如：莓茶大叔", max_lines=1, scale=2)
-                    lib_save_btn = gr.Button("📚 存入音色库", scale=1)
+                    lib_name = gr.Textbox(label="存入音色库的名称", placeholder="例如：莓茶大叔", max_lines=1, scale=2,
+                                          visible=not public)
+                    lib_save_btn = gr.Button("📚 存入音色库", scale=1, visible=not public)
 
             # ========================================================== Step 3：逐段生成
             with gr.Column(elem_classes=["step-card"]):
@@ -381,7 +385,7 @@ def build_voice_tab(ws: Workspace, header: Header) -> None:
         cat = rt.category(p.category_id) if p else None
         plat = rt.platform(p.platform_id) if p else None
         # 音色库
-        profiles = engine.library.list()
+        profiles = [] if public else engine.library.list()
         lib_ch = [(f"{x.name}（{x.kind_label} · {x.sample_seconds:.0f} 秒）", x.voice_id) for x in profiles]
         lib_ids = [c[1] for c in lib_ch]
         lib_val = st.source.voice_id if st and st.source.voice_id in lib_ids else (lib_ids[0] if lib_ids else None)
@@ -723,9 +727,13 @@ def build_voice_tab(ws: Workspace, header: Header) -> None:
 
     lock_btn.click(do_lock, [header.project_id, *src_inputs, logs], [logs, *refresh_outputs], api_name="voice_lock")
 
+    no_library = UIError("公共在线演示不提供音色库（所有访客共用，会互相看到）：音色只保存在你自己的项目里")
+
     async def do_lib_save(pid, name, *vals):
         src_vals, prev = vals[:7], vals[7]
         try:
+            if public:
+                raise no_library
             p = require_project(ws, pid)
             async with ws.lock(pid):
                 _apply_source(engine.studio(p), *src_vals)
@@ -742,6 +750,8 @@ def build_voice_tab(ws: Workspace, header: Header) -> None:
 
     async def do_lib_delete(pid, voice_id, prev):
         try:
+            if public:
+                raise no_library
             if not voice_id:
                 raise UIError("请先选择要删除的音色")
             gone = engine.library.delete(voice_id)

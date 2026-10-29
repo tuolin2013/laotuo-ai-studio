@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 
 import gradio as gr
@@ -62,6 +63,8 @@ def collect_info(ws: Workspace, category_id: str, values: tuple) -> dict[str, st
 
 def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
     rt = ws.rt
+    # 公共免 Key 在线演示：不显示 API 配置、历史项目，不允许修改卡带指令；打开页面自动得到一份示例项目
+    public = ws.public is not None
     cat_choices = [(c.name, cid) for cid, c in rt.categories.items()]
     plat_choices = [(p.name, pid) for pid, p in rt.platforms.items()]
     default_cat = "zhangjiajie_berry_tea" if "zhangjiajie_berry_tea" in rt.categories else cat_choices[0][1]
@@ -83,11 +86,12 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
             with gr.Row(elem_classes=["toolbar-row"]):
                 project_name = gr.Textbox(label="项目名称", placeholder="例如：莓茶中秋大促", max_lines=1, scale=2)
                 new_btn = gr.Button("➕ 新建项目", variant="primary", scale=0, min_width=148)
-            with gr.Row(elem_classes=["toolbar-row"]):
+            with gr.Row(elem_classes=["toolbar-row"], visible=not public):
                 history = gr.Dropdown(choices=ws.project_choices(), label="历史项目", scale=3)
                 refresh_hist = gr.Button("🔄", scale=0, min_width=44)
                 load_btn = gr.Button("📂 加载", scale=0, min_width=96)
             project_info = gr.Markdown(
+                "⏳ 正在为你准备示例项目（张家界莓茶示例主图与详情页）…" if public else
                 "👉 请先 **新建项目** 或 **加载历史项目**，所有内容会自动保存到 workspace/projects/",
                 elem_classes=["project-info"])
         with (gr.Column(scale=7, min_width=360),
@@ -118,13 +122,154 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
             rescan = gr.Button("🔄 重新扫描本地 .md 卡带")
             preview_slot = gr.Radio([(SLOT_LABELS[s], s) for s in SKILL_SLOTS], value="ecommerce_planner",
                                     label="预览 / 微调哪个卡槽")
-        skill_body = gr.Code(language="markdown", lines=16, label="当前 Skill 指令（可临时修改，不写回 .md 文件）")
-        with gr.Row():
+        skill_body = gr.Code(language="markdown", lines=16, interactive=not public,
+                             label="当前 Skill 指令（公共在线演示只能查看）" if public else
+                             "当前 Skill 指令（可临时修改，不写回 .md 文件）")
+        with gr.Row(visible=not public):
             apply_override = gr.Button("✍️ 应用临时覆盖")
             reset_override = gr.Button("↩️ 恢复原始指令")
         skill_status = gr.Markdown()
 
-    # ---------------- API 配置
+    if not public:
+        _build_api_panel(rt, config_row, mode_status)
+
+    # ================= 事件
+    def on_category(cid, *vals):
+        return [*_field_updates(ws, cid), "✅ 合规检查：未发现广告法 / 类目违禁词"]
+
+    def on_platform(pid):
+        p = rt.platform(pid)
+        w = "、".join(f"{k} {v:.0%}" for k, v in p.visual_style_weights.items())
+        return (f"**{p.name}**：主图默认 {p.main_image.default_count} 张（{p.main_image.default_aspect_ratio}），"
+                f"详情页默认 {p.detail_page.default_screens} 屏；视觉权重：{w}")
+
+    def on_info_change(cid, pid, *vals):
+        fields = rt.category(cid).product_form_fields
+        texts = {fields[i].label: v for i, v in enumerate(vals) if i < len(fields) and v}
+        return compliance_report(texts, rt.category(cid), rt.platform(pid))
+
+    category.change(on_category, [category, *info_fields], [*info_fields, compliance])
+    platform.change(on_platform, platform, platform_hint)
+    for f in info_fields:
+        f.change(on_info_change, [category, platform, *info_fields], compliance, show_progress="hidden")
+
+    def on_new(name, cid, pid, *vals):
+        if public:
+            ws.public.cleanup()  # 公共演示：新建前先清理过期 / 超出上限的访客项目
+        p = ws.put(create_project(rt, name, cid, pid, collect_info(ws, cid, vals)))
+        hist = gr.skip() if public else gr.update(choices=ws.project_choices(), value=p.project_id)
+        return p.project_id, _project_md(ws, p), hist
+
+    new_btn.click(on_new, [project_name, category, platform, *info_fields], [project_id, project_info, history],
+                  api_name="new_project")
+    refresh_hist.click(lambda: gr.update(choices=ws.project_choices()), None, history)
+
+    def on_load(pid):
+        if public:
+            raise gr.Error("公共在线演示不提供历史项目：每位访客打开页面时自动得到一份自己的示例项目")
+        if not pid:
+            raise gr.Error("请先在下拉框选择一个历史项目")
+        ws._projects.pop(pid, None)
+        p = ws.get(pid)
+        return (p.project_id, _project_md(ws, p), gr.update(value=p.category_id), gr.update(value=p.platform_id),
+                p.name)
+
+    def fill_info(pid):
+        p = ws.get(pid)
+        return _field_updates(ws, p.category_id, p.product_info)
+
+    load_evt = load_btn.click(on_load, history, [project_id, project_info, category, platform, project_name])
+    # 加载后回填商品信息（等类目 change 完成后再填）
+    load_evt = load_evt.then(fill_info, project_id, info_fields)
+
+    # 商品信息变化时同步到当前项目
+    def sync_info(pid, cid, pfid, *vals):
+        if not pid:
+            return
+        p = ws.get(pid)
+        p.product_info = collect_info(ws, cid, vals)
+        p.category_id, p.platform_id = cid, pfid
+        ws.save(p)
+
+    sync_inputs = [project_id, category, platform, *info_fields]
+    for f in info_fields:
+        f.blur(sync_info, sync_inputs, None)
+    category.change(sync_info, sync_inputs, None)
+    platform.change(sync_info, sync_inputs, None)
+
+    # Skill 管理
+    def show_skill(slot, *ids):
+        sid = dict(zip(SKILL_SLOTS, ids, strict=True))[slot]
+        return rt.skills.get(slot, sid).body if sid else ""
+
+    def _skill_updates(cid, ids, keep_current: bool) -> list:
+        """按类目刷新各卡槽下拉框：类目专属卡带优先；keep_current 时尽量保留当前选择。"""
+        ups = []
+        for slot, cur in zip(SKILL_SLOTS, ids, strict=True):
+            ch = rt.skills.choices(slot, cid)
+            vals = [c[1] for c in ch]
+            keep = keep_current and cur in vals
+            ups.append(gr.update(choices=ch, value=cur if keep else (vals[0] if vals else None)))
+        return ups
+
+    def do_rescan(cid, *ids):
+        rt.skills.refresh()
+        ups = _skill_updates(cid, ids, keep_current=True)
+        errs = "\n".join(f"- ⚠️ {e}" for e in rt.skills.errors.values())
+        total = sum(len(rt.skills.list(s)) for s in SKILL_SLOTS)
+        return [*ups, f"✅ 已扫描到 {total} 张卡带" + (f"\n{errs}" if errs else "")]
+
+    # 临时覆盖对所有访客生效（同一个注册表），公共在线演示不允许修改
+    no_override = "⚠️ 公共在线演示不能修改卡带指令（所有访客共用同一套卡带），可以下载源码在本机修改"
+
+    def do_apply(slot, body, *ids):
+        if public:
+            return no_override
+        sid = dict(zip(SKILL_SLOTS, ids, strict=True))[slot]
+        rt.skills.set_override(slot, sid, body)
+        return f"✅ 已对「{sid}」应用临时覆盖（本次运行有效）"
+
+    def do_reset(slot, *ids):
+        sid = dict(zip(SKILL_SLOTS, ids, strict=True))[slot]
+        if public:
+            return gr.skip(), no_override
+        rt.skills.clear_override(slot, sid)
+        return rt.skills.get(slot, sid).body, "↩️ 已恢复原始指令"
+
+    dd = list(skill_dropdowns.values())
+    preview_slot.change(show_skill, [preview_slot, *dd], skill_body)
+    for d in dd:
+        d.change(show_skill, [preview_slot, *dd], skill_body)
+    rescan.click(do_rescan, [category, *dd], [*dd, skill_status])
+    # 切换类目时自动切换到该类目的专属卡带（没有专属卡带则用通用卡带）
+    category.change(lambda cid, *ids: _skill_updates(cid, ids, keep_current=False), [category, *dd], dd)
+    apply_override.click(do_apply, [preview_slot, skill_body, *dd], skill_status)
+    reset_override.click(do_reset, [preview_slot, *dd], [skill_body, skill_status])
+
+    # 页面打开时初始化动态表单、平台提示与 Skill 预览
+    form_load = demo.load(on_category, [category, *info_fields], [*info_fields, compliance])
+    demo.load(on_platform, platform, platform_hint)
+    demo.load(lambda cid, *ids: _skill_updates(cid, ids, keep_current=True), [category, *dd], dd)
+    demo.load(show_skill, [preview_slot, *dd], skill_body)
+    demo.load(lambda: (rt.mode_summary(), gr.update(choices=ws.project_choices())), None, [mode_status, history])
+
+    if public:
+        async def on_visit():
+            """每位访客一份独立的示例项目（从样板复制，带示例主图与详情页）。样板与顶栏默认的类目 / 平台相同，
+            所以不改类目下拉框（改了会触发类目切换，把商品信息重置成占位示例）。"""
+            p = ws.put(await asyncio.to_thread(ws.public.new_visitor_project))
+            return p.project_id, _project_md(ws, p), p.name
+
+        # 等动态表单初始化完再回填示例商品信息，避免被占位示例覆盖
+        form_load.then(on_visit, None, [project_id, project_info, project_name], api_name="public_visit").then(
+            fill_info, project_id, info_fields)
+
+    return Header(project_id, project_info, category, platform, info_fields, skill_dropdowns, mode_status,
+                  load_evt)
+
+
+def _build_api_panel(rt, config_row: gr.Row, mode_status: gr.Markdown) -> None:
+    """「⚙️ API 密钥与接口配置」面板（写回 .env）。公共在线演示不创建：界面与接口都没有这些入口。"""
     s = rt.settings
     with config_row, gr.Accordion("⚙️ API 密钥与接口配置", open=False):
         gr.Markdown("Key 只保存在本机 `.env` 文件中。未填写的通道会自动使用 **演示模式**"
@@ -175,104 +320,7 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
             diag_btn = gr.Button("🩺 连通性诊断（不消耗画图额度）")
         save_status = gr.Markdown()
 
-    # ================= 事件
-    def on_category(cid, *vals):
-        return [*_field_updates(ws, cid), "✅ 合规检查：未发现广告法 / 类目违禁词"]
-
-    def on_platform(pid):
-        p = rt.platform(pid)
-        w = "、".join(f"{k} {v:.0%}" for k, v in p.visual_style_weights.items())
-        return (f"**{p.name}**：主图默认 {p.main_image.default_count} 张（{p.main_image.default_aspect_ratio}），"
-                f"详情页默认 {p.detail_page.default_screens} 屏；视觉权重：{w}")
-
-    def on_info_change(cid, pid, *vals):
-        fields = rt.category(cid).product_form_fields
-        texts = {fields[i].label: v for i, v in enumerate(vals) if i < len(fields) and v}
-        return compliance_report(texts, rt.category(cid), rt.platform(pid))
-
-    category.change(on_category, [category, *info_fields], [*info_fields, compliance])
-    platform.change(on_platform, platform, platform_hint)
-    for f in info_fields:
-        f.change(on_info_change, [category, platform, *info_fields], compliance, show_progress="hidden")
-
-    def on_new(name, cid, pid, *vals):
-        p = ws.put(create_project(rt, name, cid, pid, collect_info(ws, cid, vals)))
-        return (p.project_id, _project_md(ws, p), gr.update(choices=ws.project_choices(), value=p.project_id))
-
-    new_btn.click(on_new, [project_name, category, platform, *info_fields], [project_id, project_info, history],
-                  api_name="new_project")
-    refresh_hist.click(lambda: gr.update(choices=ws.project_choices()), None, history)
-
-    def on_load(pid):
-        if not pid:
-            raise gr.Error("请先在下拉框选择一个历史项目")
-        ws._projects.pop(pid, None)
-        p = ws.get(pid)
-        return (p.project_id, _project_md(ws, p), gr.update(value=p.category_id), gr.update(value=p.platform_id),
-                p.name)
-
-    load_evt = load_btn.click(on_load, history, [project_id, project_info, category, platform, project_name])
-    # 加载后回填商品信息（等类目 change 完成后再填）
-    load_evt = load_evt.then(lambda pid: _field_updates(ws, ws.get(pid).category_id, ws.get(pid).product_info),
-                  project_id, info_fields)
-
-    # 商品信息变化时同步到当前项目
-    def sync_info(pid, cid, pfid, *vals):
-        if not pid:
-            return
-        p = ws.get(pid)
-        p.product_info = collect_info(ws, cid, vals)
-        p.category_id, p.platform_id = cid, pfid
-        ws.save(p)
-
-    sync_inputs = [project_id, category, platform, *info_fields]
-    for f in info_fields:
-        f.blur(sync_info, sync_inputs, None)
-    category.change(sync_info, sync_inputs, None)
-    platform.change(sync_info, sync_inputs, None)
-
-    # Skill 管理
-    def show_skill(slot, *ids):
-        sid = dict(zip(SKILL_SLOTS, ids, strict=True))[slot]
-        return rt.skills.get(slot, sid).body if sid else ""
-
-    def _skill_updates(cid, ids, keep_current: bool) -> list:
-        """按类目刷新各卡槽下拉框：类目专属卡带优先；keep_current 时尽量保留当前选择。"""
-        ups = []
-        for slot, cur in zip(SKILL_SLOTS, ids, strict=True):
-            ch = rt.skills.choices(slot, cid)
-            vals = [c[1] for c in ch]
-            keep = keep_current and cur in vals
-            ups.append(gr.update(choices=ch, value=cur if keep else (vals[0] if vals else None)))
-        return ups
-
-    def do_rescan(cid, *ids):
-        rt.skills.refresh()
-        ups = _skill_updates(cid, ids, keep_current=True)
-        errs = "\n".join(f"- ⚠️ {e}" for e in rt.skills.errors.values())
-        total = sum(len(rt.skills.list(s)) for s in SKILL_SLOTS)
-        return [*ups, f"✅ 已扫描到 {total} 张卡带" + (f"\n{errs}" if errs else "")]
-
-    def do_apply(slot, body, *ids):
-        sid = dict(zip(SKILL_SLOTS, ids, strict=True))[slot]
-        rt.skills.set_override(slot, sid, body)
-        return f"✅ 已对「{sid}」应用临时覆盖（本次运行有效）"
-
-    def do_reset(slot, *ids):
-        sid = dict(zip(SKILL_SLOTS, ids, strict=True))[slot]
-        rt.skills.clear_override(slot, sid)
-        return rt.skills.get(slot, sid).body, "↩️ 已恢复原始指令"
-
-    dd = list(skill_dropdowns.values())
-    preview_slot.change(show_skill, [preview_slot, *dd], skill_body)
-    for d in dd:
-        d.change(show_skill, [preview_slot, *dd], skill_body)
-    rescan.click(do_rescan, [category, *dd], [*dd, skill_status])
-    # 切换类目时自动切换到该类目的专属卡带（没有专属卡带则用通用卡带）
-    category.change(lambda cid, *ids: _skill_updates(cid, ids, keep_current=False), [category, *dd], dd)
-    apply_override.click(do_apply, [preview_slot, skill_body, *dd], skill_status)
-    reset_override.click(do_reset, [preview_slot, *dd], [skill_body, skill_status])
-
+    # ---------------- 事件
     def do_save(demo, k1, fmt, k2, k3, std_burl, res, q, burl, mapp, mcls):
         try:
             new = save_env({
@@ -304,16 +352,6 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
 
     demo_toggle.change(toggle_demo, demo_toggle, mode_status)
 
-    # 页面打开时初始化动态表单、平台提示与 Skill 预览
-    demo.load(on_category, [category, *info_fields], [*info_fields, compliance])
-    demo.load(on_platform, platform, platform_hint)
-    demo.load(lambda cid, *ids: _skill_updates(cid, ids, keep_current=True), [category, *dd], dd)
-    demo.load(show_skill, [preview_slot, *dd], skill_body)
-    demo.load(lambda: (rt.mode_summary(), gr.update(choices=ws.project_choices())), None, [mode_status, history])
-
-    return Header(project_id, project_info, category, platform, info_fields, skill_dropdowns, mode_status,
-                  load_evt)
-
 
 def _project_md(ws: Workspace, p) -> str:
     cat, plat = ws.rt.category(p.category_id), ws.rt.platform(p.platform_id)
@@ -323,8 +361,10 @@ def _project_md(ws: Workspace, p) -> str:
         if plan is not None:
             done.append(f"{label}（{'已确认' if plan.plan_status == 'confirmed' else '草稿'}）")
     status = "、".join(done) or "尚未开始"
+    where = (f"保存位置：`workspace/projects/{p.project_id}/`" if ws.public is None else
+             "🌐 公共在线演示：这是你自己的示例项目，别人看不到；超过 1 小时没有操作会自动清理，成片请及时下载")
     return (f"📁 当前项目：**{p.name}**　`{p.project_id}`　｜　{cat.name} · {plat.name}　｜　进度：{status}\n\n"
-            f"保存位置：`workspace/projects/{p.project_id}/`")
+            + where)
 
 
 def require_project(ws: Workspace, project_id: str | None):

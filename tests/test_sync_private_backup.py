@@ -28,6 +28,7 @@ modal/
 config/skills_pro/
 tests/pro/
 promo-film/
+config/categories/pet_herbal_otc.json
 """
 
 
@@ -82,6 +83,7 @@ def repo(tmp_path, monkeypatch):
     put(root, "promo-film/build_promo_video.py", b"print('promo')\n")
     put(root, "promo-film/out/final.mp4", b"\x00big")
     put(root, "promo-film/.env.local", b"PROMO_TOKEN=abcdefgh12345\n")
+    put(root, "config/categories/pet_herbal_otc.json", b'{"category_id": "pet_herbal_otc"}\r\n')
 
     git(root, "remote", "add", "origin", str(tmp_path / "public.git"))
     git(root, "remote", "add", "private", str(tmp_path / "private.git"))
@@ -108,6 +110,9 @@ def test_path_problem():
     assert sync.path_problem("modal/h3_service.py", allow_private=False) == "私有目录"
     assert sync.path_problem("modal/h3_service.py", allow_private=True) is None
     assert sync.path_problem("app/modal/x.py", allow_private=False) is None
+    assert sync.path_problem("config/categories/pet_herbal_otc.json", allow_private=False) == "私有文件"
+    assert sync.path_problem("config/categories/pet_herbal_otc.json", allow_private=True) is None
+    assert sync.path_problem("config/categories/tea.json", allow_private=False) is None
 
 
 def test_backup_contains_private_dirs_and_leaves_worktree_alone(repo):
@@ -123,12 +128,14 @@ def test_backup_contains_private_dirs_and_leaves_worktree_alone(repo):
         "config/skills_pro/ecommerce_planner/老庹_pro_skill.md",
         "tests/pro/test_pro.py",
         "promo-film/build_promo_video.py",
+        "config/categories/pet_herbal_otc.json",
     } <= files
     assert not {f for f in files if "__pycache__" in f or f.startswith(("promo-film/out/", "workspace/projects"))}
     assert not {f for f in files if Path(f).name.startswith(".env") and f != ".env.example"}
     # 原样备份，保留文件自己的 CRLF（按字节读，text 模式会把 \r\n 转成 \n）
     blob = subprocess.run(["git", "cat-file", "-p", "main:modal/h3_service.py"], cwd=pri, capture_output=True)
     assert blob.stdout == b"x = 1\r\ny = 2\r\n"
+    assert "config/categories/pet_herbal_otc.json（本机自用的类目配置）" in sync.private_counts(sorted(files))
 
     master = head(repo, "master")
     assert git(repo, "merge-base", "--is-ancestor", master, sync.BACKUP_REF, check=False).returncode == 0
@@ -182,6 +189,18 @@ def test_pre_push_blocks_private_dirs_to_public(repo):
     with pytest.raises(sync.SyncError, match="不能公开"):
         sync.push_public(repo, head(repo, "master"))
     assert head(repo.parent / "public.git") is None
+
+
+def test_pre_push_blocks_private_file_to_public(repo):
+    sync.install_hook(repo)
+    git(repo, "add", "-f", "config/categories/pet_herbal_otc.json")
+    git(repo, "commit", "-qm", "oops")
+
+    proc = git(repo, "push", "origin", "master:main", check=False)
+    assert proc.returncode != 0
+    assert "config/categories/pet_herbal_otc.json（私有文件）" in proc.stderr
+    assert head(repo.parent / "public.git") is None
+    assert git(repo, "push", "private", "master:main", check=False).returncode == 0  # 私人仓库可以
 
 
 def test_pre_push_blocks_env_file_even_to_private(repo):

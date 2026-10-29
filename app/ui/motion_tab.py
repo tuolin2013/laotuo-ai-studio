@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import re
 from pathlib import Path
 from typing import Any
@@ -26,6 +28,7 @@ from app.engine.motion_engine import (
     preflight,
 )
 from app.engine.prompt_compiler import image_skill_for_model
+from app.engine.public_demo import fit_motion
 from app.engine.render_engine import RenderEngine
 from app.providers.image_models import choices as model_choices
 from app.schemas.edit import OUTPUT_SIZES
@@ -45,7 +48,7 @@ from app.schemas.motion import (
     label_code,
 )
 from app.schemas.project import Project
-from app.settings import IMAGE_QUALITIES, IMAGE_RESOLUTIONS
+from app.settings import IMAGE_QUALITIES, IMAGE_RESOLUTIONS, PUBLIC_MOTION_MAX_SECONDS
 from app.ui.header import Header, require_project
 from app.ui.state import UIError, Workspace, _rows, friendly, log_line
 from app.ui.theme import step_header
@@ -205,6 +208,9 @@ def build_motion_tab(ws: Workspace, header: Header) -> None:
     rt = ws.rt
     engine = MotionEngine(rt)
     renderer = RenderEngine(rt)
+    # 公共免 Key 在线演示：单条最长 30 秒；渲染由 RenderGate 排队（同时只渲染 1 条，最多 5 条在排），完成后清理过期产物
+    public = ws.public
+    max_target = PUBLIC_MOTION_MAX_SECONDS if public else TARGET_RANGE[1]
 
     with gr.Row(elem_classes=["workbench"]):
         with gr.Column(scale=7):
@@ -226,7 +232,8 @@ def build_motion_tab(ws: Workspace, header: Header) -> None:
                     theme = gr.Dropdown(THEME_CHOICES, value=DEFAULT_THEME, label="画面主题",
                                         info="发布会暗场，或沿用主图 / 详情页的 5 大美学流派")
                 with gr.Row():
-                    target = gr.Slider(*TARGET_RANGE, value=20, step=1, label="目标时长（秒）")
+                    target = gr.Slider(TARGET_RANGE[0], max_target, value=20, step=1, label="目标时长（秒）",
+                                       info=f"公共在线演示单条最长 {max_target} 秒" if public else None)
                     bpm = gr.Slider(*BPM_RANGE, value=DEFAULT_BPM, step=1, label="节拍速度（BPM）",
                                     info="72~88 沉稳高级 · 90~110 从容利落 · 112~128 促销感")
                 with gr.Row():
@@ -370,8 +377,8 @@ def build_motion_tab(ws: Workspace, header: Header) -> None:
         n = apply_scene_rows(ad, tbl)
         if asp not in OUTPUT_SIZES:
             raise UIError(f"不支持的画面比例：{asp}")
-        ad.set_options(aspect_ratio=asp, target_seconds=int(tgt), bpm=int(b), theme=th, music=bool(mu), sfx=bool(fx),
-                       grain=bool(gr_))
+        ad.set_options(aspect_ratio=asp, target_seconds=min(int(tgt), max_target), bpm=int(b), theme=th,
+                       music=bool(mu), sfx=bool(fx), grain=bool(gr_))
         return n
 
     opt_inputs = [aspect, target, bpm, theme, music, sfx, grain]
@@ -379,6 +386,7 @@ def build_motion_tab(ws: Workspace, header: Header) -> None:
     # ================================================================ Step 1：编排
     async def do_plan(pid, asp, tgt, b, th, idea_text, skill_id, prev, mode_key="project", n_visuals=None):
         p = require_project(ws, pid)
+        tgt = min(int(tgt), max_target)
         mode_key = mode_key if mode_key in ASSET_MODE_LABELS else "project"
         n_visuals = int(n_visuals or DEFAULT_MAX_VISUALS)
         how = (f"AI 生图 · 最多 {n_visuals} 屏 AI 画面" if mode_key == "generate" else "项目素材")
@@ -389,12 +397,15 @@ def build_motion_tab(ws: Workspace, header: Header) -> None:
             ad, mode = await engine.generate(p, aspect_ratio=asp, target_seconds=int(tgt), bpm=int(b), theme=th,
                                              skill_id=skill_id, idea=idea_text, asset_mode=mode_key,
                                              max_visuals=n_visuals)
+            note = fit_motion(ad, max_target) if public else ""
             async with ws.lock(pid):
                 p.motion_ad = ad
                 engine.save(p)
         except Exception as e:
             yield [_log(log, friendly(e)), *_refresh(pid)]
             return
+        if note:
+            log = _log(log, f"✂️ {note}")
         log = _log(log, f"✅ 动效方案完成（{mode}）：{len(ad.assets)} 个素材 → {len(ad.scenes)} 屏，"
                         f"共 {ad.total_seconds:g} 秒，每一刀都落在节拍上")
         for sp in ad.timeline():
@@ -576,27 +587,46 @@ def build_motion_tab(ws: Workspace, header: Header) -> None:
             try:
                 async with ws.lock(pid):
                     _apply(ad, tbl, *opts)
+                    note = fit_motion(ad, max_target) if public else ""  # 改表格加长了也不超过上限
                     engine.save(p)
             except Exception as e:
                 yield [_log(prev, friendly(e)), *skips]
                 return
-            log = _log(prev, f"🎞️ 开始渲染{label}：{len(ad.scenes)} 屏 · {ad.total_seconds:g} 秒 · 全部在本机完成"
-                             "（渲染不调用生图接口）")
-            yield [log, *skips]
+            log = _log(prev, f"✂️ {note}") if note else prev
+            after_fit = _refresh(pid) if note else skips  # 收紧过方案时刷新表格
+            gate = public.render_gate if public else None
+            ahead = gate.enter() if gate else 0
+            if ahead is None:
+                yield [_log(log, f"⏳ 现在排队渲染的人太多（最多 {gate.max_size} 条），请过一两分钟再点"), *after_fit]
+                return
             try:
-                async for ev in engine.render(p, ad, quality):
-                    log = _log(log, ev.message)
-                    yield [log, *(_refresh(pid) if ev.done else skips)]
+                if ahead:
+                    log = _log(log, f"⏳ 前面还有 {ahead} 条在渲染，已排队，轮到你时自动开始…")
+                    yield [log, *after_fit]
+                async with gate.lock if gate else contextlib.nullcontext():
+                    log = _log(log, f"🎞️ 开始渲染{label}：{len(ad.scenes)} 屏 · {ad.total_seconds:g} 秒 · "
+                                    "全部在本机完成（渲染不调用生图接口）")
+                    yield [log, *after_fit]
+                    async for ev in engine.render(p, ad, quality):
+                        log = _log(log, ev.message)
+                        yield [log, *(_refresh(pid) if ev.done else skips)]
             except (MotionError, Exception) as e:
                 yield [_log(log, friendly(e)), *skips]
+            finally:
+                if gate:
+                    gate.leave()
+            if public:
+                await asyncio.to_thread(public.cleanup)  # 渲染完顺手清理超过 1 小时的临时产物
 
         return handler
 
     render_in = [header.project_id, table, *opt_inputs, logs]
+    # 渲染很吃 CPU：同一时间只渲染 1 条。公共演示由 RenderGate 排队（满了直接提示，不在 Gradio 队列里无限等）
+    render_limit = None if public else 1
     preview_btn.click(_render("preview"), render_in, [logs, *refresh_outputs], concurrency_id="motion_render",
-                      concurrency_limit=1, api_name="motion_preview")
+                      concurrency_limit=render_limit, api_name="motion_preview")
     render_btn.click(_render("final"), render_in, [logs, *refresh_outputs], concurrency_id="motion_render",
-                     concurrency_limit=1, api_name="motion_render")
+                     concurrency_limit=render_limit, api_name="motion_render")
 
     # 加载 / 切换项目时刷新全部内容并回填设定
     for event in (header.load_event, header.project_id.change(_refresh, header.project_id, refresh_outputs)):

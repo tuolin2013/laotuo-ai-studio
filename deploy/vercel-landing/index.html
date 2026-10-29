@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>老庹 AI 电商内容工厂 · 免 Key 在线体验</title>
+<meta name="description" content="主图、详情页、带货短视频、口播配音、动效广告，一个工作台做完。打开网页不用填 API Key，直接体验从编排到渲染的全流程。">
+<meta property="og:title" content="老庹 AI 电商内容工厂">
+<meta property="og:description" content="主图、详情页、带货短视频、口播配音、动效广告，一个工作台做完。免 Key 在线体验。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%AD%3C/text%3E%3C/svg%3E">
+<!--
+  部署前只需要改两处：
+  1. 在线体验的地址（全文搜索 laotuo-public-demo.modal.run，共两处）：
+     modal deploy modal/public_demo_service.py 输出的网址 https://<Modal 工作区>--laotuo-public-demo.modal.run；
+     改用 Hugging Face Space 时换成 https://<用户名>-<Space 名>.hf.space（见 deploy/README_FREE_DEMO.md）
+  2. 宣传片文件：默认同目录的 promo.mp4 与封面 promo-poster.jpg，也可以换成完整网址
+-->
+<style>
+  /* 色板取自动效引擎的「发布会暗场」主题（app/engine/motion/theme.py KEYNOTE_DARK）：门面页与它生成的广告是同一套视觉 */
+  :root {
+    --ink: #0C0C11;
+    --abyss: #050508;
+    --glow-teal: 13 148 136;
+    --glow-blue: 37 99 235;
+    --glow-violet: 124 58 237;
+    --text: #F5F5F7;
+    --sub: #A1A1AA;
+    --accent-a: #5EEAD4;
+    --accent-b: #60A5FA;
+    --rule: rgb(255 255 255 / 0.12);
+    --beat: 0.6s; /* 100 BPM：一拍 0.6 秒 */
+    --sans: "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Microsoft YaHei UI", "Microsoft YaHei",
+            "Noto Sans SC", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+    /* 数字用 DIN 风格字体，与动效引擎的数字字体一致 */
+    --digits: "Bahnschrift", "DIN Alternate", "DIN Condensed", "Barlow Semi Condensed", var(--sans);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { background: var(--abyss); scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 17px;
+    line-height: 1.75;
+    font-weight: 400;
+    background:
+      radial-gradient(42rem 30rem at 8% -6%, rgb(var(--glow-teal) / 0.34), transparent 70%),
+      radial-gradient(46rem 34rem at 92% 4%, rgb(var(--glow-blue) / 0.30), transparent 70%),
+      radial-gradient(52rem 30rem at 55% 62rem, rgb(var(--glow-violet) / 0.22), transparent 72%),
+      linear-gradient(var(--ink), var(--abyss) 70rem);
+    background-repeat: no-repeat;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  a { color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent-a); outline-offset: 3px; border-radius: 6px; }
+
+  .skip {
+    position: absolute; left: 1rem; top: -4rem; z-index: 10;
+    padding: 0.5rem 1rem; background: var(--text); color: var(--abyss); border-radius: 8px;
+  }
+  .skip:focus { top: 1rem; }
+
+  .wrap { width: min(1180px, 100% - 3rem); margin-inline: auto; }
+
+  /* ---------------- 顶栏 */
+  .bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    padding-block: 1.5rem; font-size: 15px; color: var(--sub);
+  }
+  .bar a { text-decoration: none; }
+  .bar a:hover { color: var(--text); }
+
+  /* ---------------- 首屏 */
+  .hero { padding-block: clamp(3rem, 9vh, 6.5rem) 2.5rem; }
+  .title {
+    margin: 0;
+    font-size: clamp(2.75rem, 8.2vw, 6.6rem);
+    line-height: 1.12;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+  .title .line { display: block; }
+  /* 「庹」读 tuǒ：大标题上直接注音，免得读成「拓」 */
+  .title ruby { ruby-position: over; }
+  .title rt {
+    font-family: var(--digits);
+    font-size: 0.2em;
+    font-weight: 400;
+    letter-spacing: 0.04em;
+    color: var(--sub);
+  }
+  .lede {
+    max-width: 34em;
+    margin: 1.5rem 0 0;
+    font-size: clamp(1.06rem, 1.6vw, 1.3rem);
+    line-height: 1.7;
+    color: var(--sub);
+  }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.875rem; margin-top: 2.25rem; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    min-height: 3.25rem; padding: 0 1.5rem;
+    border-radius: 999px; border: 1px solid transparent;
+    font: inherit; font-size: 1.0625rem; font-weight: 600; line-height: 1;
+    text-decoration: none; cursor: pointer;
+  }
+  .btn-ghost { color: var(--text); background: rgb(255 255 255 / 0.04); border-color: rgb(255 255 255 / 0.28); }
+  .btn-ghost:hover { background: rgb(255 255 255 / 0.1); }
+  .btn-main { color: var(--abyss); background: linear-gradient(100deg, var(--accent-a), var(--accent-b)); }
+  .btn-main:hover { filter: brightness(1.08); }
+
+  /* ---------------- 节拍尺：在线体验默认得到的动效分镜（整数拍，每一刀落在拍点上） */
+  .score { margin: clamp(3.5rem, 10vh, 6rem) 0 0; }
+  .track { position: relative; }
+  .score ol { display: flex; margin: 0; padding: 0; list-style: none; }
+  /* 每屏一段：宽度按拍数分配；左边线是剪辑点，底部刻度每拍一格 */
+  .score li {
+    --tick: rgb(255 255 255 / 0.28);
+    flex: var(--beats) 1 0;
+    min-width: 0;
+    padding: 0 0.5rem 1.5rem;
+    border-left: 1px solid var(--rule);
+    background:
+      repeating-linear-gradient(to right, var(--tick) 0 2px, transparent 2px calc(100% / var(--beats)))
+      left bottom / 100% 0.75rem no-repeat;
+  }
+  .score li:first-child { border-left-color: var(--accent-a); }
+  .score time, .score .beats {
+    display: block;
+    font-family: var(--digits);
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    color: var(--sub);
+    font-variant-numeric: tabular-nums;
+  }
+  .score .head {
+    display: block;
+    margin-top: 0.5rem;
+    font-size: clamp(0.875rem, 1.1vw, 1.0625rem);
+    font-weight: 600;
+    line-height: 1.45;
+    color: var(--sub);
+    text-wrap: balance; /* 两行时各行等长，不留单个字 */
+  }
+  .score .kind { display: block; font-size: 0.8125rem; line-height: 1.5; color: var(--sub); }
+  .score .beats { margin-top: 0.25rem; }
+  .playhead {
+    position: absolute; top: -0.75rem; bottom: 0; left: 0; width: 2px;
+    background: linear-gradient(var(--accent-a), var(--accent-b));
+    box-shadow: 0 0 18px rgb(94 234 212 / 0.7);
+    opacity: 0;
+  }
+  .score-note {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 1.25rem;
+    margin-top: 1rem; max-width: 46em;
+    font-size: 0.9375rem; line-height: 1.7; color: var(--sub);
+  }
+  .score-note p { margin: 0; }
+  .replay {
+    padding: 0; border: 0; background: none; cursor: pointer;
+    font: inherit; color: var(--accent-a); text-decoration: underline; text-underline-offset: 0.25em;
+  }
+  /* 播放：播放头按 100 BPM 扫过 45 拍，经过哪一屏就点亮哪一屏 */
+  .score.play .playhead { animation: sweep calc(45 * var(--beat)) linear both; }
+  /* 经过的屏点亮：标题变亮、刻度换成强调色（与动效引擎的强调渐变一致） */
+  .score.play li { animation: lit calc(var(--beat) / 2) ease-out both; animation-delay: calc(var(--start) * var(--beat)); }
+  .score.play li .head { animation: lit-head calc(var(--beat) / 2) ease-out both; animation-delay: inherit; }
+  .score.done li { --tick: var(--accent-a); }
+  .score.done li .head { color: var(--text); }
+  @keyframes sweep {
+    0% { left: 0; opacity: 1; }
+    97% { opacity: 1; }
+    100% { left: 100%; opacity: 0; }
+  }
+  @property --tick { syntax: "<color>"; inherits: true; initial-value: transparent; }
+  @keyframes lit { from { --tick: rgb(255 255 255 / 0.28); } to { --tick: var(--accent-a); } }
+  @keyframes lit-head { from { color: var(--sub); } to { color: var(--text); } }
+
+  /* ---------------- 能力 */
+  .section { padding-block: clamp(4rem, 12vh, 7rem) 0; }
+  .section h2 {
+    margin: 0;
+    font-size: clamp(1.75rem, 3.2vw, 2.5rem);
+    line-height: 1.3;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .abilities {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2.75rem 4rem;
+    margin: 2.5rem 0 0;
+  }
+  .abilities dt { font-size: 1.25rem; font-weight: 700; line-height: 1.5; }
+  .abilities dd { margin: 0.625rem 0 0; max-width: 30em; color: var(--sub); }
+
+  /* ---------------- 在线体验 */
+  .demo-intro { max-width: 40em; margin-top: 1rem; color: var(--sub); }
+  .demo-intro p { margin: 0 0 0.75rem; }
+  .steps { margin: 1rem 0 0; padding-left: 1.4em; color: var(--text); }
+  .steps li { padding-left: 0.25em; }
+  .steps li + li { margin-top: 0.25rem; }
+  .frame-box { margin-top: 2rem; }
+  .frame-box iframe {
+    display: block; width: 100%;
+    height: min(88vh, 1000px); min-height: 640px;
+    border: 1px solid rgb(255 255 255 / 0.16); border-radius: 14px;
+    background: var(--ink);
+  }
+  .frame-meta {
+    display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem 1.5rem;
+    margin-top: 0.875rem; font-size: 0.9375rem; color: var(--sub);
+  }
+  .frame-meta p { margin: 0; max-width: 46em; }
+
+  /* ---------------- 页脚 */
+  footer { padding-block: 5rem 3rem; font-size: 0.9375rem; color: var(--sub); }
+  footer .links { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; margin: 0 0 0.75rem; padding: 0; list-style: none; }
+  footer p { margin: 0; max-width: 46em; }
+
+  /* ---------------- 宣传片弹窗 */
+  dialog {
+    width: min(1280px, 100% - 2rem); max-width: none; padding: 0;
+    border: 1px solid rgb(255 255 255 / 0.16); border-radius: 14px;
+    background: var(--abyss); color: var(--text);
+  }
+  dialog::backdrop { background: rgb(5 5 8 / 0.82); }
+  dialog[open] { animation: rise 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
+  @keyframes rise { from { opacity: 0; transform: translateY(12px) scale(0.985); } to { opacity: 1; transform: none; } }
+  .film-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    padding: 0.75rem 0.75rem 0.75rem 1.25rem;
+  }
+  .film-head h2 { margin: 0; font-size: 1rem; font-weight: 600; }
+  .close {
+    width: 2.5rem; height: 2.5rem; border-radius: 999px; border: 1px solid rgb(255 255 255 / 0.2);
+    background: none; color: var(--text); font-size: 1.25rem; line-height: 1; cursor: pointer;
+  }
+  .close:hover { background: rgb(255 255 255 / 0.1); }
+  dialog video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 0 0 13px 13px; }
+  .film-error { margin: 0; padding: 1rem 1.25rem 1.25rem; color: var(--sub); }
+
+  @media (max-width: 960px) {
+    /* 节拍尺改为竖排：每屏一行，刻度条长度按拍数（最长的 9 拍占满） */
+    .score ol { flex-direction: column; }
+    .score li {
+      display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); column-gap: 0.75rem;
+      padding: 0.75rem 0 1.375rem; border-left: 0; border-top: 1px solid var(--rule);
+      background-size: calc(var(--beats) / 9 * (100% - 5.25rem)) 0.5rem;
+      background-position: 5.25rem calc(100% - 0.375rem);
+    }
+    .score li:first-child { border-left: 0; border-top-color: var(--accent-a); }
+    .score time { grid-row: span 3; padding-top: 0.15rem; }
+    .score .head { margin-top: 0; }
+    .playhead { display: none; }
+  }
+
+  @media (max-width: 760px) {
+    body { font-size: 16px; }
+    .wrap { width: min(1180px, 100% - 2rem); }
+    .abilities { grid-template-columns: minmax(0, 1fr); gap: 2rem; }
+    .frame-box iframe { height: 84vh; min-height: 560px; border-radius: 10px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .score.play .playhead { animation: none; }
+    .score.play li, .score.play li .head { animation: none; }
+    dialog[open] { animation: none; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#demo">跳到在线体验</a>
+
+<div class="wrap">
+  <header class="bar">
+    <span>老庹 AI 工作室出品</span>
+    <a href="https://github.com/tuolin2013/laotuo-ai-studio">GitHub 源码</a>
+  </header>
+
+  <main>
+    <section class="hero" aria-labelledby="title">
+      <h1 class="title" id="title">
+        <span class="line">老<ruby>庹<rt>tuǒ</rt></ruby> AI</span>
+        <span class="line">电商内容工厂</span>
+      </h1>
+      <p class="lede">主图、详情页、带货短视频、口播配音、动效广告，一个工作台做完。打开网页不用填 API Key，直接把流程走一遍。</p>
+      <div class="actions">
+        <button class="btn btn-ghost" type="button" id="film-open" aria-haspopup="dialog">🎬 观看 1080P 宣传片</button>
+        <a class="btn btn-main" href="#demo">🚀 在线免 Key 实机体验</a>
+      </div>
+
+      <figure class="score" id="score" aria-labelledby="score-cap">
+        <div class="track">
+        <ol>
+          <li style="--beats:4;--start:0"><time>00:00.0</time><span class="head">饭后油腻？</span><span class="kind">钩子大字</span><span class="beats">4 拍</span></li>
+          <li style="--beats:9;--start:4"><time>00:02.4</time><span class="head">差别在这里</span><span class="kind">痛点对比</span><span class="beats">9 拍</span></li>
+          <li style="--beats:4;--start:13"><time>00:07.8</time><span class="head">张家界莓茶</span><span class="kind">商品主视觉</span><span class="beats">4 拍</span></li>
+          <li style="--beats:4;--start:17"><time>00:10.2</time><span class="head">总黄酮</span><span class="kind">数据冲击</span><span class="beats">4 拍</span></li>
+          <li style="--beats:8;--start:21"><time>00:12.6</time><span class="head">看得见的讲究</span><span class="kind">卖点清单</span><span class="beats">8 拍</span></li>
+          <li style="--beats:4;--start:29"><time>00:17.4</time><span class="head">每一面都经得起看</span><span class="kind">图集</span><span class="beats">4 拍</span></li>
+          <li style="--beats:6;--start:33"><time>00:19.8</time><span class="head">详情一屏一屏看清楚</span><span class="kind">长图滚动</span><span class="beats">6 拍</span></li>
+          <li style="--beats:6;--start:39"><time>00:23.4</time><span class="head">喜欢就带回家</span><span class="kind">收尾行动</span><span class="beats">6 拍</span></li>
+        </ol>
+        <span class="playhead" aria-hidden="true"></span>
+        </div>
+        <figcaption class="score-note">
+          <p id="score-cap">在线体验里点「🎬 AI 编排动效方案」默认得到的分镜：8 屏 45 拍，100 BPM，共 27 秒。每屏都是整数拍，所以每一刀都落在拍点上。</p>
+          <button class="replay" type="button" id="replay">按 100 BPM 再走一遍</button>
+        </figcaption>
+      </figure>
+    </section>
+
+    <section class="section" aria-labelledby="abilities-title">
+      <h2 id="abilities-title">它能做什么</h2>
+      <dl class="abilities">
+        <div>
+          <dt>插卡式 Skill</dt>
+          <dd>电商策划、视频编剧、生图提示词、动效导演，每一种 AI 能力都写在一张 .md 卡带里。新卡带放进文件夹就能在下拉框里选，不用改代码。</dd>
+        </div>
+        <div>
+          <dt>真品微距保真</dt>
+          <dd>上传包装、茶汤、内料的实拍图作参考，单主体海报和微距特写在你的实拍图上改，而不是让 AI 凭空画一个包装。</dd>
+        </div>
+        <div>
+          <dt>零 API 成本代码动效引擎</dt>
+          <dd>动效广告的画面、配乐和音效都在本机用代码渲染，不调用生视频接口。素材直接用项目里已有的主图和详情页。</dd>
+        </div>
+        <div>
+          <dt>14 项成片自检</dt>
+          <dd>每次渲染完自动出联系表，逐项检查黄金 3 秒、阅读时间、安全区、遮挡、转场、响度（统一到 -14 LUFS）等 14 项，哪里不合格直接写明。</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="section" id="demo" aria-labelledby="demo-title" tabindex="-1">
+      <h2 id="demo-title">在线体验</h2>
+      <div class="demo-intro">
+        <p>这是公共演示：不用填 Key，所有生成都走演示模式，在服务器上绘制预览图、合成演示视频，不调用付费接口。页面打开时会为你准备一份张家界莓茶示例项目，只有你自己看得到。</p>
+        <ol class="steps">
+          <li>切到「✨ 动效广告」选项卡</li>
+          <li>点「🎬 AI 编排动效方案」</li>
+          <li>点「⚡ 快速预览（540P）」，等它渲染出成片、联系表和自检报告</li>
+        </ol>
+      </div>
+      <div class="frame-box">
+        <!-- 在线体验的地址：modal deploy 输出的网址（备用：Hugging Face Space 直链） -->
+        <iframe src="https://tuolin2011--laotuo-public-demo.modal.run"
+                title="老庹 AI 电商内容工厂在线演示"
+                loading="lazy"
+                allow="clipboard-write; microphone; fullscreen"
+                referrerpolicy="strict-origin-when-cross-origin"></iframe>
+        <div class="frame-meta">
+          <p>单条动效最长 30 秒，同时只渲染一条；项目 1 小时没有操作会自动清理，成片请及时下载。服务闲置 5 分钟后会休眠，再打开要等一两分钟唤醒。没有登录鉴权，请不要上传隐私图片。</p>
+          <a href="https://tuolin2011--laotuo-public-demo.modal.run" target="_blank" rel="noopener">在新窗口打开在线体验</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <ul class="links">
+      <li><a href="https://github.com/tuolin2013/laotuo-ai-studio">源码与本机部署说明</a></li>
+      <li><a href="https://github.com/tuolin2013/laotuo-ai-studio/blob/main/LICENSE">许可证：Apache-2.0 + 附加条件</a></li>
+    </ul>
+    <p>老庹 AI 电商内容工厂（Laotuo AI E-Commerce Studio），老庹 AI 工作室出品。本机部署后填入 Key，即可调用真实的策划与生图接口。</p>
+  </footer>
+</div>
+
+<dialog id="film" aria-labelledby="film-title">
+  <div class="film-head">
+    <h2 id="film-title">官方宣传片（1080P，约 1 分钟）</h2>
+    <button class="close" type="button" id="film-close" aria-label="关闭宣传片">✕</button>
+  </div>
+  <!-- 宣传片文件：默认同目录的 promo.mp4（封面 promo-poster.jpg），也可以换成完整网址 -->
+  <video id="film-video" controls playsinline preload="none" poster="promo-poster.jpg" data-src="promo.mp4"></video>
+  <p class="film-error" id="film-error" hidden>宣传片暂时无法播放，可以先在下方直接体验。</p>
+</dialog>
+
+<script>
+  (() => {
+    const dialog = document.getElementById("film");
+    const video = document.getElementById("film-video");
+    const error = document.getElementById("film-error");
+
+    document.getElementById("film-open").addEventListener("click", () => {
+      if (!video.src) video.src = video.dataset.src;  // 点开才加载，首屏不下载视频
+      dialog.showModal();
+      video.play().catch(() => {});
+    });
+    document.getElementById("film-close").addEventListener("click", () => dialog.close());
+    dialog.addEventListener("click", (e) => { if (e.target === dialog) dialog.close(); });  // 点遮罩关闭
+    dialog.addEventListener("close", () => video.pause());
+    video.addEventListener("error", () => { error.hidden = false; video.hidden = true; });
+
+    // 节拍尺：首次进入视野时按 100 BPM 走一遍；「再走一遍」重新播放
+    const score = document.getElementById("score");
+    const still = matchMedia("(prefers-reduced-motion: reduce)");
+    const play = () => {
+      if (still.matches) return;
+      score.classList.remove("play", "done");
+      void score.offsetWidth;  // 重新触发动画
+      score.classList.add("play");
+    };
+    score.querySelector(".playhead").addEventListener("animationend", () => score.classList.add("done"));
+    document.getElementById("replay").addEventListener("click", play);
+    if (still.matches) {
+      score.classList.add("done");
+      document.getElementById("replay").hidden = true;
+    } else {
+      new IntersectionObserver((entries, io) => {
+        if (entries.some((e) => e.isIntersecting)) { play(); io.disconnect(); }
+      }, { threshold: 0.4 }).observe(score);
+    }
+  })();
+</script>
+</body>
+</html>

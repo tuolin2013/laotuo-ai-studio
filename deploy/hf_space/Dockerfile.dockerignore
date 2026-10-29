@@ -1,0 +1,21 @@
+# 构建镜像时不需要的文件（docker build -f deploy/hf_space/Dockerfile 时自动使用本文件；
+# scripts/push_hf_space.py 推到 Space 时把它放到根目录，改名为 .dockerignore）
+.git
+.gitattributes
+.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+.env
+.env.*
+!.env.example
+workspace/*
+!workspace/.gitkeep
+tests
+docs
+.claude
+deploy/vercel-landing
+modal
+promo-film
+config/skills_pro

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from dotenv import load_dotenv, set_key
@@ -16,6 +16,18 @@ ENV_FILE = PROJECT_ROOT / ".env"
 DEFAULT_BASE_URL = "https://www.rightapi.ai"
 IMAGE_RESOLUTIONS = ("1K", "2K", "4K")
 IMAGE_QUALITIES = ("auto", "low", "medium", "high", "xhigh", "max")
+
+# 公共免 Key 在线演示（LAOTUO_PUBLIC_DEMO=1）的限额，见 app/engine/public_demo.py：
+# 单条动效广告最长秒数；动效渲染排队上限（含正在渲染的 1 条，满了提示稍后再试）；运行产物保留秒数
+PUBLIC_MOTION_MAX_SECONDS = 30
+PUBLIC_QUEUE_MAX_SIZE = 5
+PUBLIC_OUTPUT_TTL_SECONDS = 3600
+# 整个事件队列的安全上限（只拦住堆积的长任务：打开一次页面就会同时排上二十多个短事件，几位访客同时打开
+# 也不能被拦住，所以不能用 5）与单个上传文件上限
+PUBLIC_EVENT_QUEUE_MAX_SIZE = 120
+PUBLIC_MAX_UPLOAD_SIZE = "20mb"
+# 公共演示的工作区放在 <WORKSPACE_DIR>/public_demo/：与本机真实项目分开，过期清理不会碰到真实项目
+PUBLIC_WORKSPACE_SUBDIR = "public_demo"
 
 # 界面「API 配置」面板允许写回 .env 的键
 EDITABLE_ENV_KEYS = (
@@ -106,13 +118,15 @@ class Settings:
     jianying_draft_dir: Path | None = None
     # 强制演示模式：即使填了 Key 也不调用真实接口
     demo_mode: bool = False
+    # 公共免 Key 在线演示（LAOTUO_PUBLIC_DEMO=1）：锁定演示模式、不显示 API 配置，见 app/engine/public_demo.py
+    public_demo: bool = False
     workspace_dir: Path = PROJECT_ROOT / "workspace"
     server_name: str = "127.0.0.1"
     server_port: int = 7860
 
     def channel_live(self, channel: str) -> bool:
         """某个通道是否走真实接口（否则走零 Key 演示兜底）。"""
-        if self.demo_mode:
+        if self.demo_mode or self.public_demo:
             return False
         return bool(
             {
@@ -171,7 +185,7 @@ def load_settings(env_file: Path | None = None, override: bool = False) -> Setti
     load_dotenv(env_file or ENV_FILE, override=override)
     e = os.environ.get
     workspace = Path(e("WORKSPACE_DIR", "workspace"))
-    return Settings(
+    settings = Settings(
         rightapi_base_url=normalize_base_url(e("RIGHTAPI_BASE_URL")),
         llm_key=e("RIGHTAPI_LLM_KEY", ""),
         llm_model=e("RIGHTAPI_LLM_MODEL", "claude-opus-5-5"),
@@ -202,10 +216,17 @@ def load_settings(env_file: Path | None = None, override: bool = False) -> Setti
         fal_video_model=e("FAL_VIDEO_MODEL", ""),
         jianying_draft_dir=_jianying_dir(e("JIANYING_DRAFT_DIR", "")),
         demo_mode=_bool(e("DEMO_MODE")),
+        public_demo=_bool(e("LAOTUO_PUBLIC_DEMO")),
         workspace_dir=workspace if workspace.is_absolute() else PROJECT_ROOT / workspace,
         server_name=e("GRADIO_SERVER_NAME", "127.0.0.1"),
         server_port=int(e("GRADIO_SERVER_PORT", "7860")),
     )
+    if settings.public_demo:
+        # 公共演示一律走演示模式；Key 清空，任何地方都拿不到（包括界面初始值与诊断）；
+        # 工作区换到 public_demo/ 子目录，与本机真实项目分开
+        settings = replace(settings, demo_mode=True, llm_key="", image_key="", image_std_key="", fal_key="",
+                           workspace_dir=settings.workspace_dir / PUBLIC_WORKSPACE_SUBDIR)
+    return settings
 
 
 def save_env(updates: dict[str, str], env_file: Path = ENV_FILE) -> Settings:

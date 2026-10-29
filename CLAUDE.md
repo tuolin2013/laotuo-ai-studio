@@ -16,9 +16,9 @@
 
 品牌：老庹 AI 电商内容工厂（Laotuo AI E-Commerce Studio），出品方「老庹 AI 工作室（Laotuo AI Studio）」。「庹」读 tuǒ，不是「拓」，界面与文档一律写「老庹」；skill_id、文件名与仓库名沿用拼音 `laotuo`。
 
-商业模式 Open-Core：工作台底座开源，行业高转化卡带（Pro 卡带包）与部署 / 定制服务收费。许可证为 Apache-2.0 + 附加条件（见 `LICENSE` 文末补充条款）。README 与界面中的卖点只写代码里真实存在的能力。以下内容不进开源仓库：`.env` / `.env.*`（`.env.example` 除外）、`modal/`（自有 GPU 部署脚本）、`config/skills_pro/`、`tests/pro/`、`workspace/`、`promo-film/`。
+商业模式 Open-Core：工作台底座开源，行业高转化卡带（Pro 卡带包）与部署 / 定制服务收费。许可证为 Apache-2.0 + 附加条件（见 `LICENSE` 文末补充条款）。README 与界面中的卖点只写代码里真实存在的能力。以下内容不进开源仓库：`.env` / `.env.*`（`.env.example` 除外）、`modal/`（自有 GPU / 公共演示部署脚本）、`config/skills_pro/`、`tests/pro/`、`workspace/`、`promo-film/`、`config/categories/pet_herbal_otc.json`（本机自用类目）。
 
-私人全量备份（`scripts/sync_private_backup.py`）：公开仓 `origin` 的 `main` 只放开源底座；私人仓 `private` 的 `main` = 本地 `master` 最新提交 + 磁盘上的 `modal/`、`config/skills_pro/`、`tests/pro/`、`promo-film/`（不含 `promo-film/out/`）。备份提交记在隐藏引用 `refs/backup/private-full`，用临时索引生成，不切换分支、不碰工作区与暂存区。脚本安装 `.git/hooks/pre-push`：私有目录推往 `private` 以外的远端一律拦截；任何远端都拦截 `.env` / `.env.*`、缓存产物、`workspace/` 运行产物、`.env` 与 `~/.modal.toml` 中密钥的原文和常见 Key 格式。不要把私有目录提交到 `master`。
+私人全量备份（`scripts/sync_private_backup.py`）：公开仓 `origin` 的 `main` 只放开源底座；私人仓 `private` 的 `main` = 本地 `master` 最新提交 + 磁盘上的 `modal/`、`config/skills_pro/`、`tests/pro/`、`promo-film/`（不含 `promo-film/out/`）与私有文件 `config/categories/pet_herbal_otc.json`（`PRIVATE_FILES`）。备份提交记在隐藏引用 `refs/backup/private-full`，用临时索引生成，不切换分支、不碰工作区与暂存区。脚本安装 `.git/hooks/pre-push`：私有目录与私有文件推往 `private` 以外的远端一律拦截；任何远端都拦截 `.env` / `.env.*`、缓存产物、`workspace/` 运行产物、`.env` 与 `~/.modal.toml` 中密钥的原文和常见 Key 格式。不要把私有目录提交到 `master`。
 
 ## 2. 技术栈
 
@@ -37,6 +37,9 @@ python -m venv .venv
 .venv/Scripts/python -m ruff check .
 .venv/Scripts/python -m app.main        # 单命令启动 Web 界面
 .venv/Scripts/python scripts/sync_private_backup.py   # 提交后一键推送公开仓 + 私人全量备份（--private-only / --dry-run）
+.venv/Scripts/modal deploy modal/public_demo_service.py   # 公共免 Key 在线演示部署到 Modal CPU 容器（脚本不入开源仓）
+.venv/Scripts/python scripts/push_hf_space.py         # 备用：推到 Hugging Face Space（--dry-run）
+LAOTUO_PUBLIC_DEMO=1 .venv/Scripts/python -m app.main # 本机自测公共免 Key 在线演示模式
 ```
 
 ## 3. 系统架构
@@ -100,6 +103,8 @@ workspace/projects/{project_id}/
 │   ├── providers/       # llm.py / image.py / video/ / voice/
 │   ├── storage/         # 项目落盘
 │   └── ui/              # Gradio 组件
+├── deploy/              # 公共免 Key 在线演示：hf_space/（备用 Docker Space）、vercel-landing/（静态门面页 + 宣传片）、上线说明
+├── scripts/             # 私人全量备份、推送 Hugging Face Space
 ├── workspace/
 └── tests/
 ```
@@ -297,6 +302,20 @@ RightAPI 的 Key 绑定渠道，一把 Key 只能调用所绑渠道的模型，�
 - 演示模式输出的 JSON 结构与真实 Skill 输出**完全一致**（`app/providers/demo/content.py`），后续编辑 / 确认 / 渲染流程无差别；演示图由 PIL 绘制真实中文排版并合成参考图缩略图，右上角带「DEMO 演示预览」角标。
 - LLM 同时兼容 `/v1/messages`（Anthropic 原生）与 `/v1/chat/completions`（OpenAI 兼容），`RIGHTAPI_LLM_API_FORMAT=auto` 时自动探测。
 
+### 5.6.1 公共免 Key 在线演示（`LAOTUO_PUBLIC_DEMO=1`）
+
+给公开网址用：Modal CPU 容器（`modal/public_demo_service.py`）或备用的 Hugging Face Space（`deploy/hf_space/Dockerfile`）里设置。代码在 `app/engine/public_demo.py`，限额常量在 `app/settings.py`（`PUBLIC_*`）。
+
+- 配置锁（`load_settings()`）：强制 `demo_mode`，四把 Key 清空（环境变量里有也不读），所有通道 `channel_live()` 为假；工作区换到 `<WORKSPACE_DIR>/public_demo/`，与本机真实项目分开。`PublicDemo` 只接受这个子目录，清理不会删到真实项目。
+- 界面（`ws.public` 不为 None）：不创建「⚙️ API 密钥与接口配置」面板（也就没有写 `.env`、连通性诊断、演示开关的事件）；不显示历史项目（`project_choices()` 返回空）；卡带指令只读、不能临时覆盖（覆盖对所有访客生效）；配音不提供共用的音色库。
+- 样板项目 `demo_template`：开机用演示模式生成张家界莓茶主图 4 张 + 详情页 4 屏（商品信息只写外观、产地、规格），并预先收集动效素材库。每位访客页面加载时（`demo.load` → 表单初始化之后，`api_name="public_visit"`）从样板复制一份独立项目，素材文件一起复制、路径改到新项目目录。
+- 动效时长：目标时长滑块上限 30 秒；编排与渲染前 `fit_motion()` 把方案收紧到 30 秒内（钩子与收尾不动，先逐拍减中间屏到刚好读完的拍数，还超就从后往前删中间屏）。
+- 排队：动效渲染由 `RenderGate` 排队（同时只渲染 1 条，含正在渲染的最多 5 条，满了直接提示），不用 Gradio 的 `concurrency_limit`；`demo.queue(max_size=120)` 只防长任务堆积（打开一次页面就有二十多个短事件，几位访客同时打开也不能被拦，不能设成 5）；上传文件单个 ≤20MB。
+- 磁盘：`cleanup()` 删除 1 小时没有操作的访客项目（以 `project.json` 修改时间为准）、仍在用的项目里过期的 `motion/render_*` 与单屏预览，访客项目最多保留 200 份；在开机、访客打开页面、新建项目、每次渲染完成后执行。Gradio 自己的缓存用 `Blocks(delete_cache=(1800, 3600))` 清理。项目被清理后再操作，提示刷新页面。
+- 字体：Linux 的 `fonts-noto-cjk` 是 .ttc 字体集合，第 0 个字形是日文；`app/providers/demo/fonts.py` 的 `ttc_index()` 对 Noto CJK 取第 2 个（简体中文），动效与演示图都用它。Debian 没有 Light 字重，退回 Regular。
+- 部署（Modal，推荐）：`modal/public_demo_service.py` 属于 `modal/`，不入开源仓。`@modal.web_server(7860)` + `@modal.concurrent`，`max_containers=1`（访客项目与渲染排队都在单个进程里），`cpu=(1.0, 2.0)` 物理核（1 核 = 2 vCPU）、`memory=8192`、`scaledown_window=300`；镜像用本机磁盘上的 `app/`、`config/`（排除 `skills_pro/` 与 `pet_herbal_otc.json`）、`pyproject.toml`、`LICENSE`；启动时把 `get_web_url()` 设为 `GRADIO_ROOT_PATH`，文件链接走 https。网址 `https://<工作区>--laotuo-public-demo.modal.run`。Modal 网页接口单个请求最长 150 秒，Gradio 流式长连接在 Modal 上的表现未实测。
+- 部署（Hugging Face，备用）：`scripts/push_hf_space.py` 用临时索引生成 Space 提交（`app/`、`config/`、`pyproject.toml`、`LICENSE` + 根目录换成 `deploy/hf_space/` 的 Dockerfile、.dockerignore、README），接在 Space 最新提交后面推送，推送前复用 `sync_private_backup.py` 的密钥检查。Vercel 门面页 `deploy/vercel-landing/` 纯静态，内嵌 Modal 网址（备用 Space），宣传片 `promo.mp4` 与封面 `promo-poster.jpg` 提交在仓库里（README 顶部用封面链接到视频）。上线步骤见 `deploy/README_FREE_DEMO.md`。
+
 ## 5.7 引擎分层（`app/engine/`）
 
 | 模块 | 职责 |
@@ -333,6 +352,6 @@ RightAPI 的 Key 绑定渠道，一把 Key 只能调用所绑渠道的模型，�
 - 所有业务状态变更走模型方法（如 `add_slot` / `update_slot` / `confirm_plan`），UI 层不直接改字段，便于统一校验与落盘。
 - 新功能必须附带 pytest 用例；提交前 `pytest` 与 `ruff check .` 必须零报错。
 - 网络调用必须设置超时；外部返回内容视为不可信数据。
-- 界面默认只监听 `127.0.0.1`。如需局域网访问须提醒：当前无登录鉴权。
+- 界面默认只监听 `127.0.0.1`。如需局域网访问须提醒：当前无登录鉴权。公开部署只用公共免 Key 演示模式（§5.6.1），不要把填了 Key 的实例暴露到公网。
 - 提交信息遵循 Conventional Commits，例如 `feat(step1): ...`。
 

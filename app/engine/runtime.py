@@ -50,6 +50,10 @@ class EngineRuntime:
         return not self.force_demo and self.settings.channel_live(channel)
 
     def mode_summary(self) -> str:
+        if self.settings.public_demo:
+            return ("🌐 公共免 Key 在线演示：全部通道使用 🟡 演示模式（本机绘制预览图、合成演示视频与提示音，"
+                    "不调用任何付费接口）")
+
         def tag(ch: str) -> str:
             return "🟢 真实 API" if self.is_live(ch) else "🟡 演示模式"
 
