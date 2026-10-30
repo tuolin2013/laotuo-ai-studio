@@ -11,8 +11,8 @@ from app.engine.skill_loader import SkillRegistry
 from app.schemas.skill import SKILL_SLOTS, SkillCard
 
 BADGE_LABEL = "👑 老庹 AI 工坊 · 定制行业专属卡带 / 商业版"
-# 商务联系方式：填入真实信息时，README.md「📬 商务合作」一节同步修改
-CONTACTS = (("微信", "（待填写）"), ("邮箱", "（待填写）"), ("公众号", "（待填写）"))
+# 商务联系方式：填入真实信息时，README.md「📬 商务合作」与门面页报价 deploy/vercel-landing/pricing.html 同步修改
+CONTACTS = (("微信", "tuolin2012"), ("邮箱", "19174483860@163.com"), ("公众号", "庹林AI实战派"))
 
 COMMERCIAL_MD = (
     "#### 💼 版本与定制服务\n\n"

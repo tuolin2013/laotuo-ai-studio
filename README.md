@@ -235,11 +235,11 @@ cp .env.example .env          # 不填任何 Key 也能启动（演示模式）
 
 > **定制专属行业 Skill 卡带 / 获取云端独享版 / 视觉包代制作**
 >
-> - 微信：`（待填写）`
-> - 邮箱：`（待填写）`
-> - 公众号：`（待填写）`
+> - 微信：`tuolin2012`
+> - 邮箱：`19174483860@163.com`
+> - 公众号：`庹林AI实战派`
 
-<!-- 填写真实联系方式时，同步修改 app/ui/pro_panel.py 中的 CONTACTS（界面顶部「👑 老庹 AI 工坊」入口） -->
+<!-- 填写真实联系方式时，同步修改 app/ui/pro_panel.py 中的 CONTACTS（界面顶部「👑 老庹 AI 工坊」入口）与门面页报价 deploy/vercel-landing/pricing.html -->
 
 ## 配置说明
 

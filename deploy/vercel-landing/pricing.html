@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark">
+  <title>老庹 AI 电商内容工厂 · 部署与定制服务报价</title>
+  <meta name="description" content="工作台底座开源免费；我们为您的店铺定制专属类目、远程部署，并用您的真品跑通主图、详情页和动效广告后再验收。">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%AD%3C/text%3E%3C/svg%3E">
+  <!--
+    这是公开页面（门面页顶栏与页脚链接过来），所有人都能看到：
+    - 卖点只写代码里真实存在的能力（CLAUDE.md §1），不写「100%」「永久」这类无法兑现的承诺，不与竞品比较；
+    - 定金分期、客户类目确认栏、税价留在私下发给客户的正式报价单里；
+    - 商务联系方式与 app/ui/pro_panel.py 的 CONTACTS、README「📬 商务合作」同步（tests/test_landing_page.py 检查）。
+  -->
+  <style>
+    :root {
+      --bg-primary: #090b10;
+      --bg-card: #121621;
+      --bg-card-alt: #171c2b;
+      --border-color: rgba(255, 255, 255, 0.09);
+      --border-highlight: rgba(56, 189, 248, 0.45);
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --accent-cyan: #38bdf8;
+      --accent-indigo: #818cf8;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --shadow-glow: 0 12px 40px -10px rgba(56, 189, 248, 0.15);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-primary);
+      background-image:
+        radial-gradient(circle at 15% 5%, rgba(56, 189, 248, 0.12), transparent 35%),
+        radial-gradient(circle at 85% 15%, rgba(129, 140, 248, 0.10), transparent 35%);
+      color: var(--text-main);
+      font-family: "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Microsoft YaHei UI", "Microsoft YaHei",
+                   "Noto Sans SC", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+      line-height: 1.65;
+      padding: 32px 16px 64px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: inherit; }
+    :focus-visible { outline: 2px solid var(--accent-cyan); outline-offset: 3px; border-radius: 6px; }
+
+    .container {
+      max-width: 1040px;
+      margin: 0 auto;
+    }
+
+    /* 顶部工具栏：返回首页 + 导出 PDF */
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .back {
+      font-size: 14px;
+      color: var(--text-muted);
+      text-decoration: none;
+    }
+
+    .back:hover { color: var(--text-main); }
+
+    .btn-action {
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo));
+      color: #090b10;
+      font: inherit;
+      font-weight: 700;
+      font-size: 14px;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 999px;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(56, 189, 248, 0.25);
+      transition: transform 0.15s ease, opacity 0.15s ease;
+    }
+
+    .btn-action:hover {
+      transform: translateY(-1px);
+      opacity: 0.95;
+    }
+
+    /* 头部横幅 */
+    .hero {
+      background: linear-gradient(160deg, rgba(23, 28, 43, 0.95), rgba(18, 22, 33, 0.95));
+      border: 1px solid var(--border-highlight);
+      border-radius: var(--radius-lg);
+      padding: 40px 36px;
+      box-shadow: var(--shadow-glow);
+      margin-bottom: 32px;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      background: rgba(56, 189, 248, 0.12);
+      color: var(--accent-cyan);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+
+    .badge.amber {
+      background: rgba(245, 158, 11, 0.12);
+      color: var(--accent-amber);
+      border-color: rgba(245, 158, 11, 0.3);
+    }
+
+    .badge.card-label { margin-bottom: 8px; }
+
+    .hero h1 {
+      font-size: 30px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 14px;
+      background: linear-gradient(90deg, #ffffff, #cbd5e1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-lead {
+      font-size: 16px;
+      color: #cbd5e1;
+      background: rgba(255, 255, 255, 0.04);
+      border-left: 4px solid var(--accent-cyan);
+      padding: 14px 18px;
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      margin-bottom: 24px;
+    }
+
+    .hero-lead strong { color: #ffffff; }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+    }
+
+    .metric-box {
+      background: rgba(9, 11, 16, 0.65);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      text-align: center;
+    }
+
+    .metric-val {
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--accent-cyan);
+      display: block;
+    }
+
+    .metric-val.emerald { color: var(--accent-emerald); }
+    .metric-val.amber { color: var(--accent-amber); }
+
+    .metric-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    /* 通用章节 */
+    .section {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 32px;
+      margin-bottom: 28px;
+    }
+
+    .section-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px 16px;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+
+    .section-title {
+      font-size: 20px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-num {
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo));
+      color: #090b10;
+      font-size: 13px;
+      font-weight: 800;
+      padding: 2px 9px;
+      border-radius: 6px;
+    }
+
+    .section-sub {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    /* 报价卡片组 */
+    .pricing-cards {
+      display: grid;
+      grid-template-columns: 1.55fr 1fr;
+      gap: 20px;
+    }
+
+    .price-card {
+      background: var(--bg-card-alt);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 26px;
+    }
+
+    .price-card.featured {
+      border: 1.5px solid var(--accent-cyan);
+      background: linear-gradient(180deg, rgba(56, 189, 248, 0.07) 0%, rgba(23, 28, 43, 0.95) 100%);
+      box-shadow: var(--shadow-glow);
+    }
+
+    .price-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 18px;
+      gap: 12px;
+    }
+
+    .price-name {
+      font-size: 18px;
+      font-weight: 700;
+      color: #ffffff;
+    }
+
+    .price-tag {
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .price-amount {
+      font-size: 32px;
+      font-weight: 800;
+      color: var(--accent-amber);
+      line-height: 1.1;
+    }
+
+    .price-unit {
+      font-size: 12px;
+      color: var(--text-muted);
+      display: block;
+      margin-top: 4px;
+    }
+
+    .feature-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      font-size: 14px;
+      color: #cbd5e1;
+    }
+
+    .feature-list li {
+      position: relative;
+      padding-left: 24px;
+    }
+
+    .feature-list li::before {
+      content: "✓";
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: var(--accent-emerald);
+      font-weight: 800;
+    }
+
+    .feature-list strong { color: #ffffff; }
+
+    .addon-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .addon-card {
+      background: var(--bg-card-alt);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 20px;
+    }
+
+    .addon-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .addon-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #ffffff;
+    }
+
+    .addon-price {
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--accent-cyan);
+      white-space: nowrap;
+    }
+
+    .addon-price.quote { font-size: 16px; }
+
+    .addon-desc {
+      font-size: 13.5px;
+      color: var(--text-muted);
+    }
+
+    /* 表格 */
+    .table-wrap { overflow-x: auto; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 14px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+      vertical-align: top;
+    }
+
+    th {
+      background: rgba(255, 255, 255, 0.04);
+      color: #ffffff;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    td { color: #cbd5e1; }
+    td strong { color: #ffffff; }
+
+    .text-good {
+      color: var(--accent-emerald);
+      font-weight: 700;
+    }
+
+    .cell-note {
+      display: block;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* 类目交付网格 */
+    .deliverable-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+      gap: 16px;
+    }
+
+    .deliverable-item {
+      background: var(--bg-card-alt);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 20px;
+    }
+
+    .deliverable-item h3 {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--accent-cyan);
+      margin-bottom: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .code-pill {
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 11px;
+      background: rgba(255, 255, 255, 0.07);
+      color: #cbd5e1;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .deliverable-item p {
+      font-size: 13.5px;
+      color: var(--text-muted);
+    }
+
+    /* 接口与数据说明 */
+    .api-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin-bottom: 16px;
+    }
+
+    .api-box {
+      background: var(--bg-card-alt);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 20px;
+    }
+
+    .api-box h3 {
+      font-size: 16px;
+      margin-bottom: 10px;
+      color: #ffffff;
+    }
+
+    .api-box ul {
+      font-size: 13.5px;
+      color: #cbd5e1;
+      padding-left: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .notice-box {
+      background: rgba(245, 158, 11, 0.08);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      border-radius: var(--radius-md);
+      padding: 14px 18px;
+      font-size: 13px;
+      color: #fde68a;
+    }
+
+    /* 交付流程 */
+    .steps-list {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .step-row {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      background: var(--bg-card-alt);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+    }
+
+    .step-badge {
+      background: rgba(56, 189, 248, 0.08);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 16px 12px;
+      text-align: center;
+    }
+
+    .step-no {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent-cyan);
+      text-transform: uppercase;
+    }
+
+    .step-tag {
+      font-size: 13px;
+      font-weight: 800;
+      color: #ffffff;
+      margin-top: 4px;
+    }
+
+    .step-body { padding: 16px 20px; }
+
+    .step-body h4 {
+      font-size: 15px;
+      color: #ffffff;
+      margin-bottom: 4px;
+    }
+
+    .step-body p {
+      font-size: 13.5px;
+      color: var(--text-muted);
+    }
+
+    /* 底部商务合作 */
+    .confirm-card {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(56, 189, 248, 0.08));
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      border-radius: var(--radius-lg);
+      padding: 28px 32px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .confirm-info h3 {
+      font-size: 18px;
+      color: #ffffff;
+      margin-bottom: 6px;
+    }
+
+    .confirm-info p {
+      font-size: 13.5px;
+      color: #cbd5e1;
+    }
+
+    .confirm-slots {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .slot-pill {
+      background: rgba(9, 11, 16, 0.7);
+      border: 1px dashed rgba(255, 255, 255, 0.25);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      color: #e2e8f0;
+    }
+
+    .total { text-align: right; }
+    .total-label { font-size: 13px; color: var(--text-muted); }
+    .total-amount { font-size: 28px; font-weight: 800; color: var(--accent-emerald); }
+    .total-note { font-size: 12px; color: #cbd5e1; }
+
+    /* 手机微信浏览 */
+    @media (max-width: 768px) {
+      .hero { padding: 24px 20px; }
+      .hero h1 { font-size: 22px; }
+      .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+      .pricing-cards, .api-grid { grid-template-columns: 1fr; }
+      .section { padding: 22px 18px; }
+      .price-header { flex-direction: column; }
+      .price-tag { text-align: left; }
+      .step-row { grid-template-columns: 1fr; }
+      .step-badge {
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+        flex-direction: row;
+        justify-content: space-between;
+        padding: 10px 16px;
+      }
+      .total { text-align: left; }
+    }
+
+    /* 打印 / 导出 PDF：白底 */
+    @media print {
+      body {
+        background: #ffffff !important;
+        color: #111827 !important;
+        padding: 0;
+      }
+      .toolbar { display: none !important; }
+      .hero, .section, .price-card, .addon-card, .deliverable-item, .api-box, .step-row, .confirm-card, .metric-box {
+        background: #ffffff !important;
+        color: #111827 !important;
+        border-color: #d1d5db !important;
+        box-shadow: none !important;
+        break-inside: avoid;
+      }
+      .hero h1, .price-name, .addon-title, .section-title, .step-body h4, .api-box h3, .confirm-info h3, th,
+      .feature-list strong, td strong, .step-tag {
+        color: #111827 !important;
+        -webkit-text-fill-color: #111827 !important;
+      }
+      .hero-lead, .feature-list, .addon-desc, .deliverable-item p, .api-box ul, .step-body p, .confirm-info p, td,
+      .slot-pill, .total-note {
+        color: #374151 !important;
+      }
+      .notice-box {
+        background: #fef3c7 !important;
+        color: #92400e !important;
+        border-color: #f59e0b !important;
+      }
+      .price-amount, .addon-price, .metric-val, .total-amount {
+        color: #0284c7 !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="toolbar">
+      <a class="back" href="index.html">← 返回首页</a>
+      <button class="btn-action" type="button" onclick="window.print()">🖨️ 打印 / 导出为 PDF</button>
+    </div>
+
+    <header class="hero">
+      <div class="badge-row">
+        <span class="badge">部署与定制服务</span>
+        <span class="badge">插卡式 Skill 架构</span>
+        <span class="badge amber">工作台底座开源 · 无年费 · 接口费不经手</span>
+      </div>
+      <h1>老庹 AI 电商内容工厂 · 部署与定制服务报价</h1>
+      <p class="hero-lead">
+        <strong>一句话说明：</strong>工作台底座开源，可以免费自行部署。我们为您的店铺定制专属类目，远程装到您的电脑上，再用您店里的真品跑通<strong>主图、详情页和动效广告</strong>，验收通过后交付。
+      </p>
+      <div class="metrics-grid">
+        <div class="metric-box">
+          <span class="metric-val amber">¥ 6,800</span>
+          <span class="metric-label">基础包（含 3 个专属类目）</span>
+        </div>
+        <div class="metric-box">
+          <span class="metric-val emerald">0 接口费</span>
+          <span class="metric-label">动效广告用项目素材本机渲染</span>
+        </div>
+        <div class="metric-box">
+          <span class="metric-val">14 项</span>
+          <span class="metric-label">动效成片自动自检</span>
+        </div>
+        <div class="metric-box">
+          <span class="metric-val">30 天</span>
+          <span class="metric-label">免费维护</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- 一、报价明细 -->
+    <section class="section">
+      <div class="section-header">
+        <div class="section-title">
+          <span class="section-num">01</span>
+          <span>报价明细</span>
+        </div>
+        <span class="section-sub">一次性服务费 · 无年费 · 含 30 天维护</span>
+      </div>
+
+      <div class="pricing-cards">
+        <div class="price-card featured">
+          <div class="price-header">
+            <div>
+              <div class="badge card-label">基础包</div>
+              <div class="price-name">部署与定制基础包</div>
+            </div>
+            <div class="price-tag">
+              <span class="price-amount">¥ 6,800</span>
+              <span class="price-unit">一次性（含 3 个专属类目）</span>
+            </div>
+          </div>
+          <ul class="feature-list">
+            <li><strong>本机部署工作台，以下三个选项卡接真实接口</strong>：<br>
+              ①【主图】按平台建议张数规划（淘宝默认 5 张，可自由调整），每个图位一次出 1~4 张候选图挑选<br>
+              ②【详情页】按屏规划（淘宝默认 10 屏），定稿后导出长图序列与 zip<br>
+              ③【动效广告】用项目里的主图、详情页做素材，本机渲染 1080P 成片，按配乐节拍卡点剪辑，附联系表与 14 项自检报告
+            </li>
+            <li><strong>3 个专属类目定制</strong>：类目配置、参考图角色、合规词库与专属策划卡带（详见第 03 节）。</li>
+            <li><strong>接口配置与连通性诊断</strong>：文案模型可选 RightAPI、DeepSeek、通义千问、智谱、豆包、Kimi 等提供商，或其他 OpenAI 兼容中转站；画图默认接 RightAPI。一键检查各项 Key 与地址是否可用。</li>
+            <li><strong>远程部署 + 真品验收</strong>：远程安装运行环境，用您店里 1 款真品跑出全套成品后再验收。</li>
+            <li><strong>30 天维护</strong>：范围见第 06 节。</li>
+          </ul>
+        </div>
+
+        <div class="addon-stack">
+          <div class="addon-card">
+            <div class="badge amber card-label">选配 · 扩展类目</div>
+            <div class="addon-top">
+              <span class="addon-title">新增专属类目</span>
+              <span class="addon-price">¥ 1,500 / 类目</span>
+            </div>
+            <p class="addon-desc">超出基础包的 3 个类目后，每多 1 个细分类目收 1,500 元，交付内容与第 03 节相同。</p>
+          </div>
+
+          <div class="addon-card">
+            <div class="badge card-label">选配 · 其他画图接口</div>
+            <div class="addon-top">
+              <span class="addon-title">画图接口适配</span>
+              <span class="addon-price">¥ 1,500 / 通道</span>
+            </div>
+            <p class="addon-desc">文案模型已内置多家提供商，不另收费。画图目前接 RightAPI 的 GPT Image 与 Nano Banana 系列模型；需要接入其他画图服务（如国内云厂商的原生接口）时，按通道开发适配器。</p>
+          </div>
+
+          <div class="addon-card">
+            <div class="badge card-label">选配 · GPU 服务</div>
+            <div class="addon-top">
+              <span class="addon-title">视频与配音</span>
+              <span class="addon-price quote">单独报价</span>
+            </div>
+            <p class="addon-desc">在您自己的 Modal 账号（海外云 GPU 平台）上部署 MiniMax H3 视频生成与 VoxCPM2 配音服务，启用【视频】（分镜剧本、首帧锁定、一键成片）与【配音】（口播配音，导出 wav / mp3 / srt）选项卡。GPU 按运行秒数从您的 Modal 账户扣费，需要能付美元的银行卡。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 二、费用构成 -->
+    <section class="section">
+      <div class="section-header">
+        <div class="section-title">
+          <span class="section-num">02</span>
+          <span>费用由哪几部分组成</span>
+        </div>
+        <span class="section-sub">服务费付给我们，接口费直接付给服务商</span>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>费用</th>
+              <th>付给谁</th>
+              <th>怎么计费</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>部署与定制服务</strong></td>
+              <td>老庹 AI 工作室</td>
+              <td>一次性：基础包 ¥6,800，选配另计</td>
+              <td>内容见第 01 节，没有年费</td>
+            </tr>
+            <tr>
+              <td><strong>文案与画图接口</strong></td>
+              <td>您选择的 AI 接口服务商（默认 RightAPI）</td>
+              <td>按用量从您自己的账户扣费</td>
+              <td>我们协助注册与充值，不经手、不加价。花费取决于图片张数、分辨率和候选图数量，建议验收时看一套成品的实际扣费记录，再决定充值金额</td>
+            </tr>
+            <tr>
+              <td><strong>动效广告</strong></td>
+              <td>—</td>
+              <td><span class="text-good">「项目素材」方式 0 接口费</span></td>
+              <td>画面、配乐和音效都在您的电脑上渲染<span class="cell-note">选「AI 生图」方式时，部分分镜会调用画图接口，按画图计费</span></td>
+            </tr>
+            <tr>
+              <td><strong>视频与配音（选配）</strong></td>
+              <td>Modal</td>
+              <td>按 GPU 运行秒数从您的 Modal 账户扣费</td>
+              <td>服务闲置后自动释放 GPU；冷启动与闲置等待期间同样计费</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 三、专属类目交付什么 -->
+    <section class="section">
+      <div class="section-header">
+        <div class="section-title">
+          <span class="section-num">03</span>
+          <span>每个专属类目交付什么</span>
+        </div>
+        <span class="section-sub">一套类目配置加一张策划卡带，放进您的工作台即可使用</span>
+      </div>
+
+      <div class="deliverable-grid">
+        <div class="deliverable-item">
+          <h3>1. 类目配置 <span class="code-pill">.json</span></h3>
+          <p>预置规格参数、核心卖点、痛点、目标人群、产品线与商品信息表单，运营在界面上点选、填空即可，不用每次重新打字。</p>
+        </div>
+        <div class="deliverable-item">
+          <h3>2. 参考图角色 <span class="code-pill">reference_image_roles</span></h3>
+          <p>按您的产品定好要拍哪些参考图（如包装正面、内料、检测报告）。同一角色上传一次，自动绑定到所有需要它的图位；按绑定的张数自动选择文生图、单图编辑或 2~3 图融合。</p>
+        </div>
+        <div class="deliverable-item">
+          <h3>3. 原料性状图谱 <span class="code-pill">ingredient_visuals</span></h3>
+          <p>适用于茶叶、本草等植物原料类目：按《中国药典》性状写每味原料的外观（只写外观、不写功效），画面提到原料时自动附进生图指令。其他品类的材质描述另行评估。</p>
+        </div>
+        <div class="deliverable-item">
+          <h3>4. 合规词库 <span class="code-pill">forbidden_words</span></h3>
+          <p>《广告法》绝对化用语加类目专项红线。填写商品信息时实时提示，动效广告与成片花字自动去掉违禁词。系统只做拦截，不撰写功效、疗效类宣传。</p>
+        </div>
+        <div class="deliverable-item">
+          <h3>5. 专属策划卡带 <span class="code-pill">.md Skill</span></h3>
+          <p>继承通用策划卡带，只改写本类目不同的部分；切换到该类目时自动选中。按平台建议张数规划主图与详情页，逐张写标题、上图文案、画面描述与构图。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 四、接口与数据说明 -->
+    <section class="section">
+      <div class="section-header">
+        <div class="section-title">
+          <span class="section-num">04</span>
+          <span>接口与数据说明</span>
+        </div>
+        <span class="section-sub">用哪些接口，数据存在哪里</span>
+      </div>
+
+      <div class="api-grid">
+        <div class="api-box">
+          <h3>🔌 支持哪些接口</h3>
+          <ul>
+            <li><strong>文案模型</strong>：RightAPI、Anthropic、OpenAI、Google Gemini、OpenRouter、DeepSeek、智谱、通义千问、豆包、Kimi，或其他 OpenAI 兼容中转站。在界面选提供商、填 Key 即可。</li>
+            <li><strong>画图</strong>：RightAPI 的 GPT Image 与 Nano Banana 系列模型，接口协议按模型自动选择。没有现成账户的，部署时协助您注册并充值。</li>
+            <li><strong>视频与配音</strong>：您自己 Modal 账号上的 GPU 服务（选配）。</li>
+          </ul>
+        </div>
+        <div class="api-box">
+          <h3>🔒 数据存在哪里</h3>
+          <ul>
+            <li>项目、策划案、参考图、成品图和成片都保存在您电脑上的工作台文件夹里。</li>
+            <li>生成时，商品图和文案会发给您选择的 AI 接口服务商处理。介意的话，请先了解对方的数据政策。</li>
+            <li>工作台没有登录功能，默认只能在本机打开，不建议开放到局域网或公网。</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="notice-box">
+        <strong>生图效果说明：</strong>包装和中文文字会不会变形，取决于画图模型。系统用真品参考图融合、提示词逐字写明上图文字、限制上图字数来减少变形，但不能保证每张图都完全还原。每个图位可以一次出 1~4 张候选图挑选，不满意的可以单张重新生成。
+      </div>
+    </section>
+
+    <!-- 五、交付流程 -->
+    <section class="section">
+      <div class="section-header">
+        <div class="section-title">
+          <span class="section-num">05</span>
+          <span>交付流程</span>
+        </div>
+        <span class="section-sub">全程远程 · 用您的真品跑通后再验收</span>
+      </div>
+
+      <div class="steps-list">
+        <div class="step-row">
+          <div class="step-badge">
+            <span class="step-no">Step 01</span>
+            <span class="step-tag">确认需求</span>
+          </div>
+          <div class="step-body">
+            <h4>确认 3 个定制类目</h4>
+            <p>您提供代表性产品的实拍图（包装正面、背面配料表或参数表）与核心卖点资料。</p>
+          </div>
+        </div>
+
+        <div class="step-row">
+          <div class="step-badge">
+            <span class="step-no">Step 02</span>
+            <span class="step-tag">约 5 个工作日</span>
+          </div>
+          <div class="step-body">
+            <h4>类目配置与专属策划卡带开发</h4>
+            <p>为 3 个类目编写类目配置与专属策划卡带，并在我方电脑上用真实接口跑通主图和详情页。</p>
+          </div>
+        </div>
+
+        <div class="step-row">
+          <div class="step-badge">
+            <span class="step-no">Step 03</span>
+            <span class="step-tag">约 1~2 小时</span>
+          </div>
+          <div class="step-body">
+            <h4>远程部署</h4>
+            <p>通过向日葵或 ToDesk 连接您的办公电脑（建议 Windows 10/11 64 位、16GB 内存、20GB 可用空间；CPU 核数越多，动效渲染越快），安装运行环境与 ffmpeg，创建桌面启动快捷方式。</p>
+          </div>
+        </div>
+
+        <div class="step-row">
+          <div class="step-badge">
+            <span class="step-no">Step 04</span>
+            <span class="step-tag">真品验收</span>
+          </div>
+          <div class="step-body">
+            <h4>用您店里 1 款真品跑一遍全流程</h4>
+            <p>帮您填好 API Key 并通过连通性诊断，用真品实拍图生成主图、详情页与 1 条 1080P 动效广告（附 14 项自检报告），成品保存在您的电脑上。</p>
+          </div>
+        </div>
+
+        <div class="step-row">
+          <div class="step-badge">
+            <span class="step-no">Step 05</span>
+            <span class="step-tag">交付</span>
+          </div>
+          <div class="step-body">
+            <h4>交付操作指南，开始 30 天维护</h4>
+            <p>验收通过后交付《日常操作指南》，开始 30 天维护。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 六、服务说明 -->
+    <section class="section">
+      <div class="section-header">
+        <div class="section-title">
+          <span class="section-num">06</span>
+          <span>服务说明</span>
+        </div>
+      </div>
+      <ul class="feature-list">
+        <li><strong>工作台底座开源</strong>：源码在 <a href="https://github.com/tuolin2013/laotuo-ai-studio">GitHub</a> 公开（<a href="https://github.com/tuolin2013/laotuo-ai-studio/blob/main/LICENSE">Apache-2.0 + 附加条件</a>），自营店铺可以免费自行部署。本报价收取的是定制、部署、验收与维护服务。</li>
+        <li><strong>专属类目与卡带</strong>：为您定制的类目配置与策划卡带，仅限贵公司自营店铺使用，不得转售或公开。</li>
+        <li><strong>30 天维护</strong>：远程答疑、修复使用中发现的软件问题、协助排查接口连接。不含新功能开发与新增类目。</li>
+        <li><strong>30 天之后</strong>：版本更新与新画图模型接入另行约定。</li>
+        <li><strong>价格</strong>：以人民币计；是否含税、付款方式以正式报价单为准。</li>
+      </ul>
+    </section>
+
+    <!-- 商务合作：联系方式与 app/ui/pro_panel.py 的 CONTACTS、README「📬 商务合作」同步 -->
+    <footer class="confirm-card">
+      <div class="confirm-info">
+        <h3>📬 商务合作</h3>
+        <p>定制专属类目、部署工作台、视频与配音服务报价，请联系：</p>
+        <div class="confirm-slots">
+          <span class="slot-pill">微信：tuolin2012</span>
+          <span class="slot-pill">邮箱：19174483860@163.com</span>
+          <span class="slot-pill">公众号：庹林AI实战派</span>
+        </div>
+      </div>
+      <div class="total">
+        <div class="total-label">部署与定制基础包</div>
+        <div class="total-amount">¥ 6,800</div>
+        <div class="total-note">含 3 个专属类目 · 远程部署 · 真品验收 · 30 天维护</div>
+      </div>
+    </footer>
+  </div>
+
+</body>
+</html>

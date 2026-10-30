@@ -71,6 +71,7 @@
     display: flex; align-items: center; justify-content: space-between; gap: 1rem;
     padding-block: 1.5rem; font-size: 15px; color: var(--sub);
   }
+  .bar nav { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; }
   .bar a { text-decoration: none; }
   .bar a:hover { color: var(--text); }
 
@@ -278,7 +279,10 @@
 <div class="wrap">
   <header class="bar">
     <span>老庹 AI 工作室出品</span>
-    <a href="https://github.com/tuolin2013/laotuo-ai-studio">GitHub 源码</a>
+    <nav aria-label="站点链接">
+      <a href="pricing.html">部署与定制报价</a>
+      <a href="https://github.com/tuolin2013/laotuo-ai-studio">GitHub 源码</a>
+    </nav>
   </header>
 
   <main>
@@ -364,6 +368,7 @@
   <footer>
     <ul class="links">
       <li><a href="https://github.com/tuolin2013/laotuo-ai-studio">源码与本机部署说明</a></li>
+      <li><a href="pricing.html">部署与定制服务报价</a></li>
       <li><a href="https://github.com/tuolin2013/laotuo-ai-studio/blob/main/LICENSE">许可证：Apache-2.0 + 附加条件</a></li>
     </ul>
     <p>老庹 AI 电商内容工厂（Laotuo AI E-Commerce Studio），老庹 AI 工作室出品。本机部署后填入 Key，即可调用真实的策划与生图接口。</p>

@@ -81,6 +81,9 @@ Vercel 从 GitHub 读取门面页，所以改动要先提交、推送：
    - **Framework Preset**：`Other`（纯静态页，没有构建命令）。
 3. 点 **Deploy**。几十秒后得到 `https://<项目名>.vercel.app`。
 
+门面页顶栏与页脚的「部署与定制报价」链接到同目录的 `pricing.html`，打开 `https://<项目名>.vercel.app/pricing` 即可，
+页面右上角可以打印或导出 PDF。改价格或服务内容时直接改这个文件；它是公开页面，定金分期、税价等写在私下发给客户的正式报价单里。
+
 之后每次往 GitHub 的 `main` 推送，Vercel 都会自动重新部署。绑定自己的域名在项目 **Settings → Domains**。
 
 宣传片放在别处：把视频传到你的 CDN / 对象存储，把 `index.html` 里 `data-src="promo.mp4"` 改成完整网址即可。
