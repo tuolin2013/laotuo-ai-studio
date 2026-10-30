@@ -1,5 +1,6 @@
-"""Vercel 门面页的报价页：首页有入口，页面上的数字与代码一致，联系方式与界面同步，不写无法兑现的承诺。"""
+"""门面页的报价页：首页有入口，页面上的数字与代码一致，联系方式与界面同步，不写无法兑现的承诺。"""
 
+import json
 import re
 from pathlib import Path
 
@@ -43,6 +44,26 @@ def test_pricing_llm_providers_exist():
     for name in ["DeepSeek", "通义千问", "智谱", "豆包", "Kimi", "OpenRouter"]:
         assert name in labels, name
         assert name in PRICING, name
+
+
+def test_cloudflare_headers_match_vercel_json():
+    """Cloudflare Pages 读 _headers，Vercel 读 vercel.json：两边的响应头一致。"""
+    rules: dict[str, dict[str, str]] = {}
+    path = None
+    for line in (LANDING / "_headers").read_text(encoding="utf-8").splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        if not line.startswith(" "):
+            path = line.strip()
+            rules[path] = {}
+        else:
+            name, value = line.strip().split(": ", 1)
+            rules[path][name] = value
+    vercel = json.loads((LANDING / "vercel.json").read_text(encoding="utf-8"))
+    expected = {
+        h["source"].replace("(.*)", "*"): {x["key"]: x["value"] for x in h["headers"]} for h in vercel["headers"]
+    }
+    assert rules == expected
 
 
 def test_pricing_contacts_match_pro_panel_and_readme():

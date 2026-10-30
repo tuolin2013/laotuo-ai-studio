@@ -1,0 +1,7 @@
+# Cloudflare Pages 响应头（与 vercel.json 的 headers 保持一致，tests/test_landing_page.py 检查）
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+/promo.mp4
+  Cache-Control: public, max-age=604800

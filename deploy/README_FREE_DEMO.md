@@ -5,10 +5,11 @@
 - **后端**（跑工作台本身，访客不用填 Key，所有生成都走演示模式）：
   - 推荐 **Modal CPU 容器**（`modal/public_demo_service.py`）：一条 `modal deploy` 得到 HTTPS 网址，闲置 5 分钟自动缩到 0；
   - 备用 **Hugging Face Docker Space**（`deploy/hf_space/`）：新建 Docker Space 需要 HF PRO。
-- **Vercel 门面页**（`deploy/vercel-landing/`，纯静态）：宣传片 + 内嵌在线体验，访客打开一个网址就能看片、上手操作。
+- **门面页**（`deploy/vercel-landing/`，纯静态，托管在 Cloudflare Pages，域名 `ai.laotuo.top`）：宣传片 + 内嵌在线体验 +
+  部署与定制报价，访客打开一个网址就能看片、上手操作。目录名沿用早先的 Vercel 方案，没有改。
 
 ```
-访客 ──► Vercel 门面页（deploy/vercel-landing/）
+访客 ──► 门面页 https://ai.laotuo.top（Cloudflare Pages，deploy/vercel-landing/）
             ├─ 🎬 宣传片：promo.mp4（封面 promo-poster.jpg）
             └─ 🚀 在线体验：<iframe> ──► Modal：https://tuolin2011--laotuo-public-demo.us-east.modal.run
                                           （备用：Hugging Face Space）
@@ -22,9 +23,10 @@
   约 $0.11 / 小时；渲染时 CPU 最多用到 2 核，按实际用量计。闲置 5 分钟缩到 0，不计费。$30 大约够容器开 200 多个小时。
   建议在 Modal 后台 **Settings → Usage & Billing** 设一个每月额度上限（Workspace budget），到了上限自动停。
 - **`modal/` 不在开源仓库里**：部署脚本只在本机和私人备份仓库（`scripts/sync_private_backup.py`）。
-- **Vercel 免费版（Hobby）只允许非商业的个人使用**，商业用途要 Pro 套餐。
-- **国内访问**：`*.modal.run`、`*.vercel.app`、`*.hf.space` 在国内网络下可能打不开或很慢（没有在国内网络测过）。
-  面向国内客户时，建议给门面页绑定自己的域名；Modal 的自定义域名需要 Team 套餐。
+- **不用 Vercel 免费版（Hobby）**：它的条款只允许非商业的个人使用，「宣传出售产品或服务」就算商业用途，门面页的报价页属于这一类。
+  所以门面页改放在 Cloudflare Pages。
+- **国内访问**：`*.modal.run`、`*.pages.dev`、`*.hf.space` 在国内网络下可能打不开或很慢（没有在国内网络测过）。
+  门面页已绑定自己的域名 `ai.laotuo.top`；Modal 的自定义域名需要 Team 套餐。
 - **没有登录鉴权**：知道网址的人都能用。公共演示模式不读取任何 Key、不调用付费接口，花的只是容器运行费。
 
 ## 第 1 步：部署后端（Modal）
@@ -64,7 +66,7 @@
 
 ## 第 2 步：提交并推送到 GitHub
 
-Vercel 从 GitHub 读取门面页，所以改动要先提交、推送：
+Cloudflare Pages 从 GitHub 读取门面页，所以改动要先提交、推送：
 
 ```bash
 .venv/Scripts/python scripts/sync_private_backup.py   # 公开仓 origin（不含 modal/）+ 私人全量备份 private（含 modal/）
@@ -73,20 +75,43 @@ Vercel 从 GitHub 读取门面页，所以改动要先提交、推送：
 `deploy/vercel-landing/promo.mp4` 是压缩过的 1080P 宣传片（约 8.7MB，62 秒），已经提交进仓库，
 会永久留在公开仓库的历史里。
 
-## 第 3 步：Vercel 一键部署门面页
+## 第 3 步：Cloudflare Pages 部署门面页
 
-1. 打开 <https://vercel.com/new>，用 GitHub 登录，**Import** 仓库 `tuolin2013/laotuo-ai-studio`。
-2. 配置页只改两项：
-   - **Root Directory**：点 Edit，选 `deploy/vercel-landing`；
-   - **Framework Preset**：`Other`（纯静态页，没有构建命令）。
-3. 点 **Deploy**。几十秒后得到 `https://<项目名>.vercel.app`。
+`laotuo.top` 的 DNS 托管在 Cloudflare，门面页用它的子域名 `ai.laotuo.top`。
 
-门面页顶栏与页脚的「部署与定制报价」链接到同目录的 `pricing.html`，打开 `https://<项目名>.vercel.app/pricing` 即可，
+1. 打开 Cloudflare 后台 **Workers & Pages** → **Create application** → **Pages** → **Connect to Git**，
+   授权 GitHub 后选仓库 `tuolin2013/laotuo-ai-studio`。
+2. 构建设置：
+   - **Production branch**：`main`；
+   - **Framework preset**：`None`；
+   - **Build command**：`exit 0`（纯静态页，不需要构建）；
+   - **Build output directory**：`deploy/vercel-landing`；
+   - **Root directory** 留空。
+3. 点 **Save and Deploy**，几十秒后得到 `https://<项目名>.pages.dev`。先在这个网址检查：宣传片能播放、在线体验能加载、
+   `/pricing` 能打开。
+4. 绑定域名（`ai.laotuo.top` 原来指向 Vercel，要先删旧记录）：
+   1. `laotuo.top` → **DNS → Records**，删掉名称为 `ai`、值形如 `….vercel-dns-017.com` 的 CNAME 记录；
+   2. 回到 Pages 项目 → **Custom domains** → 添加 `ai.laotuo.top`，按提示确认。Cloudflare 会自动加一条指向
+      `<项目名>.pages.dev` 的 CNAME；
+   3. 状态变成 **Active**（签发证书一般几分钟）后打开 <https://ai.laotuo.top> 检查。从删记录到生效，网站会打不开几分钟。
+
+   不要只在 DNS 里手动加一条指向 `pages.dev` 的 CNAME 而不在 Custom domains 里登记，那样会报 522 错误。
+
+门面页顶栏与页脚的「部署与定制报价」链接到同目录的 `pricing.html`，网址是 <https://ai.laotuo.top/pricing>，
 页面右上角可以打印或导出 PDF。改价格或服务内容时直接改这个文件；它是公开页面，定金分期、税价等写在私下发给客户的正式报价单里。
 
-之后每次往 GitHub 的 `main` 推送，Vercel 都会自动重新部署。绑定自己的域名在项目 **Settings → Domains**。
+之后每次往 GitHub 的 `main` 推送，Cloudflare Pages 都会自动重新部署。响应头写在 `deploy/vercel-landing/_headers`
+（与 `vercel.json` 一致，`tests/test_landing_page.py` 检查）。Pages 单个文件不能超过 25 MiB，宣传片 8.7MB 没问题。
 
 宣传片放在别处：把视频传到你的 CDN / 对象存储，把 `index.html` 里 `data-src="promo.mp4"` 改成完整网址即可。
+
+### 停用原来的 Vercel 项目
+
+等 `ai.laotuo.top` 在 Cloudflare Pages 上能正常打开之后再做：
+
+1. Vercel 项目 **Settings → Domains**，删除 `ai.laotuo.top`；
+2. 项目 **Settings** 页面最下方 **Delete Project**，删除项目。只删域名不够：`<项目名>.vercel.app` 仍会公开报价页，
+   仍算商业用途。页面都在 GitHub 仓库里，以后需要可以重新导入。
 
 ## 备用：Hugging Face Space
 
@@ -123,7 +148,7 @@ Team / Enterprise（组织）；CPU basic 硬件本身不按小时收费。用 S
 
 ```bash
 # 改完代码、提交之后
-.venv/Scripts/python scripts/sync_private_backup.py        # GitHub（Vercel 门面页随之更新）+ 私人备份
+.venv/Scripts/python scripts/sync_private_backup.py        # GitHub（Cloudflare Pages 门面页随之更新）+ 私人备份
 .venv/Scripts/modal deploy modal/public_demo_service.py    # 在线体验更新
 # 用 Hugging Face Space 时改为：.venv/Scripts/python scripts/push_hf_space.py
 ```

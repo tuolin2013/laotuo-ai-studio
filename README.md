@@ -216,7 +216,7 @@ cp .env.example .env          # 不填任何 Key 也能启动（演示模式）
 
 `LAOTUO_PUBLIC_DEMO=1` 启动即为公共演示模式：一律走演示、不读取任何 Key、不显示 API 配置，每位访客打开页面自动得到一份张家界莓茶示例项目（主图 4 张 + 详情页 4 屏），直接点「🎬 AI 编排动效方案」→「⚡ 快速预览」就能走完动效广告全流程；单条动效最长 30 秒，1 小时没有操作的项目自动清理。
 
-后端推荐跑在 Modal 的 CPU 容器上（闲置 5 分钟自动缩到 0，按秒计费），一条 `modal deploy` 得到 HTTPS 网址；部署脚本属于自有部署脚本，不在开源仓库里，备用方案是 [`deploy/hf_space/`](deploy/hf_space/) 的 Hugging Face Space Dockerfile（含 ffmpeg 与思源中文字体，新建 Docker Space 需要 HF PRO）。门面页 [`deploy/vercel-landing/`](deploy/vercel-landing/) 是 Vercel 纯静态页（宣传片 + 内嵌在线体验）。上线步骤见 [deploy/README_FREE_DEMO.md](deploy/README_FREE_DEMO.md)。
+后端推荐跑在 Modal 的 CPU 容器上（闲置 5 分钟自动缩到 0，按秒计费），一条 `modal deploy` 得到 HTTPS 网址；部署脚本属于自有部署脚本，不在开源仓库里，备用方案是 [`deploy/hf_space/`](deploy/hf_space/) 的 Hugging Face Space Dockerfile（含 ffmpeg 与思源中文字体，新建 Docker Space 需要 HF PRO）。门面页 [`deploy/vercel-landing/`](deploy/vercel-landing/) 是纯静态页（宣传片 + 内嵌在线体验 + 部署与定制报价），托管在 Cloudflare Pages：<https://ai.laotuo.top>。上线步骤见 [deploy/README_FREE_DEMO.md](deploy/README_FREE_DEMO.md)。
 
 ## 💼 商业版本与定制服务
 
