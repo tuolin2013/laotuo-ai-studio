@@ -249,7 +249,7 @@ cp .env.example .env          # 不填任何 Key 也能启动（演示模式）
 
 | 通道 | 需要的配置 | 用途 | 未配置时 |
 |---|---|---|---|
-| LLM | `RIGHTAPI_LLM_KEY` | 执行全部 Skill（策划、编剧、提示词） | 演示数据，JSON 结构与真实输出一致 |
+| LLM | 选一个 API 提供商并填它的 Key（默认 RightAPI：`RIGHTAPI_LLM_KEY`） | 执行全部 Skill（策划、编剧、提示词） | 演示数据，JSON 结构与真实输出一致 |
 | 画图 · image 高质量 | `RIGHTAPI_IMAGE_KEY` | GPT Image / Nano Banana 生图（生产默认） | PIL 绘制中文排版的预览图，带「DEMO」角标 |
 | 画图 · image 普通 | `RIGHTAPI_IMAGE_STD_KEY` | 普通渠道的 GPT Image / Nano Banana 模型 | 同上 |
 | 视频 | 本机已登录 Modal | 调用自行部署的 MiniMax H3 服务 | ffmpeg 合成演示视频 |
@@ -261,8 +261,10 @@ cp .env.example .env          # 不填任何 Key 也能启动（演示模式）
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `RIGHTAPI_BASE_URL` | `https://www.rightapi.ai` | RightAPI 网关地址，会自动补全协议、去掉结尾的 `/v1` |
-| `RIGHTAPI_LLM_MODEL` | `claude-opus-5-5` | LLM 模型 |
-| `RIGHTAPI_LLM_API_FORMAT` | `auto` | `anthropic`（`/v1/messages`）/ `openai`（`/v1/chat/completions`）/ `auto` 自动探测 |
+| `RIGHTAPI_LLM_PROVIDER` | `rightapi` | LLM 提供商：`rightapi` / `custom`（OpenAI 兼容的其他中转站）/ `anthropic` / `openai` / `gemini` / `openrouter` / `deepseek` / `zhipu` / `qwen` / `doubao` / `moonshot`。RightAPI 以外的 Key 存在 `LLM_KEY_<提供商>` |
+| `RIGHTAPI_LLM_MODEL` | `claude-opus-5-5` | LLM 模型。RightAPI 的 Key 绑定渠道，只能用该渠道下的模型；界面「🔄 获取可用模型」可列出 |
+| `RIGHTAPI_LLM_BASE_URL` | 空（用提供商的预设地址） | 自定义 Base URL，只影响 LLM，如 `https://api.example.com/v1`；`custom` 必填 |
+| `RIGHTAPI_LLM_API_FORMAT` | `auto` | `anthropic`（`/v1/messages`）/ `openai`（`/v1/chat/completions`）/ `responses`（`/v1/responses`）/ `gemini`（Gemini 原生）/ `auto` 按模型名选择 |
 | `RIGHTAPI_IMAGE_STD_BASE_URL` | 空（同 `RIGHTAPI_BASE_URL`） | 普通渠道的 Base URL |
 | `RIGHTAPI_IMAGE_MODELS` | 两个渠道全部 11 个模型 | 界面可选的画图模型，必须是已登记的模型 |
 | `RIGHTAPI_IMAGE_BUSY_RETRIES` | `3` | 上游繁忙时自动重新提交的次数，`0` 关闭 |

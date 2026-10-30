@@ -1,6 +1,7 @@
 """轻量连通性诊断：验证 RightAPI 的 LLM Key、两个画图渠道的 Key 与 Modal 服务是否可用，不生成图片、不消耗画图额度。
 
-- LLM：发送一条极短消息（max_tokens 很小），确认 Key 有效并探测可用的接口格式。
+- LLM：发送一条极短消息，确认 Key 有效并探测可用的接口协议；失败时列出这把 Key 能调用的模型（列表接口不计费），
+  提示所选模型是否不在 Key 绑定的渠道里。
 - 画图：查询一个不存在的任务 GET /v1/tasks/{随机 id}。返回 401/403 说明 Key 无效；
   返回 404 / 任务不存在说明 Key 有效且任务查询接口可达。完全不提交画图任务。
 - Modal H3：如配置了预热地址则发一次轻量 GET。
@@ -14,7 +15,8 @@ import httpx
 
 from app.providers.image import with_connect_retry
 from app.providers.image_models import get_model
-from app.providers.llm import LLMError, RightAPILLM
+from app.providers.llm import PROTOCOL_LABELS, LLMError, RightAPILLM, list_models
+from app.providers.llm_providers import get_provider
 from app.settings import Settings
 
 
@@ -23,14 +25,31 @@ def _mask(key: str) -> str:
 
 
 async def check_llm(s: Settings, transport: httpx.AsyncBaseTransport | None = None) -> str:
+    p = get_provider(s.llm_provider)
     if not s.llm_key:
-        return "🟡 LLM：未填写 RIGHTAPI_LLM_KEY（将使用演示模式）"
-    llm = RightAPILLM(s.rightapi_base_url, s.llm_key, s.llm_model, s.llm_api_format, timeout=60, transport=transport)
+        return f"🟡 LLM · {p.name}：未填写 API Key（{p.key_env}），将使用演示模式"
+    if not s.llm_api_base:
+        return f"🟡 LLM · {p.name}：未填写 Base URL，将使用演示模式"
+    if not s.llm_model:
+        return f"🟡 LLM · {p.name}：还没有选模型（点「🔄 获取可用模型」），将使用演示模式"
+    name = f"LLM · {p.name}（{_mask(s.llm_key)} · {s.llm_api_base}）"
+    llm = RightAPILLM(s.llm_api_base, s.llm_key, s.llm_model, s.llm_api_format, timeout=60, transport=transport)
     try:
-        reply = await llm.complete("你是连通性测试助手。", "请只回复 OK", max_tokens=16)
+        # 推理模型会先思考再回答，上限给得太小可能只剩思考、没有回答
+        reply = await llm.complete("你是连通性测试助手。", "请只回复 OK", max_tokens=256)
     except LLMError as e:
-        return f"❌ LLM（{_mask(s.llm_key)}）：{e}"
-    return f"🟢 LLM（{_mask(s.llm_key)}）：连通正常，接口格式 {llm.resolved_format}，模型回复「{reply.strip()[:20]}」"
+        # 失败时附上这把 Key 实际能用的模型（列表不计费；有的中转不开放列表，就只报原错误）
+        try:
+            models = await list_models(s.llm_api_base, s.llm_key, s.llm_api_format, transport=transport)
+        except LLMError:
+            models = None
+        if models and s.llm_model not in models:
+            shown = "、".join(models[:12]) + ("…" if len(models) > 12 else "")
+            return (f"❌ {name}：模型 {s.llm_model} 不在这把 Key 绑定的渠道里，可用模型：{shown}。"
+                    "请点「🔄 获取可用模型」重新选择后保存")
+        return f"❌ {name}：{e}"
+    fmt = PROTOCOL_LABELS.get(llm.resolved_format or "", llm.resolved_format)
+    return f"🟢 {name}：连通正常，模型 {s.llm_model}，接口 {fmt}，回复「{reply.strip()[:20]}」"
 
 
 async def check_image(s: Settings, transport: httpx.AsyncBaseTransport | None = None,

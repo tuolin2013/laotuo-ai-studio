@@ -180,7 +180,7 @@ variables: [product_name]        # 选填，声明正文使用的变量
 
 | Key | 用途 |
 |---|---|
-| `RIGHTAPI_LLM_KEY` | Claude LLM（AwsQ / 官渠），执行全部 Skill；`/v1/messages` 或 `/v1/chat/completions` |
+| `RIGHTAPI_LLM_KEY` | LLM（提供商 RightAPI 时），执行全部 Skill。RightAPI 任一对话渠道的 Key 均可（Claude / Gemini / DeepSeek / 国模…）；其他提供商的 Key 见 §5.6 |
 | `RIGHTAPI_IMAGE_KEY` | 「image 高质量」渠道画图 Key，GPT Image 与 Nano Banana 共用。**生产默认**（全模型 4K、异步、不限并发） |
 | `RIGHTAPI_IMAGE_STD_KEY` | 「image 普通」渠道画图 Key（选填）；该渠道 Base URL 可用 `RIGHTAPI_IMAGE_STD_BASE_URL` 单独指定，留空同 `RIGHTAPI_BASE_URL` |
 
@@ -300,13 +300,17 @@ RightAPI 的 Key 绑定渠道，一把 Key 只能调用所绑渠道的模型，�
 - 每个通道（`llm` / `image` / `image_std` / `modal_h3` / `modal_voxcpm`）独立判定：填写了 Key / 地址 → 真实接口；未填写 → 演示兜底。判定入口统一为 `EngineRuntime.is_live(channel)`。
 - `DEMO_MODE=true` 或界面「本地演示测试模式」开关可强制全部走演示。
 - 演示模式输出的 JSON 结构与真实 Skill 输出**完全一致**（`app/providers/demo/content.py`），后续编辑 / 确认 / 渲染流程无差别；演示图由 PIL 绘制真实中文排版并合成参考图缩略图，右上角带「DEMO 演示预览」角标。
-- LLM 同时兼容 `/v1/messages`（Anthropic 原生）与 `/v1/chat/completions`（OpenAI 兼容），`RIGHTAPI_LLM_API_FORMAT=auto` 时自动探测。
+- LLM（`app/providers/llm.py`）支持四种协议：`anthropic`（`/v1/messages`）、`openai`（`/v1/chat/completions`）、`responses`（`/v1/responses`，RightAPI 的 Grok 渠道只支持它）、`gemini`（`/v1beta/models/{model}:streamGenerateContent?alt=sse`，RightAPI 的 Gemini 渠道只支持它）。`RIGHTAPI_LLM_API_FORMAT=auto` 时按模型名排顺序（`protocol_order()`：claude → anthropic，gemini → gemini，grok → responses，其他 → openai），4xx 换下一种并记住可用的协议；5xx / 429 不换协议重发。
+  - RightAPI 的 Key 绑定渠道，模型随渠道变：`list_models()` 调 `GET /v1/models`（不计费，RightAPI 只返回 Key 绑定渠道下的模型；不支持时再试 Gemini 的 `/v1beta/models`）。界面「🔄 获取可用模型」用它填模型下拉框（也可手动输入模型名），保存写回 `RIGHTAPI_LLM_MODEL`。连通性诊断失败时列出可用模型，指出所选模型不在渠道里。
+  - API 提供商（参考 VS Code Cline，`app/providers/llm_providers.py` 的 `PROVIDERS`）：`RIGHTAPI_LLM_PROVIDER` = `rightapi`（默认，旧版 `.env` 没写时也是它）/ `custom`（OpenAI 兼容的其他中转，必须填 Base URL）/ `anthropic` / `openai` / `gemini` / `openrouter` / `deepseek` / `zhipu` / `qwen` / `doubao` / `moonshot`，每个带预设地址与默认协议。Key 按提供商分开保存（RightAPI 用 `RIGHTAPI_LLM_KEY`，其他 `LLM_KEY_<ID>`），切换提供商不丢 Key；`Settings.llm_key` 是当前提供商的 Key，`llm_keys` 是全部。没选模型或 OpenAI 兼容没填地址时 LLM 走演示。界面：选提供商 → API Key → 「使用自定义 Base URL」→ 模型（「🔄 获取可用模型」）→「高级设置」里的接口协议；页面打开时按当前配置回填（`load_panel`），避免刷新后保存冲掉新配置。Anthropic 官方地址只发 `x-api-key`，中转同时发 `x-api-key` 与 Bearer。
+  - 地址：`RIGHTAPI_LLM_BASE_URL` 为自定义 Base URL，优先级 自定义 > 提供商预设 > `RIGHTAPI_BASE_URL`（只有 RightAPI 用，`resolve_base_url()` / `Settings.llm_api_base`），只影响 LLM，画图仍走 RightAPI。`normalize_llm_base_url()` 去掉误粘的 `/chat/completions` 等接口路径；`api_root()` 在地址里已有版本号（`/v1`、`/api/paas/v4`、`/v1beta/openai`）时原样使用，否则补 `/v1`（Gemini 补 `/v1beta`）。
+  - 兼容细节：OpenAI 推理模型报不认 `max_tokens` 时改发 `max_completion_tokens`；回答开头的 `<think>…</think>` 去掉；Gemini 的 `thought` 段落不算回答，也不设 `maxOutputTokens`（思考会占用额度）。
 
 ### 5.6.1 公共免 Key 在线演示（`LAOTUO_PUBLIC_DEMO=1`）
 
 给公开网址用：Modal CPU 容器（`modal/public_demo_service.py`）或备用的 Hugging Face Space（`deploy/hf_space/Dockerfile`）里设置。代码在 `app/engine/public_demo.py`，限额常量在 `app/settings.py`（`PUBLIC_*`）。
 
-- 配置锁（`load_settings()`）：强制 `demo_mode`，四把 Key 清空（环境变量里有也不读），所有通道 `channel_live()` 为假；工作区换到 `<WORKSPACE_DIR>/public_demo/`，与本机真实项目分开。`PublicDemo` 只接受这个子目录，清理不会删到真实项目。
+- 配置锁（`load_settings()`）：强制 `demo_mode`，四把 Key 与各 LLM 提供商的 Key 清空（环境变量里有也不读），所有通道 `channel_live()` 为假；工作区换到 `<WORKSPACE_DIR>/public_demo/`，与本机真实项目分开。`PublicDemo` 只接受这个子目录，清理不会删到真实项目。
 - 界面（`ws.public` 不为 None）：不创建「⚙️ API 密钥与接口配置」面板（也就没有写 `.env`、连通性诊断、演示开关的事件）；不显示历史项目（`project_choices()` 返回空）；卡带指令只读、不能临时覆盖（覆盖对所有访客生效）；配音不提供共用的音色库。
 - 样板项目 `demo_template`：开机用演示模式生成张家界莓茶主图 4 张 + 详情页 4 屏（商品信息只写外观、产地、规格），并预先收集动效素材库。每位访客页面加载时（`demo.load` → 表单初始化之后，`api_name="public_visit"`）从样板复制一份独立项目，素材文件一起复制、路径改到新项目目录。
 - 动效时长：目标时长滑块上限 30 秒；编排与渲染前 `fit_motion()` 把方案收紧到 30 秒内（钩子与收尾不动，先逐拍减中间屏到刚好读完的拍数，还超就从后往前删中间屏）。
@@ -335,7 +339,7 @@ RightAPI 的 Key 绑定渠道，一把 Key 只能调用所绑渠道的模型，�
 
 ## 5.8 界面（`app/ui/`）
 
-- `header.py`：项目管理、类目/平台联动、类目专属商品信息表单 + 实时合规检查、Skill 管理、API 配置（写回 `.env`，白名单键）。
+- `header.py`：项目管理、类目/平台联动、类目专属商品信息表单 + 实时合规检查、Skill 管理、API 配置（写回 `.env`，白名单键；LLM 部分按 Cline 的「API 提供商 → Key → Base URL → 模型」排列）。
 - `image_tab.py`：主图与详情页共用的三步式工作流。`video_tab.py`：视频剧本 → 首帧锁定 → Modal H3 生成视频（逐个 / 选分镜，每个分镜独立播放器），H3 提示词折叠在可选的查看 / 微调区。
 - `edit_panel.py`：视频 Step 4（剪辑方案表格、成片选项、一键成片、导出剪映 / 达芬奇）。布局在 Step 3 之后，事件在运行日志创建后绑定；刷新输出独立于 `video_tab` 的 `refresh_outputs`，不改变其位置顺序（端到端测试按位置读取）。成片与导出都使用剪辑方案快照，处理过程中继续改表格不影响本次结果。
 - `voice_tab.py`：【配音】四步。刷新输出的顺序由 `REFRESH_KEYS` 定义，端到端测试按名字取位置。音色设定改动后立即保存。生成类事件的 `concurrency_id` 为 `voice_gen`，`concurrency_limit=1`，与服务端单容器一致；试听、识别也走这条队列。

@@ -10,6 +10,9 @@ from dotenv import load_dotenv, set_key
 
 from app.engine.config_loader import PROJECT_ROOT
 from app.providers.image_models import ALL_MODELS, CATALOG, get_model
+from app.providers.llm import API_FORMATS as LLM_API_FORMATS
+from app.providers.llm_providers import PROVIDERS as LLM_PROVIDERS
+from app.providers.llm_providers import RIGHTAPI, get_provider, resolve_base_url
 
 ENV_FILE = PROJECT_ROOT / ".env"
 # 官方文档 https://docs.rightapi.ai/docs/rc_draw/ 的基础地址（不带 www 时任务查询接口不可达）
@@ -31,7 +34,12 @@ PUBLIC_WORKSPACE_SUBDIR = "public_demo"
 
 # 界面「API 配置」面板允许写回 .env 的键
 EDITABLE_ENV_KEYS = (
+    "RIGHTAPI_LLM_PROVIDER",
     "RIGHTAPI_LLM_KEY",
+    # 其他 LLM 提供商各自的 Key（LLM_KEY_ANTHROPIC、LLM_KEY_DEEPSEEK…），切换提供商不会丢
+    *(p.key_env for p in LLM_PROVIDERS if p.id != RIGHTAPI),
+    "RIGHTAPI_LLM_MODEL",
+    "RIGHTAPI_LLM_BASE_URL",
     "RIGHTAPI_IMAGE_KEY",
     "RIGHTAPI_IMAGE_STD_KEY",
     "RIGHTAPI_IMAGE_STD_BASE_URL",
@@ -72,12 +80,42 @@ def normalize_base_url(url: str | None) -> str:
     return url
 
 
+# 误把完整接口地址粘进 LLM 地址时去掉的结尾（/chat/completions 要排在 /completions 前面）
+_LLM_ENDPOINT_SUFFIXES = ("/chat/completions", "/completions", "/messages", "/responses", "/models")
+
+
+def normalize_llm_base_url(url: str | None) -> str:
+    """LLM 中转地址容错：补 https://、去掉结尾的 /，误粘的完整接口路径（/chat/completions、/models/…）
+    只保留前面部分。版本号（/v1、/api/paas/v4…）保留，由 app/providers/llm.py 的 api_root() 处理。
+    空值返回空串 = 沿用 RIGHTAPI_BASE_URL。"""
+    url = (url or "").strip()
+    if not url:
+        return ""
+    if "://" not in url:
+        url = "https://" + url
+    url = url.rstrip("/")
+    if "/models/" in url:
+        url = url[: url.index("/models/")]
+    for suffix in _LLM_ENDPOINT_SUFFIXES:
+        if url.endswith(suffix):
+            url = url[: -len(suffix)]
+            break
+    return url.rstrip("/")
+
+
 @dataclass(frozen=True)
 class Settings:
     rightapi_base_url: str = DEFAULT_BASE_URL
+    # LLM 提供商（app/providers/llm_providers.py，参考 Cline 的 API Provider）：决定预设地址与默认协议
+    llm_provider: str = RIGHTAPI
+    # 当前提供商的 Key。RightAPI 的 Key 绑定渠道，模型必须是该渠道下的（界面「获取模型列表」列出）
     llm_key: str = field(default="", repr=False)
+    # 所有提供商各自保存的 Key（界面切换提供商时带出）
+    llm_keys: dict[str, str] = field(default_factory=dict, repr=False)
     llm_model: str = "claude-opus-5-5"
-    # auto：先试 /v1/messages（Anthropic 原生），404/405 时回退 /v1/chat/completions
+    # 自定义 Base URL：覆盖提供商的预设地址；「OpenAI 兼容」提供商必填
+    llm_base_url: str = ""
+    # auto：按模型名选协议，失败再换（见 app/providers/llm.py）；anthropic / openai / responses / gemini 固定协议
     llm_api_format: str = "auto"
     llm_timeout: float = 180
     # 画图 Key：RightAPI 的 Key 绑定渠道，两个渠道各用一把；同一渠道内 GPT Image 与 Nano Banana 共用
@@ -130,7 +168,7 @@ class Settings:
             return False
         return bool(
             {
-                "llm": self.llm_key,
+                "llm": self.llm_key and self.llm_model and self.llm_api_base,
                 "image": self.image_key,
                 "image_std": self.image_std_key,
                 "modal_h3": bool(self.modal_h3_app and self.modal_h3_class) and _modal_logged_in(),
@@ -139,6 +177,11 @@ class Settings:
             }[channel]
         )
 
+
+    @property
+    def llm_api_base(self) -> str:
+        """LLM 实际使用的地址：自定义 Base URL > 提供商预设地址 > RIGHTAPI_BASE_URL（RightAPI）。"""
+        return resolve_base_url(self.llm_provider, self.llm_base_url, self.rightapi_base_url)
 
     def image_base_url(self, model: str) -> str:
         """模型所属渠道的 Base URL：普通渠道可单独配置，未配置时与高质量渠道相同。"""
@@ -185,11 +228,16 @@ def load_settings(env_file: Path | None = None, override: bool = False) -> Setti
     load_dotenv(env_file or ENV_FILE, override=override)
     e = os.environ.get
     workspace = Path(e("WORKSPACE_DIR", "workspace"))
+    provider = get_provider(e("RIGHTAPI_LLM_PROVIDER"))
+    llm_keys = {p.id: e(p.key_env, "").strip() for p in LLM_PROVIDERS}
     settings = Settings(
         rightapi_base_url=normalize_base_url(e("RIGHTAPI_BASE_URL")),
-        llm_key=e("RIGHTAPI_LLM_KEY", ""),
-        llm_model=e("RIGHTAPI_LLM_MODEL", "claude-opus-5-5"),
-        llm_api_format=e("RIGHTAPI_LLM_API_FORMAT", "auto").strip().lower() or "auto",
+        llm_provider=provider.id,
+        llm_key=llm_keys[provider.id],
+        llm_keys=llm_keys,
+        llm_model=(e("RIGHTAPI_LLM_MODEL") or "").strip() or provider.default_model,
+        llm_base_url=normalize_llm_base_url(e("RIGHTAPI_LLM_BASE_URL")),
+        llm_api_format=f if (f := e("RIGHTAPI_LLM_API_FORMAT", "auto").strip().lower()) in LLM_API_FORMATS else "auto",
         llm_timeout=float(e("RIGHTAPI_LLM_TIMEOUT_SECONDS", "180")),
         # 兼容旧版的两个变量名（RIGHTAPI_OPENAI_IMAGE_KEY / RIGHTAPI_GEMINI_IMAGE_KEY）
         image_key=(e("RIGHTAPI_IMAGE_KEY", "") or e("RIGHTAPI_OPENAI_IMAGE_KEY", "")
@@ -224,7 +272,8 @@ def load_settings(env_file: Path | None = None, override: bool = False) -> Setti
     if settings.public_demo:
         # 公共演示一律走演示模式；Key 清空，任何地方都拿不到（包括界面初始值与诊断）；
         # 工作区换到 public_demo/ 子目录，与本机真实项目分开
-        settings = replace(settings, demo_mode=True, llm_key="", image_key="", image_std_key="", fal_key="",
+        settings = replace(settings, demo_mode=True, llm_key="", llm_keys={}, image_key="", image_std_key="",
+                           fal_key="",
                            workspace_dir=settings.workspace_dir / PUBLIC_WORKSPACE_SUBDIR)
     return settings
 

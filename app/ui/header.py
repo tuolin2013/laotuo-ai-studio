@@ -10,8 +10,10 @@ import gradio as gr
 from app.engine.compliance import compliance_report
 from app.engine.diagnostics import diagnose
 from app.engine.project_service import create_project
+from app.providers.llm import LLMError, list_models
+from app.providers.llm_providers import CUSTOM, PROVIDERS, get_provider, resolve_base_url
 from app.schemas.skill import SKILL_SLOTS
-from app.settings import IMAGE_QUALITIES, IMAGE_RESOLUTIONS, save_env
+from app.settings import IMAGE_QUALITIES, IMAGE_RESOLUTIONS, normalize_base_url, normalize_llm_base_url, save_env
 from app.ui.pro_panel import build_pro_panel, pro_badge
 from app.ui.state import UIError, Workspace, friendly
 
@@ -131,7 +133,7 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
         skill_status = gr.Markdown()
 
     if not public:
-        _build_api_panel(rt, config_row, mode_status)
+        _build_api_panel(rt, demo, config_row, mode_status)
 
     # ================= 事件
     def on_category(cid, *vals):
@@ -268,19 +270,93 @@ def build_header(ws: Workspace, demo: gr.Blocks) -> Header:
                   load_evt)
 
 
-def _build_api_panel(rt, config_row: gr.Row, mode_status: gr.Markdown) -> None:
-    """「⚙️ API 密钥与接口配置」面板（写回 .env）。公共在线演示不创建：界面与接口都没有这些入口。"""
+def llm_env_updates(provider_id: str, key: str, keys: dict[str, str], use_custom: bool, base_url: str,
+                    model: str, api_format: str, saved_keys: dict[str, str]) -> dict[str, str]:
+    """LLM 部分要写回 .env 的键。每个提供商的 Key 分开保存：界面上填过的、或 .env 里原来有的才写，
+    不给没用过的提供商写一堆空行。不勾「使用自定义 Base URL」时清空自定义地址（用提供商的预设地址）。"""
+    p = get_provider(provider_id)
+    keys = {**keys, p.id: key}
+    out = {
+        "RIGHTAPI_LLM_PROVIDER": p.id,
+        "RIGHTAPI_LLM_BASE_URL": base_url if (use_custom or p.id == CUSTOM) else "",
+        "RIGHTAPI_LLM_MODEL": model or "",
+        "RIGHTAPI_LLM_API_FORMAT": api_format or "auto",
+    }
+    for q in PROVIDERS:
+        value = (keys.get(q.id) or "").strip()
+        if value or saved_keys.get(q.id):
+            out[q.key_env] = value
+    return out
+
+
+def _llm_hint(provider_id: str, rightapi_base: str) -> str:
+    p = get_provider(provider_id)
+    if p.id == CUSTOM:
+        return f"💡 {p.hint}"
+    return f"💡 {p.hint}\n\n默认地址：`{p.base_url or rightapi_base}`（要改就勾选下方「使用自定义 Base URL」）"
+
+
+def _llm_view(provider_id: str, keys: dict[str, str], s) -> tuple:
+    """切换提供商后 LLM 各字段的显示：Key 取该提供商保存过的；地址、模型、协议换成该提供商的预设，
+    切回已保存的提供商时恢复保存的值。顺序 = [Key, 自定义开关, Base URL, 模型, 协议, 提示]。"""
+    p = get_provider(provider_id)
+    same = p.id == s.llm_provider
+    url = s.llm_base_url if same else ""
+    model = s.llm_model if same else p.default_model
+    custom = p.id == CUSTOM
+    key = keys.get(p.id) or (s.llm_key if same else "")
+    return (
+        gr.update(value=key, info=f"只保存在本机 .env 的 {p.key_env}"),
+        gr.update(value=bool(url) and not custom, visible=not custom),
+        gr.update(value=url, visible=custom or bool(url),
+                  label="Base URL（必填）" if custom else "自定义 Base URL",
+                  placeholder="如 https://api.example.com/v1" if custom else (p.base_url or s.rightapi_base_url)),
+        gr.update(choices=[model] if model else [], value=model or None),
+        gr.update(value=s.llm_api_format if same else p.protocol),
+        _llm_hint(p.id, s.rightapi_base_url),
+    )
+
+
+def _build_api_panel(rt, demo: gr.Blocks, config_row: gr.Row, mode_status: gr.Markdown) -> None:
+    """「⚙️ API 密钥与接口配置」面板（写回 .env）。LLM 部分参考 VS Code Cline：选 API 提供商 → 填 API Key →
+    （可选）自定义 Base URL → 选模型，接口协议放在「高级设置」。公共在线演示不创建：界面与接口都没有这些入口。"""
     s = rt.settings
+    p0 = get_provider(s.llm_provider)
     with config_row, gr.Accordion("⚙️ API 密钥与接口配置", open=False):
         gr.Markdown("Key 只保存在本机 `.env` 文件中。未填写的通道会自动使用 **演示模式**"
                     "（本地生成逼真预览，不消耗额度）。")
         demo_toggle = gr.Checkbox(value=s.demo_mode, label="🧪 本地演示测试模式（勾选后即使填了 Key 也不调用真实接口）")
-        with gr.Row():
-            llm_key = gr.Textbox(value=s.llm_key, label="RightAPI LLM 密钥 (RIGHTAPI_LLM_KEY)",
-                                 info="填入 Claude AwsQ 或 Claude 官渠 Key", type="password")
-            llm_fmt = gr.Dropdown([("自动探测", "auto"), ("Anthropic /v1/messages", "anthropic"),
-                                   ("OpenAI /v1/chat/completions", "openai")], value=s.llm_api_format,
-                                  label="LLM 接口格式")
+
+        gr.Markdown("#### 🧠 文本模型（LLM）：执行策划、编剧、提示词等全部 Skill")
+        llm_provider = gr.Dropdown([(p.label, p.id) for p in PROVIDERS], value=p0.id, label="API 提供商")
+        llm_hint = gr.Markdown(_llm_hint(p0.id, s.rightapi_base_url))
+        llm_key = gr.Textbox(value=s.llm_key, label="API Key", type="password",
+                             info=f"只保存在本机 .env 的 {p0.key_env}")
+        # 各提供商各自的 Key：只在服务端，切换提供商时带出；页面打开时从当前配置重新读取
+        llm_keys = gr.State(dict(s.llm_keys))
+        llm_use_custom = gr.Checkbox(value=bool(s.llm_base_url) and p0.id != CUSTOM, label="使用自定义 Base URL",
+                                     visible=p0.id != CUSTOM)
+        llm_base = gr.Textbox(value=s.llm_base_url, visible=p0.id == CUSTOM or bool(s.llm_base_url),
+                              label="Base URL（必填）" if p0.id == CUSTOM else "自定义 Base URL",
+                              placeholder=p0.base_url or s.rightapi_base_url,
+                              info="地址里没有版本号时自动补 /v1；误粘了 /chat/completions 等完整接口路径会自动去掉")
+        with gr.Row(equal_height=True):
+            llm_model = gr.Dropdown([s.llm_model] if s.llm_model else [], value=s.llm_model or None, label="模型",
+                                    info="点右侧按钮列出这把 Key 能调用的模型（不消耗额度），也可以直接输入模型名",
+                                    allow_custom_value=True, filterable=True, scale=4)
+            llm_fetch = gr.Button("🔄 获取可用模型", scale=1, min_width=120)
+        with gr.Accordion("高级设置", open=False):
+            llm_fmt = gr.Dropdown([("自动（按模型名选择）", "auto"), ("Anthropic /v1/messages", "anthropic"),
+                                   ("OpenAI /v1/chat/completions", "openai"), ("OpenAI /v1/responses", "responses"),
+                                   ("Gemini 原生 /v1beta", "gemini")], value=s.llm_api_format,
+                                  label="接口协议",
+                                  info="自动：claude → /v1/messages，gemini → Gemini 原生，grok → /v1/responses，"
+                                       "其他 → /v1/chat/completions，不通再换下一种")
+
+        gr.Markdown("#### 🎨 画图（RightAPI）")
+        base_url = gr.Textbox(value=s.rightapi_base_url, label="RightAPI 地址 (RIGHTAPI_BASE_URL)",
+                              info="官方文档地址为 https://www.rightapi.ai（填 rightapi.ai 会自动补 www）；"
+                                   "LLM 提供商选 RightAPI 时也用它")
         with gr.Row():
             img_key = gr.Textbox(value=s.image_key, label="image 高质量渠道密钥 (RIGHTAPI_IMAGE_KEY)",
                                  info="生产默认：GPT Image 与 Nano Banana 共用，全模型 4K、异步",
@@ -294,23 +370,24 @@ def _build_api_panel(rt, config_row: gr.Row, mode_status: gr.Markdown) -> None:
                                           "留空则这些模型走演示模式",
                                      type="password", scale=3)
             img_std_base = gr.Textbox(value=s.image_std_base_url, label="普通渠道 Base URL（选填）",
-                                      info="后台「模型列表」中该渠道的 BaseUrl；留空 = 与下方 RIGHTAPI_BASE_URL 相同",
+                                      info="后台「模型列表」中该渠道的 BaseUrl；留空 = 与上方 RightAPI 地址相同",
                                       scale=2)
-        base_url = gr.Textbox(value=s.rightapi_base_url, label="RIGHTAPI_BASE_URL",
-                              info="官方文档地址为 https://www.rightapi.ai（填 rightapi.ai 会自动补 www）")
-        gr.Markdown(
-            "**模型 → 渠道 / 接口对照（系统按模型自动选择 Key 与接口，不会用错）**\n\n"
-            "| 渠道（Key） | 模型 | 协议 | 接口 |\n|---|---|---|---|\n"
-            "| image 高质量（`RIGHTAPI_IMAGE_KEY`） | gpt-image-2.5-flare / gpt-image-2.5-sunburst / gpt-image-2 | "
-            "OpenAI 生成 | 无参考图 `/v1/images/generations`，有参考图 `/v1/images/edits` |\n"
-            "| image 高质量（`RIGHTAPI_IMAGE_KEY`） | gemini-3-pro-image-preview / gemini-nano-banana-2.1 | "
-            "Gemini 生成 | `/v1beta/models/{model}:generateContent`（文生图与编辑同一接口） |\n"
-            "| image 普通（`RIGHTAPI_IMAGE_STD_KEY`） | gpt-image-2 / gpt-image-2-vip / gpt-image-2.5 | "
-            "OpenAI 生成 | 同上 |\n"
-            "| image 普通（`RIGHTAPI_IMAGE_STD_KEY`） | nano-banana-pro / nano-banana-2 / nano-banana-2-lite | "
-            "Gemini 生成 | 同上 |\n\n"
-            "下拉框中模型名前的【高质量】/【普通】标明渠道；两个渠道都有 gpt-image-2，按所选渠道使用对应 Key。\n\n"
-            "全部带 `\"async\": true` 提交，轮询 `/v1/tasks/{task_id}` 取图片 URL 后下载保存。")
+        with gr.Accordion("📋 画图模型 → 渠道 / 接口对照", open=False):
+            gr.Markdown(
+                "**系统按模型自动选择 Key 与接口，不会用错**\n\n"
+                "| 渠道（Key） | 模型 | 协议 | 接口 |\n|---|---|---|---|\n"
+                "| image 高质量（`RIGHTAPI_IMAGE_KEY`） | gpt-image-2.5-flare / gpt-image-2.5-sunburst / gpt-image-2 | "
+                "OpenAI 生成 | 无参考图 `/v1/images/generations`，有参考图 `/v1/images/edits` |\n"
+                "| image 高质量（`RIGHTAPI_IMAGE_KEY`） | gemini-3-pro-image-preview / gemini-nano-banana-2.1 | "
+                "Gemini 生成 | `/v1beta/models/{model}:generateContent`（文生图与编辑同一接口） |\n"
+                "| image 普通（`RIGHTAPI_IMAGE_STD_KEY`） | gpt-image-2 / gpt-image-2-vip / gpt-image-2.5 | "
+                "OpenAI 生成 | 同上 |\n"
+                "| image 普通（`RIGHTAPI_IMAGE_STD_KEY`） | nano-banana-pro / nano-banana-2 / nano-banana-2-lite | "
+                "Gemini 生成 | 同上 |\n\n"
+                "下拉框中模型名前的【高质量】/【普通】标明渠道；两个渠道都有 gpt-image-2，按所选渠道使用对应 Key。\n\n"
+                "全部带 `\"async\": true` 提交，轮询 `/v1/tasks/{task_id}` 取图片 URL 后下载保存。")
+
+        gr.Markdown("#### 🎬 视频（Modal MiniMax H3）")
         with gr.Row():
             modal_app = gr.Textbox(value=s.modal_h3_app, label="MODAL_H3_APP（Modal 应用名）",
                                    info="通过本机 Modal 登录直接调用，无需 URL / Key")
@@ -321,23 +398,72 @@ def _build_api_panel(rt, config_row: gr.Row, mode_status: gr.Markdown) -> None:
         save_status = gr.Markdown()
 
     # ---------------- 事件
-    def do_save(demo, k1, fmt, k2, k3, std_burl, res, q, burl, mapp, mcls):
+    llm_outputs = [llm_key, llm_use_custom, llm_base, llm_model, llm_fmt, llm_hint]
+
+    def load_panel():
+        """页面打开时按当前配置重新填一遍：避免刷新页面后显示启动时的旧值，再点保存就把新配置冲掉。"""
+        cur = rt.settings
+        return (gr.update(value=cur.llm_provider), dict(cur.llm_keys),
+                *_llm_view(cur.llm_provider, cur.llm_keys, cur),
+                cur.rightapi_base_url, cur.image_key, cur.image_std_key, cur.image_std_base_url,
+                cur.image_resolution, cur.image_quality, cur.modal_h3_app, cur.modal_h3_class)
+
+    demo.load(load_panel, None, [llm_provider, llm_keys, *llm_outputs, base_url, img_key, img_std_key, img_std_base,
+                                 img_res, img_quality, modal_app, modal_cls])
+
+    def stash_key(pid, key, keys):
+        return {**keys, get_provider(pid).id: key}
+
+    llm_key.input(stash_key, [llm_provider, llm_key, llm_keys], llm_keys)
+    # 只响应用户操作（input）：页面加载时回填的值不触发切换
+    llm_provider.input(lambda pid, keys: _llm_view(pid, keys, rt.settings), [llm_provider, llm_keys], llm_outputs)
+    llm_use_custom.input(lambda on: gr.update(visible=on), llm_use_custom, llm_base)
+
+    async def fetch_models(pid, key, use_custom, lbase, burl, fmt, current):
+        """用界面上还没保存的 Key / 地址列出这把 Key 能调用的模型（GET /v1/models，不消耗额度）。"""
+        p = get_provider(pid)
+        url = normalize_llm_base_url(lbase) if (use_custom or p.id == CUSTOM) else ""
+        base = resolve_base_url(p.id, url, normalize_base_url(burl))
+        if not base:
+            return gr.skip(), "⚠️ 请先填写 Base URL"
+        try:
+            models = await list_models(base, (key or "").strip(), fmt or "auto")
+        except LLMError as e:
+            return gr.skip(), f"❌ {e}。这个接口如果不开放模型列表，可以直接在「模型」里输入模型名"
+        if not models:
+            return gr.skip(), f"⚠️ `{base}` 没有返回任何模型：检查 Key 绑定的渠道"
+        pick = current if current in models else models[0]
+        note = ("" if pick == current or not current else
+                f"原来的 {current} 不在列表里，已改选 **{pick}**，可在下拉框里更换；")
+        return (gr.update(choices=models, value=pick),
+                f"✅ 这把 Key 可调用 {len(models)} 个模型（`{base}`）。{note}点「💾 保存配置到 .env」后生效")
+
+    llm_fetch.click(fetch_models, [llm_provider, llm_key, llm_use_custom, llm_base, base_url, llm_fmt, llm_model],
+                    [llm_model, save_status], concurrency_id="diagnose")
+
+    def do_save(demo_on, pid, k1, keys, use_custom, lbase, lmodel, fmt, k2, k3, std_burl, res, q, burl, mapp, mcls):
+        p = get_provider(pid)
+        if p.id == CUSTOM and not normalize_llm_base_url(lbase):
+            return "⚠️ 「OpenAI 兼容」要填写 Base URL（中转站给的地址）", rt.mode_summary()
         try:
             new = save_env({
-                "RIGHTAPI_LLM_KEY": k1, "RIGHTAPI_LLM_API_FORMAT": fmt, "RIGHTAPI_IMAGE_KEY": k2,
-                "RIGHTAPI_IMAGE_STD_KEY": k3, "RIGHTAPI_IMAGE_STD_BASE_URL": std_burl,
+                **llm_env_updates(p.id, k1, keys, use_custom, lbase, lmodel, fmt, rt.settings.llm_keys),
+                "RIGHTAPI_IMAGE_KEY": k2, "RIGHTAPI_IMAGE_STD_KEY": k3, "RIGHTAPI_IMAGE_STD_BASE_URL": std_burl,
                 "RIGHTAPI_IMAGE_RESOLUTION": res, "RIGHTAPI_IMAGE_QUALITY": q, "RIGHTAPI_BASE_URL": burl,
                 "MODAL_H3_APP": mapp, "MODAL_H3_CLASS": mcls,
-                "DEMO_MODE": "true" if demo else "false",
+                "DEMO_MODE": "true" if demo_on else "false",
             })
         except (ValueError, OSError) as e:
             return friendly(e), rt.mode_summary()
         rt.update_settings(new)
-        rt.force_demo = bool(demo)
-        return f"✅ 已保存到 .env 并立即生效（Base URL：`{new.rightapi_base_url}`）", rt.mode_summary()
+        rt.force_demo = bool(demo_on)
+        warn = "" if new.llm_model else "。⚠️ 还没有选模型，LLM 暂时使用演示模式"
+        return (f"✅ 已保存到 .env 并立即生效（LLM：{get_provider(new.llm_provider).name} · `{new.llm_api_base}` · "
+                f"{new.llm_model or '未选模型'}；画图：`{new.rightapi_base_url}`）{warn}", rt.mode_summary())
 
-    save_btn.click(do_save, [demo_toggle, llm_key, llm_fmt, img_key, img_std_key, img_std_base, img_res, img_quality,
-                             base_url, modal_app, modal_cls], [save_status, mode_status])
+    save_btn.click(do_save, [demo_toggle, llm_provider, llm_key, llm_keys, llm_use_custom, llm_base, llm_model, llm_fmt,
+                             img_key, img_std_key, img_std_base, img_res, img_quality, base_url, modal_app, modal_cls],
+                   [save_status, mode_status])
 
     async def do_diag():
         yield "🩺 正在检测连通性…"
@@ -346,8 +472,8 @@ def _build_api_panel(rt, config_row: gr.Row, mode_status: gr.Markdown) -> None:
 
     diag_btn.click(do_diag, None, save_status, concurrency_id="diagnose")
 
-    def toggle_demo(demo):
-        rt.force_demo = bool(demo)
+    def toggle_demo(demo_on):
+        rt.force_demo = bool(demo_on)
         return rt.mode_summary()
 
     demo_toggle.change(toggle_demo, demo_toggle, mode_status)

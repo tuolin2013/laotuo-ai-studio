@@ -9,6 +9,7 @@ from app.engine.config_loader import load_categories, load_platforms
 from app.engine.skill_loader import SkillRegistry
 from app.providers.image import RightAPIImageClient
 from app.providers.llm import RightAPILLM
+from app.providers.llm_providers import get_provider
 from app.providers.video import (
     DemoVideoProvider,
     FalAIVideoProvider,
@@ -57,8 +58,10 @@ class EngineRuntime:
         def tag(ch: str) -> str:
             return "🟢 真实 API" if self.is_live(ch) else "🟡 演示模式"
 
+        s = self.settings
+        model = f"（{get_provider(s.llm_provider).name} · {s.llm_model}）" if self.is_live("llm") else ""
         return (
-            f"LLM：{tag('llm')}　｜　画图 image 高质量：{tag('image')}　｜　image 普通：{tag('image_std')}　｜　"
+            f"LLM：{tag('llm')}{model}　｜　画图 image 高质量：{tag('image')}　｜　image 普通：{tag('image_std')}　｜　"
             f"Modal H3：{tag('modal_h3')}　｜　配音 VoxCPM2：{tag('modal_voxcpm')}"
         )
 
@@ -68,7 +71,7 @@ class EngineRuntime:
         if self.llm_override is not None:
             return self.llm_override
         s = self.settings
-        return RightAPILLM(s.rightapi_base_url, s.llm_key, s.llm_model, s.llm_api_format, s.llm_timeout)
+        return RightAPILLM(s.llm_api_base, s.llm_key, s.llm_model, s.llm_api_format, s.llm_timeout)
 
     def image_client(self, base_url: str | None = None) -> RightAPIImageClient:
         """base_url：模型所属渠道的地址（Settings.image_base_url），默认高质量渠道。"""
