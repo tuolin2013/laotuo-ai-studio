@@ -465,6 +465,13 @@ def test_render_motion_writes_mp4_contact_sheet_and_report(tmp_path):
     assert res.seconds == pytest.approx(ad.total_seconds, abs=0.05)
 
 
+def test_audio_filter_pins_stereo_layout():
+    """Debian 12 的 ffmpeg 5.1 在 loudnorm 之后协商不出声道布局（Modal / Space 上渲染失败）：末尾必须显式写立体声。"""
+    from app.engine.motion.encode import AUDIO_FILTER
+
+    assert AUDIO_FILTER.startswith("loudnorm=") and AUDIO_FILTER.endswith(",aformat=channel_layouts=stereo")
+
+
 @needs_ffmpeg
 def test_render_still_previews_one_scene(tmp_path):
     ad = _ad(tmp_path)

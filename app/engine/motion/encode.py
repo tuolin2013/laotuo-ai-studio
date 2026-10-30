@@ -27,6 +27,10 @@ from app.schemas.motion import MotionAd
 WORKERS = 2
 ENCODE_TIMEOUT = 1800
 LOUDNORM = "loudnorm=I=-14:TP=-1.5:LRA=11"
+# Debian 12 的 ffmpeg 5.1 在 loudnorm → aresample 之后协商不出声道布局（aac 报 Cannot select channel layout），
+# 末尾显式写成立体声；ffmpeg 7 不需要，但写上也没有副作用
+STEREO = "aformat=channel_layouts=stereo"
+AUDIO_FILTER = f"{LOUDNORM},aresample={audio.SR},{STEREO}"
 
 Progress = Callable[[str], None]
 
@@ -97,7 +101,7 @@ def render_motion(ad: MotionAd, out_dir: Path, ffmpeg: str, *, scale: float = 1.
             "-i", str(wav), "-map", "0:v", "-map", "1:a",
             "-c:v", "libx264", "-preset", "medium" if scale >= 0.99 else "veryfast", "-crf", str(crf),
             "-pix_fmt", "yuv420p", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
-            "-af", f"{LOUDNORM},aresample={audio.SR}", "-c:a", "aac", "-b:a", "192k",
+            "-af", AUDIO_FILTER, "-c:a", "aac", "-b:a", "192k",
             "-movflags", "+faststart", "-t", f"{seconds:.3f}", str(video)]
     proc = subprocess.Popen(args, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     thumbs = []

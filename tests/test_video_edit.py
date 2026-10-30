@@ -318,6 +318,14 @@ def media_plan(tmp_path):
     return plan
 
 
+def test_filter_graph_pins_stereo_after_loudnorm(media_plan):
+    """Debian 12 的 ffmpeg 5.1 在 loudnorm 之后协商不出声道布局：输出前显式写立体声。"""
+    from app.engine.edit_render import build_filter_graph
+
+    graph = build_filter_graph(media_plan, media_plan.timeline(), with_captions=False, bgm_input=3)
+    assert graph.endswith(",aformat=channel_layouts=stereo[aout]")
+
+
 async def test_render_final_matches_timeline(media_plan, tmp_path):
     events = [ev async for ev in render_final(media_plan, tmp_path / "out")]
     out = events[-1].video_path

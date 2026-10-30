@@ -177,8 +177,10 @@ def build_filter_graph(plan: EditPlan, tl: Timeline, *, with_captions: bool, bgm
         else:
             parts.append(f"[{voice}][bgm]amix=inputs=2:duration=first:normalize=0[mix]")
         voice = "mix"
-    # 短视频平台常用响度 -14 LUFS；loudnorm 内部会升采样，最后统一回 48 kHz
-    parts.append(f"[{voice}]loudnorm=I=-14:TP=-1.5:LRA=11,aresample={AUDIO_RATE}[aout]")
+    # 短视频平台常用响度 -14 LUFS；loudnorm 内部会升采样，最后统一回 48 kHz。
+    # 末尾的 aformat：Debian 12 的 ffmpeg 5.1 在 loudnorm 之后协商不出声道布局，aac 会报错
+    parts.append(f"[{voice}]loudnorm=I=-14:TP=-1.5:LRA=11,aresample={AUDIO_RATE},"
+                 "aformat=channel_layouts=stereo[aout]")
     return ";".join(parts)
 
 

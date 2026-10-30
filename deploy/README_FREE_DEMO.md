@@ -10,7 +10,7 @@
 ```
 访客 ──► Vercel 门面页（deploy/vercel-landing/）
             ├─ 🎬 宣传片：promo.mp4（封面 promo-poster.jpg）
-            └─ 🚀 在线体验：<iframe> ──► Modal：https://tuolin2011--laotuo-public-demo.modal.run
+            └─ 🚀 在线体验：<iframe> ──► Modal：https://tuolin2011--laotuo-public-demo.us-east.modal.run
                                           （备用：Hugging Face Space）
 ```
 
@@ -42,9 +42,9 @@
    ```
 
    首次部署要构建镜像（装 ffmpeg、中文字体和 Python 依赖），几分钟。完成后输出里的网址形如
-   `https://<工作区>--laotuo-public-demo.modal.run`，工作区 `tuolin2011` 就是
-   <https://tuolin2011--laotuo-public-demo.modal.run>。换了工作区，要同步改 `deploy/vercel-landing/index.html`
-   里的两处网址（全文搜索 `laotuo-public-demo.modal.run`）。
+   `https://<工作区>--laotuo-public-demo.us-east.modal.run`（`us-east` 是默认地区），工作区 `tuolin2011` 就是
+   <https://tuolin2011--laotuo-public-demo.us-east.modal.run>。换了工作区，要同步改 `deploy/vercel-landing/index.html`
+   里的两处网址（全文搜索 `laotuo-public-demo`）。
 
 3. 打开网址检查（第一次打开要等容器启动、绘制样板项目）：
    - 顶部显示「🌐 公共免 Key 在线演示」，没有「⚙️ API 密钥与接口配置」；
@@ -154,8 +154,8 @@ LAOTUO_PUBLIC_DEMO=1 .venv/Scripts/python -m app.main
   Hugging Face 的 CPU basic 硬件 48 小时没人访问会休眠，唤醒要一两分钟。
 - **重启后示例项目没了**：容器的磁盘不持久保存，重启后重新生成样板项目，访客项目清空。这正是公共演示需要的。
 - **门面页里的在线体验是空白**：先单独打开后端网址，确认已启动；再确认 `index.html` 里的地址与 `modal deploy` 输出的一致。
-- **渲染进度停住不动**：Modal 网页接口单个请求最长 150 秒。Gradio 的长任务是边算边推送进度的流式连接，
-  按说不受这个限制，但还没有在 Modal 上实测过；首次上线请完整跑一次「⚡ 快速预览」和 1080P 成片确认。
+- **要等多久**（2026-10-29 实测）：部署后第一次打开约 4 分钟（拉取镜像），之后从缩容状态唤醒约 1 分钟；
+  30 秒的快速预览（540P）约 20 秒，1080P 成片约 80 秒。从国内网络访问时连接偶尔会被重置，刷新一下即可。
 - **账单比预想的高**：在 Modal 后台看 `laotuo-public-demo` 的运行时长。浏览器标签页开着时页面和服务器之间保持长连接，
   容器可能不会缩容；不需要时用 `modal app stop laotuo-public-demo` 下线。
 - **推送 Space 时提示要输入密码**：重新执行「备用：Hugging Face Space」第 1 步的 `hf auth login ... --add-to-git-credential`。
